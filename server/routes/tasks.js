@@ -2,6 +2,15 @@ const express = require('express');
 const router = express.Router();
 const { db, uuidv4 } = require('../db');
 
+// Lazy-loaded to avoid circular dependency
+let _executeTask = null;
+function getExecuteTask() {
+  if (!_executeTask) {
+    _executeTask = require('../services/executor').executeTask;
+  }
+  return _executeTask;
+}
+
 // Get all tasks (optionally filtered by project)
 router.get('/', (req, res) => {
   const { project_id, status, agent_id } = req.query;
@@ -108,9 +117,14 @@ router.put('/:id', (req, res) => {
   if (io) {
     io.emit('task:updated', task);
 
-    // If moved to "doing", trigger agent execution
+    // If moved to "doing", trigger agent execution directly
     if (newStatus === 'doing' && existing.status !== 'doing' && task.agent_id) {
-      io.emit('task:execute', { taskId: task.id, agentId: task.agent_id });
+      const exec = getExecuteTask();
+      if (exec) {
+        exec(task.id, task.agent_id).catch((err) => {
+          console.error(`[Tasks] Failed to execute task ${task.id}:`, err);
+        });
+      }
     }
   }
 

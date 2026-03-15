@@ -1,12 +1,12 @@
 const { db } = require('./db');
 
 // Lazy-loaded to avoid circular dependency at require time
-let _handleDirectChat = null;
-function getDirectChatHandler() {
-  if (!_handleDirectChat) {
-    _handleDirectChat = require('./services/executor').handleDirectChat;
+let _executor = null;
+function getExecutor() {
+  if (!_executor) {
+    _executor = require('./services/executor');
   }
-  return _handleDirectChat;
+  return _executor;
 }
 
 function initSocket(io) {
@@ -42,9 +42,9 @@ function initSocket(io) {
         io.emit('chat:user_reply', { agentId, content, taskId: data.taskId });
       } else {
         // Direct chat — call executor directly (not via socket event)
-        const handler = getDirectChatHandler();
-        if (handler) {
-          handler(agentId, content).catch((err) => {
+        const executor = getExecutor();
+        if (executor?.handleDirectChat) {
+          executor.handleDirectChat(agentId, content).catch((err) => {
             console.error(`[Socket] Direct chat error:`, err);
           });
         } else {
@@ -62,7 +62,12 @@ function initSocket(io) {
       io.emit('task:updated', task);
 
       if (status === 'doing' && task && task.agent_id) {
-        io.emit('task:execute', { taskId, agentId: task.agent_id });
+        const executor = getExecutor();
+        if (executor?.executeTask) {
+          executor.executeTask(taskId, task.agent_id).catch((err) => {
+            console.error(`[Socket] Task execute error:`, err);
+          });
+        }
       }
     });
 
