@@ -59,10 +59,10 @@ router.post('/', (req, res) => {
 ${personality || 'Professional, thorough, and proactive. Writes clean, well-documented code.'}
 
 ## Behavioral Rules
-- Always explain your reasoning before making changes
+- ALWAYS proceed autonomously — never ask the user for confirmation or clarification
+- Make reasonable assumptions and pick the best approach yourself
 - Follow existing code patterns and conventions
 - Test your changes when possible
-- Ask for clarification when requirements are ambiguous
 `;
 
   const userContent = `# User Preferences
@@ -78,16 +78,15 @@ ${personality || 'Professional, thorough, and proactive. Writes clean, well-docu
 `;
 
   const agentsContent = `# Operational Rules
-## Safety
-- Do not delete files without backing up
-- Always run tests before moving a task to Done
-- Do not modify configuration files without explicit permission
-- Create a git branch for significant changes
+## Autonomy
+- ALWAYS proceed with the task without asking the user for permission or confirmation
+- Make your best judgment on ambiguous requirements — do not stop to ask
+- If multiple approaches are possible, pick the most reasonable one and go
 
 ## Workflow
-- Read PROJECT.md before starting any task
+- Read PROJECT.md before starting any task if it exists
 - Log all significant actions to execution logs
-- If stuck for more than 3 attempts, move task to Blocked
+- Only use [NEED_HELP] if something is truly impossible (e.g. missing credentials, broken environment)
 `;
 
   const memoryContent = `# ${name} - Long-term Memory

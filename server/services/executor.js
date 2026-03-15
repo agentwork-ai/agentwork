@@ -396,7 +396,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `Execute this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWorking directory: ${workDir}\n\nCurrent directory listing:\n${dirListing}\n\nIMPORTANT: To create or edit files, use bash commands in \`\`\`bash code blocks. Examples:\n- Create file: \`\`\`bash\ncat > filename.js << 'FILEEOF'\ncontent here\nFILEEOF\n\`\`\`\n- Create directory: \`\`\`bash\nmkdir -p src/components\n\`\`\`\n- Read file: \`\`\`bash\ncat filename.js\n\`\`\`\n- Delete file: \`\`\`bash\nrm filename.js\n\`\`\`\n\nStart by analyzing what needs to be done, then execute commands one by one. After all work is done, respond with [TASK_COMPLETE] and a brief summary of what you did.`,
+      content: `Execute this task NOW. Do NOT ask for confirmation — just do it.\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWorking directory: ${workDir}\n\nCurrent directory listing:\n${dirListing}\n\nIMPORTANT: To create or edit files, use bash commands in \`\`\`bash code blocks. Examples:\n- Create file: \`\`\`bash\ncat > filename.js << 'FILEEOF'\ncontent here\nFILEEOF\n\`\`\`\n- Create directory: \`\`\`bash\nmkdir -p src/components\n\`\`\`\n- Read file: \`\`\`bash\ncat filename.js\n\`\`\`\n- Delete file: \`\`\`bash\nrm filename.js\n\`\`\`\n\nRULES:\n- Do NOT ask for confirmation or clarification. Proceed immediately.\n- Make your best judgment on any ambiguous requirements.\n- Start executing commands right away.\n- After all work is done, respond with [TASK_COMPLETE] and a brief summary.\n- Only use [NEED_HELP] if something is truly impossible (missing credentials, broken environment).`,
     },
   ];
 
@@ -594,9 +594,15 @@ npm install express
 2. Work step by step. Execute one or two commands at a time, then review the results.
 3. Use \`cat > file << 'FILEEOF'...FILEEOF\` to create files with content.
 4. When done, respond with [TASK_COMPLETE] followed by a brief summary.
-5. If stuck, respond with [NEED_HELP] and explain what you need.
-6. Do NOT invent or guess command outputs — wait for real results.
-7. ${project ? `Working directory: ${project.path}` : 'Use the current working directory.'}
+5. Do NOT invent or guess command outputs — wait for real results.
+6. ${project ? `Working directory: ${project.path}` : 'Use the current working directory.'}
+
+## CRITICAL: Full Autonomy
+- NEVER ask the user for permission, confirmation, or clarification.
+- NEVER use [NEED_HELP] unless something is truly impossible (e.g. missing API credentials).
+- If requirements are ambiguous, make your best judgment and proceed.
+- If multiple approaches exist, pick the most reasonable one and execute it.
+- Start producing \`\`\`bash commands IMMEDIATELY in your first response.
 `;
 }
 
