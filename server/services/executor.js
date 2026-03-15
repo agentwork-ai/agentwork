@@ -6,7 +6,6 @@ const path = require('path');
 
 let io = null;
 const activeExecutions = new Map();
-// Store CLI sessions for chat continuity: agentId -> { sessionId, thread }
 const agentSessions = new Map();
 
 function initExecutor(socketIo) {
@@ -19,7 +18,6 @@ function initExecutor(socketIo) {
       executeTask(taskId, agentId);
     });
 
-    // Handle user replies to unblock agents
     socket.on('chat:user_reply', (data) => {
       const exec = activeExecutions.get(data.taskId);
       if (exec && exec.waitingForUser) {
@@ -30,9 +28,6 @@ function initExecutor(socketIo) {
   });
 }
 
-/**
- * Handle a direct chat message to an agent (called from socket handler).
- */
 async function handleDirectChat(agentId, content) {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
   if (!agent) {
@@ -51,7 +46,6 @@ async function handleDirectChat(agentId, content) {
   } catch (err) {
     console.error(`[Chat] Unhandled error for agent ${agent.name}:`, err);
     sendMessage(agentId, 'agent', `Error: ${err.message}`);
-    // Reset status
     db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'idle' });
   }
@@ -61,7 +55,6 @@ async function handleDirectChat(agentId, content) {
 
 async function handleCliChat(agent, userMessage) {
   const agentId = agent.id;
-
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
@@ -71,47 +64,29 @@ async function handleCliChat(agent, userMessage) {
       try {
         ({ chatWithClaudeAgent } = require('./ai'));
       } catch (importErr) {
-        throw new Error(`Failed to load Claude Agent SDK: ${importErr.message}. Is @anthropic-ai/claude-agent-sdk installed? Is the Claude CLI signed in?`);
+        throw new Error(`Failed to load Claude Agent SDK: ${importErr.message}. Is @anthropic-ai/claude-agent-sdk installed?`);
       }
-
       const session = agentSessions.get(agentId) || {};
       const result = await chatWithClaudeAgent(userMessage, session.sessionId, process.cwd());
-
       agentSessions.set(agentId, { ...session, sessionId: result.sessionId });
-
-      if (result.content) {
-        sendMessage(agentId, 'agent', result.content);
-      } else {
-        sendMessage(agentId, 'agent', '(Agent returned an empty response)');
-      }
+      sendMessage(agentId, 'agent', result.content || '(Agent returned an empty response)');
     } else if (agent.provider === 'openai' || agent.provider === 'codex-cli') {
       let Codex, chatWithCodexAgent;
       try {
         ({ chatWithCodexAgent } = require('./ai'));
         ({ Codex } = await import('@openai/codex-sdk'));
       } catch (importErr) {
-        throw new Error(`Failed to load Codex SDK: ${importErr.message}. Is @openai/codex-sdk installed? Is the Codex CLI signed in?`);
+        throw new Error(`Failed to load Codex SDK: ${importErr.message}.`);
       }
-
       let session = agentSessions.get(agentId);
-
       if (!session?.thread) {
         const client = new Codex();
-        const thread = client.startThread({
-          workingDirectory: process.cwd(),
-          approvalPolicy: 'never',
-          sandboxMode: 'read-only',
-        });
+        const thread = client.startThread({ workingDirectory: process.cwd(), approvalPolicy: 'never', sandboxMode: 'read-only' });
         session = { thread };
         agentSessions.set(agentId, session);
       }
-
       const result = await chatWithCodexAgent(userMessage, session.thread);
-      if (result.content) {
-        sendMessage(agentId, 'agent', result.content);
-      } else {
-        sendMessage(agentId, 'agent', '(Agent returned an empty response)');
-      }
+      sendMessage(agentId, 'agent', result.content || '(Agent returned an empty response)');
     } else {
       throw new Error(`Unknown CLI provider: ${agent.provider}`);
     }
@@ -126,44 +101,27 @@ async function handleCliChat(agent, userMessage) {
 
 async function handleApiChat(agent, userMessage) {
   const agentId = agent.id;
-
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
   try {
-    // Check API key first
-    let apiKey;
     const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key', deepseek: 'deepseek_api_key', mistral: 'mistral_api_key', google: 'openai_api_key' };
-    const keyName = keyMap[agent.provider] || 'openai_api_key';
-    apiKey = db.prepare("SELECT value FROM settings WHERE key = ?").get(keyName)?.value;
+    const apiKey = db.prepare("SELECT value FROM settings WHERE key = ?").get(keyMap[agent.provider] || 'openai_api_key')?.value;
     const customBaseUrl = db.prepare("SELECT value FROM settings WHERE key = 'custom_base_url'").get()?.value;
-
     if (!apiKey && !customBaseUrl) {
       const labels = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter', google: 'Google', deepseek: 'DeepSeek', mistral: 'Mistral' };
       throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${labels[agent.provider] || agent.provider} API key.`);
     }
 
-    // Load the last 20 messages for context
-    const recentMsgs = db.prepare(
-      'SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20'
-    ).all(agentId).reverse();
-
+    const recentMsgs = db.prepare('SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20').all(agentId).reverse();
     const messages = [
-      {
-        role: 'system',
-        content: `You are ${agent.name}, a ${agent.role}. You are a helpful AI assistant. Be concise and friendly. ${agent.personality || ''}`,
-      },
-      ...recentMsgs.map((m) => ({
-        role: m.sender === 'user' ? 'user' : 'assistant',
-        content: m.content,
-      })),
+      { role: 'system', content: `You are ${agent.name}, a ${agent.role}. Be concise and friendly. ${agent.personality || ''}` },
+      ...recentMsgs.map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
       { role: 'user', content: userMessage },
     ];
 
     const response = await createCompletion(agent.provider, agent.model, messages);
-
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
-
     sendMessage(agentId, 'agent', response.content);
   } catch (err) {
     console.error(`[Chat API] Error for agent ${agent.name}:`, err);
@@ -179,23 +137,25 @@ async function handleApiChat(agent, userMessage) {
 async function executeTask(taskId, agentId) {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
-  const project = task.project_id
-    ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id)
-    : null;
+  const project = task?.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
 
   if (!task || !agent) return;
 
   const execState = { waitingForUser: false, userReply: null, aborted: false };
   activeExecutions.set(taskId, execState);
 
-  // Update agent status
   db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'working' });
-
   addLog(taskId, 'info', `Agent ${agent.name} started working on: ${task.title}`);
 
   try {
     const workDir = project?.path || process.cwd();
+
+    // Ensure working directory exists
+    if (!fs.existsSync(workDir)) {
+      addLog(taskId, 'info', `Creating working directory: ${workDir}`);
+      fs.mkdirSync(workDir, { recursive: true });
+    }
 
     if (agent.auth_type === 'cli') {
       await executeTaskCli(taskId, agentId, agent, task, workDir, execState);
@@ -216,6 +176,23 @@ async function executeTask(taskId, agentId) {
 
 // ─── CLI-mode task execution ───
 
+function ensureGitRepo(workDir, taskId) {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { cwd: workDir, stdio: 'pipe' });
+    return; // already a git repo
+  } catch {
+    // Not a git repo — init one
+    addLog(taskId, 'info', `Initializing git repo in ${workDir} (required by Codex CLI)`);
+    try {
+      execSync('git init', { cwd: workDir, stdio: 'pipe' });
+      execSync('git add -A && git commit -m "Initial commit" --allow-empty', { cwd: workDir, stdio: 'pipe', shell: true });
+      addLog(taskId, 'info', 'Git repo initialized');
+    } catch (gitErr) {
+      addLog(taskId, 'warning', `Git init warning: ${gitErr.message}`);
+    }
+  }
+}
+
 async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) {
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
   const memory = readFile(path.join(agentDir, 'MEMORY.md'));
@@ -225,9 +202,13 @@ async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) 
   const sdkName = isCodex ? 'Codex' : 'Claude';
 
   addLog(taskId, 'info', `Using ${sdkName} Agent SDK (CLI mode)`);
-  addLog(taskId, 'info', `Provider: ${agent.provider} | Auth: ${agent.auth_type} | Working dir: ${workDir}`);
+  addLog(taskId, 'info', `Provider: ${agent.provider} | Working dir: ${workDir}`);
 
-  // Build prompt
+  // Codex requires a git repo
+  if (isCodex) {
+    ensureGitRepo(workDir, taskId);
+  }
+
   const prompt = `You are ${agent.name}, a ${agent.role}.
 
 ${soul ? `## Your Configuration\n${soul}\n` : ''}
@@ -246,24 +227,16 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
   const abortController = new AbortController();
   execState.abortController = abortController;
 
-  // Event handler — logs everything
   const onEvent = (event) => {
     if (execState.aborted) return;
-
     switch (event.type) {
-      case 'text':
-        addLog(taskId, 'response', event.content);
-        break;
+      case 'text': addLog(taskId, 'response', event.content); break;
       case 'command':
         io.emit('agent:status_changed', { agentId, status: 'executing' });
         addLog(taskId, 'command', event.content);
         break;
-      case 'output':
-        addLog(taskId, 'output', event.content);
-        break;
-      case 'file_change':
-        addLog(taskId, 'info', `File: ${event.content}`);
-        break;
+      case 'output': addLog(taskId, 'output', event.content); break;
+      case 'file_change': addLog(taskId, 'info', `File: ${event.content}`); break;
       case 'reading':
         io.emit('agent:status_changed', { agentId, status: 'thinking' });
         addLog(taskId, 'info', event.content);
@@ -272,83 +245,60 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
         io.emit('agent:status_changed', { agentId, status: 'thinking' });
         addLog(taskId, 'thinking', event.content.slice(0, 500));
         break;
-      case 'tool':
-        addLog(taskId, 'info', `Tool: ${event.content}`);
-        break;
-      case 'error':
-        addLog(taskId, 'error', event.content);
-        break;
-      case 'done':
-        addLog(taskId, 'success', 'Agent finished execution.');
-        break;
+      case 'tool': addLog(taskId, 'info', `Tool: ${event.content}`); break;
+      case 'error': addLog(taskId, 'error', event.content); break;
+      case 'done': addLog(taskId, 'success', 'Agent finished execution.'); break;
       case 'session':
         addLog(taskId, 'info', `Session ID: ${event.sessionId}`);
-        const session = agentSessions.get(agentId) || {};
-        session.sessionId = event.sessionId;
-        agentSessions.set(agentId, session);
+        const s = agentSessions.get(agentId) || {};
+        s.sessionId = event.sessionId;
+        agentSessions.set(agentId, s);
         break;
-      default:
-        addLog(taskId, 'info', `[${event.type}] ${event.content || ''}`);
-        break;
+      default: addLog(taskId, 'info', `[${event.type}] ${event.content || ''}`); break;
     }
   };
 
   try {
-    // Step 1: Try to import the SDK
     addLog(taskId, 'info', `Loading ${sdkName} SDK...`);
 
     if (isCodex) {
       let Codex;
       try {
         ({ Codex } = await import('@openai/codex-sdk'));
-        addLog(taskId, 'info', 'Codex SDK loaded successfully');
+        addLog(taskId, 'info', 'Codex SDK loaded');
       } catch (importErr) {
         addLog(taskId, 'error', `Failed to load Codex SDK: ${importErr.message}`);
-        addLog(taskId, 'error', 'Make sure @openai/codex-sdk is installed and Codex CLI is signed in');
         throw importErr;
       }
 
-      // Step 2: Create client and thread
       addLog(taskId, 'info', 'Creating Codex client and thread...');
       let client, thread;
       try {
         client = new Codex();
-        thread = client.startThread({
-          workingDirectory: workDir,
-          approvalPolicy: 'never',
-          sandboxMode: 'danger-full-access',
-        });
+        thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
         addLog(taskId, 'info', 'Codex thread created');
       } catch (initErr) {
         addLog(taskId, 'error', `Failed to create Codex thread: ${initErr.message}`);
-        addLog(taskId, 'error', `Stack: ${initErr.stack?.split('\n').slice(0, 3).join(' | ')}`);
         throw initErr;
       }
 
-      // Step 3: Run the task
       addLog(taskId, 'info', 'Starting Codex streamed run...');
       let streamedTurn;
       try {
-        streamedTurn = await thread.runStreamed(prompt, {
-          signal: abortController.signal,
-        });
+        streamedTurn = await thread.runStreamed(prompt, { signal: abortController.signal });
         addLog(taskId, 'info', 'Codex stream started, processing events...');
       } catch (runErr) {
         addLog(taskId, 'error', `Failed to start Codex run: ${runErr.message}`);
-        addLog(taskId, 'error', `Stack: ${runErr.stack?.split('\n').slice(0, 3).join(' | ')}`);
         throw runErr;
       }
 
-      // Step 4: Process events
       let eventCount = 0;
       try {
         for await (const event of streamedTurn.events) {
           eventCount++;
-          // Log raw event type for debugging
           if (eventCount <= 5 || eventCount % 10 === 0) {
             addLog(taskId, 'info', `[Event #${eventCount}] type=${event.type}${event.item ? ` item.type=${event.item.type}` : ''}`);
           }
-
           if (event.type === 'item.completed') {
             const item = event.item;
             if (item.type === 'agent_message') {
@@ -356,13 +306,9 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
             } else if (item.type === 'command_execution') {
               onEvent({ type: 'command', content: `$ ${item.command || ''}` });
               if (item.output) onEvent({ type: 'output', content: (item.output || '').slice(0, 2000) });
-              if (item.exit_code !== 0) {
-                onEvent({ type: 'error', content: `Command exited with code ${item.exit_code}` });
-              }
+              if (item.exit_code !== 0) onEvent({ type: 'error', content: `Exit code ${item.exit_code}` });
             } else if (item.type === 'file_change') {
-              for (const c of (item.changes || [])) {
-                onEvent({ type: 'file_change', content: `${c.kind || 'update'}: ${c.path || ''}` });
-              }
+              for (const c of (item.changes || [])) onEvent({ type: 'file_change', content: `${c.kind || 'update'}: ${c.path || ''}` });
             } else if (item.type === 'reasoning') {
               onEvent({ type: 'thinking', content: item.text || '' });
             } else if (item.type === 'error') {
@@ -370,66 +316,50 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
             } else {
               addLog(taskId, 'info', `[Codex item] type=${item.type} ${JSON.stringify(item).slice(0, 300)}`);
             }
-          } else if (event.type === 'item.started' || event.type === 'item.updated') {
-            // Intermediate events, log sparingly
           } else if (event.type === 'turn.completed') {
             const usage = event.usage || {};
             addLog(taskId, 'info', `Turn completed. Tokens: in=${usage.input_tokens || 0} out=${usage.output_tokens || 0}`);
             onEvent({ type: 'done', content: 'Agent finished.' });
           } else if (event.type === 'turn.failed') {
-            const errMsg = event.error?.message || JSON.stringify(event.error) || 'Unknown turn failure';
+            const errMsg = event.error?.message || JSON.stringify(event.error) || 'Turn failure';
             addLog(taskId, 'error', `Turn failed: ${errMsg}`);
-            onEvent({ type: 'error', content: errMsg });
-          } else if (event.type === 'thread.started') {
-            addLog(taskId, 'info', `Thread started: ${event.thread_id || ''}`);
-          } else if (event.type === 'turn.started') {
-            addLog(taskId, 'info', 'Turn started');
-          } else {
-            addLog(taskId, 'info', `[Codex event] ${event.type}: ${JSON.stringify(event).slice(0, 200)}`);
+          } else if (event.type === 'thread.started' || event.type === 'turn.started') {
+            addLog(taskId, 'info', event.type);
           }
         }
         addLog(taskId, 'info', `Stream ended. Total events: ${eventCount}`);
       } catch (streamErr) {
-        addLog(taskId, 'error', `Error during Codex stream: ${streamErr.message}`);
-        addLog(taskId, 'error', `Events processed before error: ${eventCount}`);
+        addLog(taskId, 'error', `Stream error: ${streamErr.message}`);
+        addLog(taskId, 'error', `Events before error: ${eventCount}`);
         throw streamErr;
       }
-
     } else {
       // Claude Agent SDK
       try {
-        addLog(taskId, 'info', 'Loading Claude Agent SDK...');
         const result = await runClaudeAgent(prompt, workDir, onEvent, abortController);
-        addLog(taskId, 'info', `Claude agent finished. Cost: $${(result.costUsd || 0).toFixed(4)}`);
-        if (result.costUsd) {
-          logBudget(agentId, agent.provider, agent.model || 'claude-cli', 0, 0, result.costUsd);
-        }
+        addLog(taskId, 'info', `Claude finished. Cost: $${(result.costUsd || 0).toFixed(4)}`);
+        if (result.costUsd) logBudget(agentId, agent.provider, agent.model || 'claude-cli', 0, 0, result.costUsd);
       } catch (claudeErr) {
-        addLog(taskId, 'error', `Claude Agent SDK error: ${claudeErr.message}`);
-        addLog(taskId, 'error', `Stack: ${claudeErr.stack?.split('\n').slice(0, 3).join(' | ')}`);
+        addLog(taskId, 'error', `Claude SDK error: ${claudeErr.message}`);
         throw claudeErr;
       }
     }
 
-    // Task completed
     moveTask(taskId, 'done');
     sendMessage(agentId, 'agent', `I've completed the task: ${task.title}`, taskId);
     updateMemory(agentDir, agent.name, task.title, 'Completed via CLI agent.');
-
   } catch (err) {
     if (err.name === 'AbortError') {
       addLog(taskId, 'warning', 'Task execution was aborted.');
-      moveTask(taskId, 'blocked');
     } else {
       addLog(taskId, 'error', `${sdkName} agent failed: ${err.message}`);
-      addLog(taskId, 'error', `Full error: ${err.stack?.split('\n').slice(0, 5).join(' | ')}`);
-      moveTask(taskId, 'blocked');
-      sendMessage(agentId, 'agent', `I encountered an error: ${err.message}`, taskId);
     }
+    moveTask(taskId, 'blocked');
+    sendMessage(agentId, 'agent', `I encountered an error: ${err.message}`, taskId);
   }
 }
 
-// ─── API-mode task execution (original loop) ───
+// ─── API-mode task execution ───
 
 async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState) {
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
@@ -439,35 +369,40 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
   const memory = readFile(path.join(agentDir, 'MEMORY.md'));
 
   let projectDoc = '';
-  if (project && project.path) {
+  if (project?.path) {
     const projDocPath = path.join(project.path, 'PROJECT.md');
-    if (fs.existsSync(projDocPath)) {
-      projectDoc = fs.readFileSync(projDocPath, 'utf8');
-    }
+    if (fs.existsSync(projDocPath)) projectDoc = fs.readFileSync(projDocPath, 'utf8');
   }
 
   const systemPrompt = buildSystemPrompt(agent, soul, userPrefs, rules, memory, projectDoc, project);
 
-  // Check budget
   if (!checkBudget()) {
-    addLog(taskId, 'error', 'Budget limit exceeded. Agent cannot execute.');
+    addLog(taskId, 'error', 'Budget limit exceeded.');
     moveTask(taskId, 'blocked');
-    sendMessage(agentId, 'agent', 'Budget limit exceeded. Please increase the budget in Settings.', taskId);
+    sendMessage(agentId, 'agent', 'Budget limit exceeded.', taskId);
     return;
   }
 
-  const requireConfirmation = db.prepare("SELECT value FROM settings WHERE key = 'require_confirmation_destructive'").get()?.value === 'true';
+  addLog(taskId, 'info', `API mode: ${agent.provider} / ${agent.model}`);
+  addLog(taskId, 'info', `Working directory: ${workDir}`);
+
+  // List existing files for context
+  let dirListing = '';
+  try {
+    dirListing = execSync('ls -la 2>/dev/null || dir', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1500);
+  } catch {}
 
   let messages = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `Execute this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWork directory: ${workDir}\n\nPlease analyze the task, plan your approach, then execute it step by step. Use bash commands in \`\`\`bash code blocks. When done, respond with [TASK_COMPLETE] and a summary. If stuck, respond with [NEED_HELP].`,
+      content: `Execute this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWorking directory: ${workDir}\n\nCurrent directory listing:\n${dirListing}\n\nIMPORTANT: To create or edit files, use bash commands in \`\`\`bash code blocks. Examples:\n- Create file: \`\`\`bash\ncat > filename.js << 'FILEEOF'\ncontent here\nFILEEOF\n\`\`\`\n- Create directory: \`\`\`bash\nmkdir -p src/components\n\`\`\`\n- Read file: \`\`\`bash\ncat filename.js\n\`\`\`\n- Delete file: \`\`\`bash\nrm filename.js\n\`\`\`\n\nStart by analyzing what needs to be done, then execute commands one by one. After all work is done, respond with [TASK_COMPLETE] and a brief summary of what you did.`,
     },
   ];
 
   let iterations = 0;
-  const maxIterations = 20;
+  const maxIterations = 25;
+  let noProgressCount = 0;
 
   while (iterations < maxIterations && !execState.aborted) {
     iterations++;
@@ -479,20 +414,9 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
       response = await createCompletion(agent.provider, agent.model, messages);
     } catch (err) {
       addLog(taskId, 'error', `AI Error: ${err.message}`);
-      if (err.message.includes('API key')) {
-        moveTask(taskId, 'blocked');
-        sendMessage(agentId, 'agent', `I need an API key to work. Error: ${err.message}`, taskId);
-        break;
-      }
-      await sleep(2000);
-      try {
-        response = await createCompletion(agent.provider, agent.model, messages);
-      } catch (retryErr) {
-        addLog(taskId, 'error', `Retry failed: ${retryErr.message}`);
-        moveTask(taskId, 'blocked');
-        sendMessage(agentId, 'agent', `Unrecoverable error: ${retryErr.message}`, taskId);
-        break;
-      }
+      moveTask(taskId, 'blocked');
+      sendMessage(agentId, 'agent', `Error: ${err.message}`, taskId);
+      break;
     }
 
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
@@ -501,6 +425,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     addLog(taskId, 'response', content);
     messages.push({ role: 'assistant', content });
 
+    // Check for completion
     if (content.includes('[TASK_COMPLETE]')) {
       addLog(taskId, 'success', 'Task completed successfully!');
       moveTask(taskId, 'done');
@@ -509,17 +434,18 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
       break;
     }
 
+    // Check if agent needs help
     if (content.includes('[NEED_HELP]')) {
-      addLog(taskId, 'blocked', 'Agent is requesting help from user');
+      addLog(taskId, 'blocked', 'Agent is requesting help');
       moveTask(taskId, 'blocked');
       sendMessage(agentId, 'agent', content.replace('[NEED_HELP]', '').trim(), taskId);
-
       execState.waitingForUser = true;
       const reply = await waitForUserReply(execState, 300000);
       if (reply) {
         addLog(taskId, 'info', `User replied: ${reply}`);
         messages.push({ role: 'user', content: `User's response: ${reply}` });
         moveTask(taskId, 'doing');
+        noProgressCount = 0;
         continue;
       } else {
         addLog(taskId, 'info', 'No user reply received.');
@@ -527,56 +453,87 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
       }
     }
 
+    // Extract commands from response
     const commands = extractCommands(content);
-    if (commands.length > 0) {
+
+    // Also extract inline file writes: ```filename\ncontent\n```
+    const fileWrites = extractFileWrites(content, workDir);
+
+    if (commands.length > 0 || fileWrites.length > 0) {
+      noProgressCount = 0;
       io.emit('agent:status_changed', { agentId, status: 'executing' });
 
       let commandResults = '';
-      for (const cmd of commands) {
-        if (requireConfirmation && isDestructive(cmd)) {
-          addLog(taskId, 'warning', `Destructive command blocked: ${cmd}`);
-          sendMessage(agentId, 'agent', `I want to run: \`${cmd}\`. Should I proceed?`, taskId);
-          execState.waitingForUser = true;
-          const approval = await waitForUserReply(execState, 120000);
-          if (!approval || !['yes', 'y', 'ok', 'go ahead', 'proceed'].includes(approval.toLowerCase().trim())) {
-            commandResults += `\nCommand blocked by user: ${cmd}\n`;
-            continue;
-          }
-        }
 
+      // Execute file writes first
+      for (const fw of fileWrites) {
+        addLog(taskId, 'command', `[write] ${fw.path}`);
+        try {
+          const dir = path.dirname(fw.fullPath);
+          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+          fs.writeFileSync(fw.fullPath, fw.content);
+          addLog(taskId, 'output', `Created: ${fw.path} (${fw.content.length} bytes)`);
+          commandResults += `\nCreated file ${fw.path} successfully.\n`;
+        } catch (err) {
+          addLog(taskId, 'error', `Failed to write ${fw.path}: ${err.message}`);
+          commandResults += `\nFailed to write ${fw.path}: ${err.message}\n`;
+        }
+      }
+
+      // Execute bash commands
+      for (const cmd of commands) {
         addLog(taskId, 'command', `$ ${cmd}`);
         try {
-          const result = execSync(cmd, { cwd: workDir, timeout: 60000, encoding: 'utf8', maxBuffer: 1024 * 1024 });
-          const output = result.toString().slice(0, 2000);
-          addLog(taskId, 'output', output);
+          const result = execSync(cmd, {
+            cwd: workDir,
+            timeout: 120000,
+            encoding: 'utf8',
+            maxBuffer: 2 * 1024 * 1024,
+            shell: true,
+          });
+          const output = result.toString().slice(0, 3000);
+          addLog(taskId, 'output', output || '(no output)');
           commandResults += `\n$ ${cmd}\n${output}\n`;
         } catch (err) {
-          const errMsg = (err.stderr || err.message || '').slice(0, 1000);
+          const stderr = (err.stderr || '').slice(0, 1000);
+          const stdout = (err.stdout || '').slice(0, 500);
+          const errMsg = stderr || err.message || 'Command failed';
           addLog(taskId, 'error', `Command failed: ${errMsg}`);
-          commandResults += `\n$ ${cmd}\nERROR: ${errMsg}\n`;
+          commandResults += `\n$ ${cmd}\nSTDOUT: ${stdout}\nSTDERR: ${errMsg}\nExit code: ${err.status || 'unknown'}\n`;
         }
       }
 
       messages.push({
         role: 'user',
-        content: `Command results:\n${commandResults}\n\nContinue. If done, respond with [TASK_COMPLETE] and a summary.`,
+        content: `Command results:\n${commandResults}\n\nContinue working. If all work is done, respond with [TASK_COMPLETE] and a summary of what you did.`,
       });
     } else {
+      // No commands extracted
+      noProgressCount++;
+      addLog(taskId, 'warning', `No commands found in response (attempt ${noProgressCount}/3)`);
+
+      if (noProgressCount >= 3) {
+        addLog(taskId, 'warning', 'Agent stuck — no commands after 3 attempts. Moving to blocked.');
+        moveTask(taskId, 'blocked');
+        sendMessage(agentId, 'agent', `I seem to be stuck on this task. I couldn't produce executable commands. Please review my progress.`, taskId);
+        break;
+      }
+
       messages.push({
         role: 'user',
-        content: 'Please continue. Use ```bash blocks for commands. If done, respond with [TASK_COMPLETE].',
+        content: `You need to execute actual commands to make changes. Use \`\`\`bash code blocks to run shell commands.\n\nTo create a file:\n\`\`\`bash\ncat > path/to/file.js << 'FILEEOF'\nyour code here\nFILEEOF\n\`\`\`\n\nTo create a directory:\n\`\`\`bash\nmkdir -p path/to/dir\n\`\`\`\n\nTo list files:\n\`\`\`bash\nls -la\n\`\`\`\n\nPlease produce commands now to complete the task. If already done, respond with [TASK_COMPLETE] and a summary.`,
       });
     }
 
     if (!checkBudget()) {
       addLog(taskId, 'error', 'Budget limit exceeded.');
       moveTask(taskId, 'blocked');
-      sendMessage(agentId, 'agent', 'Budget limit exceeded. I had to stop.', taskId);
+      sendMessage(agentId, 'agent', 'Budget limit exceeded.', taskId);
       break;
     }
   }
 
-  if (iterations >= maxIterations) {
+  if (iterations >= maxIterations && !execState.aborted) {
     addLog(taskId, 'warning', 'Maximum iterations reached.');
     moveTask(taskId, 'blocked');
     sendMessage(agentId, 'agent', `Reached max iterations (${maxIterations}). Please review my progress.`, taskId);
@@ -586,7 +543,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
 // ─── Helpers ───
 
 function buildSystemPrompt(agent, soul, userPrefs, rules, memory, projectDoc, project) {
-  return `You are ${agent.name}, an AI agent working as a ${agent.role}.
+  return `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
 
 ${soul}
 
@@ -601,29 +558,86 @@ ${memory}
 
 ${projectDoc ? `## Project Documentation\n${projectDoc}` : ''}
 
-## Available Tools
-You can execute commands by wrapping them in \`\`\`bash code blocks.
+## How to Execute Commands
+You MUST use \`\`\`bash code blocks to execute shell commands. This is the ONLY way to make changes.
+
+### Create a file:
+\`\`\`bash
+mkdir -p path/to/dir
+cat > path/to/file.ext << 'FILEEOF'
+file content here
+FILEEOF
+\`\`\`
+
+### Read a file:
+\`\`\`bash
+cat path/to/file.ext
+\`\`\`
+
+### Create a directory:
+\`\`\`bash
+mkdir -p path/to/new/dir
+\`\`\`
+
+### Delete a file:
+\`\`\`bash
+rm path/to/file.ext
+\`\`\`
+
+### Run any command:
+\`\`\`bash
+npm install express
+\`\`\`
 
 ## Important Rules
-1. Work step by step, explaining your approach.
-2. Execute commands one at a time and review results.
-3. When done, always include [TASK_COMPLETE] followed by a summary.
-4. If you cannot proceed, include [NEED_HELP] followed by your question.
-5. Do NOT invent command outputs - wait for real results.
-6. ${project ? `Working directory: ${project.path}` : 'Use the current working directory.'}
+1. ALWAYS use \`\`\`bash blocks to execute commands — this is the only way to make changes.
+2. Work step by step. Execute one or two commands at a time, then review the results.
+3. Use \`cat > file << 'FILEEOF'...FILEEOF\` to create files with content.
+4. When done, respond with [TASK_COMPLETE] followed by a brief summary.
+5. If stuck, respond with [NEED_HELP] and explain what you need.
+6. Do NOT invent or guess command outputs — wait for real results.
+7. ${project ? `Working directory: ${project.path}` : 'Use the current working directory.'}
 `;
 }
 
 function extractCommands(content) {
   const commands = [];
-  const bashBlocks = content.match(/```bash\n([\s\S]*?)```/g);
+  // Match ```bash, ```sh, ```shell, ```zsh blocks
+  const bashBlocks = content.match(/```(?:bash|sh|shell|zsh)\n([\s\S]*?)```/g);
   if (bashBlocks) {
     for (const block of bashBlocks) {
-      const cmd = block.replace(/```bash\n/, '').replace(/```$/, '').trim();
+      const cmd = block.replace(/```(?:bash|sh|shell|zsh)\n/, '').replace(/```$/, '').trim();
       if (cmd) commands.push(cmd);
     }
   }
   return commands;
+}
+
+/**
+ * Extract inline file write patterns like:
+ * ```path/to/file.js
+ * content
+ * ```
+ * Only matches if the language tag looks like a file path.
+ */
+function extractFileWrites(content, workDir) {
+  const writes = [];
+  const pattern = /```([\w./\\-]+\.\w+)\n([\s\S]*?)```/g;
+  let match;
+  while ((match = pattern.exec(content)) !== null) {
+    const filePath = match[1];
+    const fileContent = match[2];
+    // Only if it looks like a file path (has extension, not a known language)
+    const knownLangs = ['bash', 'sh', 'shell', 'zsh', 'javascript', 'typescript', 'python', 'java', 'go', 'rust', 'c', 'cpp', 'json', 'yaml', 'yml', 'xml', 'html', 'css', 'sql', 'markdown', 'md', 'txt', 'plaintext', 'diff', 'log'];
+    if (!knownLangs.includes(filePath.toLowerCase()) && filePath.includes('.')) {
+      writes.push({
+        path: filePath,
+        fullPath: path.resolve(workDir, filePath),
+        content: fileContent,
+      });
+    }
+  }
+  return writes;
 }
 
 function isDestructive(cmd) {
@@ -641,25 +655,16 @@ function readFile(filePath) {
 function addLog(taskId, type, content) {
   const task = db.prepare('SELECT execution_logs FROM tasks WHERE id = ?').get(taskId);
   if (!task) return;
-
   const logs = JSON.parse(task.execution_logs || '[]');
   const entry = { timestamp: new Date().toISOString(), type, content };
   logs.push(entry);
-
-  db.prepare('UPDATE tasks SET execution_logs = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
-    JSON.stringify(logs),
-    taskId
-  );
-
+  db.prepare('UPDATE tasks SET execution_logs = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(logs), taskId);
   if (io) io.emit('task:log', { taskId, log: entry });
 }
 
 function moveTask(taskId, status) {
   const completedAt = status === 'done' ? new Date().toISOString() : null;
-  db.prepare('UPDATE tasks SET status = ?, completed_at = COALESCE(?, completed_at), updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
-    status, completedAt, taskId
-  );
-
+  db.prepare('UPDATE tasks SET status = ?, completed_at = COALESCE(?, completed_at), updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, completedAt, taskId);
   const task = db.prepare(
     'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
   ).get(taskId);
@@ -672,72 +677,41 @@ function moveTask(taskId, status) {
 
 function sendMessage(agentId, sender, content, taskId) {
   const id = uuidv4();
-  db.prepare(
-    'INSERT INTO messages (id, agent_id, sender, content, task_id) VALUES (?, ?, ?, ?, ?)'
-  ).run(id, agentId, sender, content, taskId || null);
-
-  const message = {
-    id, agent_id: agentId, sender, content, task_id: taskId || null,
-    created_at: new Date().toISOString(),
-  };
-
+  db.prepare('INSERT INTO messages (id, agent_id, sender, content, task_id) VALUES (?, ?, ?, ?, ?)').run(id, agentId, sender, content, taskId || null);
+  const message = { id, agent_id: agentId, sender, content, task_id: taskId || null, created_at: new Date().toISOString() };
   if (io) {
     io.emit('chat:message', message);
-    if (sender === 'agent') {
-      io.emit('notification', { agentId, message: content.slice(0, 100) });
-    }
+    if (sender === 'agent') io.emit('notification', { agentId, message: content.slice(0, 100) });
   }
 }
 
 function logBudget(agentId, provider, model, inputTokens, outputTokens, directCost) {
   const cost = directCost || estimateCost(provider, model, inputTokens, outputTokens);
   const id = uuidv4();
-  db.prepare(
-    'INSERT INTO budget_logs (id, agent_id, provider, model, input_tokens, output_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, agentId, provider, model, inputTokens, outputTokens, cost);
-
+  db.prepare('INSERT INTO budget_logs (id, agent_id, provider, model, input_tokens, output_tokens, cost_usd) VALUES (?, ?, ?, ?, ?, ?, ?)').run(id, agentId, provider, model, inputTokens, outputTokens, cost);
   if (io) io.emit('budget:update', { cost, inputTokens, outputTokens });
 }
 
 function checkBudget() {
   const today = new Date().toISOString().split('T')[0];
-  const dailyUsage = db.prepare(
-    "SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE date(created_at) = ?"
-  ).get(today);
-
-  const dailyLimit = parseFloat(
-    db.prepare("SELECT value FROM settings WHERE key = 'daily_budget_usd'").get()?.value || '10'
-  );
-
-  if (dailyUsage.total >= dailyLimit) return false;
-
-  const monthStart = new Date();
-  monthStart.setDate(1);
-  const monthlyUsage = db.prepare(
-    "SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE created_at >= ?"
-  ).get(monthStart.toISOString());
-
-  const monthlyLimit = parseFloat(
-    db.prepare("SELECT value FROM settings WHERE key = 'monthly_budget_usd'").get()?.value || '100'
-  );
-
-  return monthlyUsage.total < monthlyLimit;
+  const daily = db.prepare("SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE date(created_at) = ?").get(today);
+  const dailyLimit = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'daily_budget_usd'").get()?.value || '10');
+  if (daily.total >= dailyLimit) return false;
+  const monthStart = new Date(); monthStart.setDate(1);
+  const monthly = db.prepare("SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE created_at >= ?").get(monthStart.toISOString());
+  const monthlyLimit = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'monthly_budget_usd'").get()?.value || '100');
+  return monthly.total < monthlyLimit;
 }
 
 function updateMemory(agentDir, agentName, taskTitle, summary) {
   const memoryPath = path.join(agentDir, 'MEMORY.md');
-  let existing = '';
-  if (fs.existsSync(memoryPath)) existing = fs.readFileSync(memoryPath, 'utf8');
-
-  const newEntry = `\n## ${new Date().toISOString().split('T')[0]} - ${taskTitle}\n${summary}\n`;
-  const updated = existing + newEntry;
-
+  let existing = fs.existsSync(memoryPath) ? fs.readFileSync(memoryPath, 'utf8') : '';
+  const updated = existing + `\n## ${new Date().toISOString().split('T')[0]} - ${taskTitle}\n${summary}\n`;
   if (updated.length > 8000) {
     const lines = updated.split('\n');
     const header = lines.slice(0, 3).join('\n');
     const entries = lines.slice(3);
-    const keepFrom = Math.floor(entries.length * 0.4);
-    fs.writeFileSync(memoryPath, header + '\n' + entries.slice(keepFrom).join('\n'));
+    fs.writeFileSync(memoryPath, header + '\n' + entries.slice(Math.floor(entries.length * 0.4)).join('\n'));
   } else {
     fs.writeFileSync(memoryPath, updated);
   }
@@ -765,12 +739,8 @@ function waitForUserReply(execState, timeout) {
   });
 }
 
-function sleep(ms) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
-function getActiveExecutions() {
-  return Array.from(activeExecutions.keys());
-}
+function getActiveExecutions() { return Array.from(activeExecutions.keys()); }
 
 module.exports = { initExecutor, executeTask, getActiveExecutions, handleDirectChat };
