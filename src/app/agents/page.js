@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
   Plus, Trash2, Edit2, Settings2, Brain, FileText,
-  User, Shield, BookOpen, X, RotateCcw,
+  User, Shield, BookOpen, X, RotateCcw, Key, Terminal,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -26,17 +26,67 @@ const ROLE_PRESETS = [
   'Technical Writer',
 ];
 
-const MODELS = {
+const API_MODELS = {
   anthropic: [
-    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4' },
-    { id: 'claude-opus-4-20250514', label: 'Claude Opus 4' },
-    { id: 'claude-haiku-4-5-20251001', label: 'Claude Haiku 4.5' },
+    { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tier: 'flagship' },
+    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tier: 'balanced' },
+    { id: 'claude-opus-4-5', label: 'Claude Opus 4.5', tier: 'flagship' },
+    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', tier: 'balanced' },
+    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'fast' },
+    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', tier: 'balanced' },
+    { id: 'claude-opus-4-20250514', label: 'Claude Opus 4', tier: 'flagship' },
   ],
   openai: [
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { id: 'gpt-4-turbo', label: 'GPT-4 Turbo' },
+    { id: 'gpt-5.4', label: 'GPT-5.4', tier: 'flagship' },
+    { id: 'gpt-5.4-pro', label: 'GPT-5.4 Pro', tier: 'flagship' },
+    { id: 'gpt-5.1', label: 'GPT-5.1', tier: 'flagship' },
+    { id: 'gpt-5-mini', label: 'GPT-5 Mini', tier: 'fast' },
+    { id: 'gpt-5-nano', label: 'GPT-5 Nano', tier: 'fast' },
+    { id: 'gpt-4.1', label: 'GPT-4.1', tier: 'balanced' },
+    { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', tier: 'fast' },
+    { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano', tier: 'fast' },
+    { id: 'gpt-4o', label: 'GPT-4o', tier: 'balanced' },
+    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', tier: 'fast' },
+    { id: 'o3', label: 'o3 (Reasoning)', tier: 'reasoning' },
+    { id: 'o3-pro', label: 'o3 Pro', tier: 'reasoning' },
+    { id: 'o3-mini', label: 'o3 Mini', tier: 'reasoning' },
+    { id: 'o4-mini', label: 'o4 Mini', tier: 'reasoning' },
   ],
+  google: [
+    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', tier: 'flagship' },
+    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'fast' },
+    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', tier: 'fast' },
+  ],
+  deepseek: [
+    { id: 'deepseek-chat', label: 'DeepSeek V3', tier: 'balanced' },
+    { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner', tier: 'reasoning' },
+  ],
+  mistral: [
+    { id: 'mistral-large-latest', label: 'Mistral Large', tier: 'flagship' },
+    { id: 'mistral-small-latest', label: 'Mistral Small', tier: 'fast' },
+    { id: 'codestral-latest', label: 'Codestral', tier: 'code' },
+  ],
+};
+
+const CLI_PROVIDERS = [
+  { id: 'claude-cli', label: 'Claude Code (Agent SDK)', description: 'Uses your local Claude CLI auth — no API key needed' },
+  { id: 'codex-cli', label: 'Codex CLI (Codex SDK)', description: 'Uses your local Codex CLI auth — no API key needed' },
+];
+
+const API_PROVIDERS = [
+  { id: 'anthropic', label: 'Anthropic (Claude)' },
+  { id: 'openai', label: 'OpenAI (GPT)' },
+  { id: 'google', label: 'Google (Gemini)' },
+  { id: 'deepseek', label: 'DeepSeek' },
+  { id: 'mistral', label: 'Mistral AI' },
+];
+
+const TIER_COLORS = {
+  flagship: { bg: '#ffd43b20', color: '#fcc419' },
+  balanced: { bg: '#4c6ef520', color: '#5c7cfa' },
+  fast: { bg: '#40c05720', color: '#51cf66' },
+  reasoning: { bg: '#f0659520', color: '#f06595' },
+  code: { bg: '#20c99720', color: '#20c997' },
 };
 
 export default function AgentsPage() {
@@ -102,6 +152,14 @@ export default function AgentsPage() {
     executing: '#f06595',
   };
 
+  const statusLabels = {
+    offline: 'Offline',
+    idle: 'Online',
+    working: 'Working',
+    thinking: 'Thinking',
+    executing: 'Executing',
+  };
+
   return (
     <div className="flex h-screen">
       <Sidebar />
@@ -137,7 +195,7 @@ export default function AgentsPage() {
                       <div
                         className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full border-2"
                         style={{
-                          background: statusColors[agent.status] || statusColors.offline,
+                          background: statusColors[agent.status] || statusColors.idle,
                           borderColor: 'var(--bg-elevated)',
                         }}
                       />
@@ -145,10 +203,20 @@ export default function AgentsPage() {
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>{agent.name}</p>
                       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{agent.role}</p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <span className="badge badge-info text-[10px]">{agent.provider}</span>
-                        <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{agent.model}</span>
+                      <div className="flex items-center gap-2 mt-1 flex-wrap">
+                        <span className="badge text-[10px]" style={{
+                          background: agent.auth_type === 'cli' ? '#20c99720' : 'var(--accent-light)',
+                          color: agent.auth_type === 'cli' ? '#20c997' : 'var(--accent)',
+                        }}>
+                          {agent.auth_type === 'cli' ? '⌨ CLI' : '🔑 API'}
+                        </span>
+                        <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                          {agent.provider}{agent.model ? ` / ${agent.model}` : ''}
+                        </span>
                       </div>
+                      <p className="text-[10px] mt-1" style={{ color: statusColors[agent.status] || statusColors.idle }}>
+                        {statusLabels[agent.status] || 'Online'}
+                      </p>
                     </div>
                   </div>
 
@@ -187,25 +255,35 @@ export default function AgentsPage() {
 }
 
 function AgentFormModal({ agent, onClose, onSaved }) {
+  const [authType, setAuthType] = useState(agent?.auth_type || null);
   const [form, setForm] = useState({
     name: agent?.name || '',
     avatar: agent?.avatar || '🤖',
     role: agent?.role || 'General Developer',
+    auth_type: agent?.auth_type || 'api',
     provider: agent?.provider || 'anthropic',
-    model: agent?.model || 'claude-sonnet-4-20250514',
+    model: agent?.model || '',
     personality: agent?.personality || '',
   });
   const [saving, setSaving] = useState(false);
+
+  // If editing, skip the type selection
+  const showTypeSelector = !agent && !authType;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
+      const data = { ...form };
+      if (data.auth_type === 'cli') {
+        // CLI mode: model is optional
+        if (!data.model) data.model = '';
+      }
       if (agent) {
-        await api.updateAgent(agent.id, form);
+        await api.updateAgent(agent.id, data);
         toast.success('Agent updated');
       } else {
-        await api.createAgent(form);
+        await api.createAgent(data);
         toast.success('Agent hired!');
       }
       onSaved();
@@ -216,72 +294,189 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     }
   };
 
+  // Type selection screen
+  if (showTypeSelector) {
+    return (
+      <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
+        <div className="card p-6 w-full max-w-lg animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
+          <h3 className="font-semibold text-lg mb-2" style={{ color: 'var(--text-primary)' }}>
+            Hire New Agent
+          </h3>
+          <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
+            Choose how this agent will authenticate
+          </p>
+
+          <div className="grid grid-cols-2 gap-4">
+            {/* API Key option */}
+            <button
+              className="card p-5 text-left hover:scale-[1.02] transition-transform"
+              style={{ borderColor: 'var(--border)' }}
+              onClick={() => {
+                setAuthType('api');
+                setForm((f) => ({ ...f, auth_type: 'api', provider: 'anthropic', model: 'claude-sonnet-4-6' }));
+              }}
+            >
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
+                style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+                <Key size={20} />
+              </div>
+              <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>API Key</p>
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                Uses your API keys from Settings. Supports Anthropic, OpenAI, Google, DeepSeek, Mistral.
+              </p>
+            </button>
+
+            {/* CLI option */}
+            <button
+              className="card p-5 text-left hover:scale-[1.02] transition-transform"
+              style={{ borderColor: 'var(--border)' }}
+              onClick={() => {
+                setAuthType('cli');
+                setForm((f) => ({ ...f, auth_type: 'cli', provider: 'claude-cli', model: '' }));
+              }}
+            >
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
+                style={{ background: '#20c99720', color: '#20c997' }}>
+                <Terminal size={20} />
+              </div>
+              <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>CLI (No API Key)</p>
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                Uses Claude Code or Codex CLI. Requires the CLI to be installed and signed in locally.
+              </p>
+            </button>
+          </div>
+
+          <div className="flex justify-end mt-5">
+            <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const isCli = form.auth_type === 'cli';
+  const providerModels = !isCli ? (API_MODELS[form.provider] || []) : [];
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
       <div className="card p-6 w-full max-w-md max-h-[85vh] overflow-auto animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
-        <h3 className="font-semibold text-lg mb-4" style={{ color: 'var(--text-primary)' }}>
-          {agent ? 'Edit Agent' : 'Hire New Agent'}
-        </h3>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
+            {agent ? 'Edit Agent' : 'Hire New Agent'}
+          </h3>
+          <span className="badge text-[10px]" style={{
+            background: isCli ? '#20c99720' : 'var(--accent-light)',
+            color: isCli ? '#20c997' : 'var(--accent)',
+          }}>
+            {isCli ? '⌨ CLI Mode' : '🔑 API Mode'}
+          </span>
+        </div>
+
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Avatar */}
           <div>
             <label className="label">Avatar</label>
             <div className="flex flex-wrap gap-2">
               {AVATARS.map((a) => (
-                <button
-                  key={a}
-                  type="button"
+                <button key={a} type="button"
                   className="w-10 h-10 rounded-lg text-xl flex items-center justify-center transition-all"
                   style={{
                     background: form.avatar === a ? 'var(--accent-light)' : 'var(--bg-secondary)',
                     border: form.avatar === a ? '2px solid var(--accent)' : '1px solid var(--border)',
                   }}
                   onClick={() => setForm({ ...form, avatar: a })}
-                >
-                  {a}
-                </button>
+                >{a}</button>
               ))}
             </div>
           </div>
+
+          {/* Name */}
           <div>
             <label className="label">Name</label>
             <input className="input" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })}
               placeholder="e.g., Alex, Sam, CodeBot" required />
           </div>
+
+          {/* Role */}
           <div>
             <label className="label">Role</label>
             <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               {ROLE_PRESETS.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
-          <div className="grid grid-cols-2 gap-3">
+
+          {/* Provider & Model */}
+          {isCli ? (
             <div>
-              <label className="label">Provider</label>
-              <select className="input" value={form.provider}
-                onChange={(e) => {
-                  const p = e.target.value;
-                  setForm({ ...form, provider: p, model: MODELS[p]?.[0]?.id || '' });
-                }}>
-                <option value="anthropic">Anthropic (Claude)</option>
-                <option value="openai">OpenAI (GPT)</option>
-              </select>
+              <label className="label">CLI Provider</label>
+              <div className="space-y-2">
+                {CLI_PROVIDERS.map((cp) => (
+                  <label key={cp.id}
+                    className="flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                    style={{
+                      background: form.provider === cp.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                      border: form.provider === cp.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    }}
+                  >
+                    <input type="radio" name="cli-provider" className="mt-1"
+                      checked={form.provider === cp.id}
+                      onChange={() => setForm({ ...form, provider: cp.id, model: '' })} />
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{cp.label}</p>
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{cp.description}</p>
+                    </div>
+                  </label>
+                ))}
+              </div>
+              <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                Model is optional for CLI mode — it uses the default from your CLI config.
+              </p>
             </div>
-            <div>
-              <label className="label">Model</label>
-              <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
-                {(MODELS[form.provider] || []).map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-            </div>
-          </div>
+          ) : (
+            <>
+              <div>
+                <label className="label">Provider</label>
+                <select className="input" value={form.provider}
+                  onChange={(e) => {
+                    const p = e.target.value;
+                    const models = API_MODELS[p] || [];
+                    setForm({ ...form, provider: p, model: models[0]?.id || '' });
+                  }}>
+                  {API_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="label">Model</label>
+                <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
+                  {providerModels.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.label} ({m.tier})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Personality */}
           <div>
             <label className="label">Personality / Instructions</label>
             <textarea className="input" value={form.personality} onChange={(e) => setForm({ ...form, personality: e.target.value })}
               placeholder="e.g., Methodical, always writes tests, prefers functional patterns..." rows={3} />
           </div>
-          <div className="flex justify-end gap-2 pt-2">
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={saving}>
-              {saving ? 'Saving...' : agent ? 'Update' : 'Hire Agent'}
-            </button>
+
+          <div className="flex justify-between pt-2">
+            {!agent && (
+              <button type="button" className="btn btn-ghost text-xs" onClick={() => setAuthType(null)}>
+                ← Change type
+              </button>
+            )}
+            <div className="flex gap-2 ml-auto">
+              <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>
+                {saving ? 'Saving...' : agent ? 'Update' : 'Hire Agent'}
+              </button>
+            </div>
           </div>
         </form>
       </div>
@@ -336,13 +531,11 @@ function MemoryModal({ agent, onClose }) {
           <button onClick={onClose} className="p-1" style={{ color: 'var(--text-tertiary)' }}><X size={18} /></button>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b px-4" style={{ borderColor: 'var(--border)' }}>
           {TABS.map((tab) => {
             const Icon = TAB_ICONS[tab];
             return (
-              <button
-                key={tab}
+              <button key={tab}
                 className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors"
                 style={{
                   borderColor: activeTab === tab ? 'var(--accent)' : 'transparent',
@@ -356,17 +549,11 @@ function MemoryModal({ agent, onClose }) {
           })}
         </div>
 
-        {/* Editor */}
         <div className="flex-1 overflow-auto p-4">
           <textarea
             className="w-full h-full min-h-[300px] font-mono text-sm p-3 rounded-lg border resize-none"
-            style={{
-              background: 'var(--bg-secondary)',
-              borderColor: 'var(--border)',
-              color: 'var(--text-primary)',
-            }}
-            value={content}
-            onChange={(e) => setContent(e.target.value)}
+            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', color: 'var(--text-primary)' }}
+            value={content} onChange={(e) => setContent(e.target.value)}
           />
         </div>
 

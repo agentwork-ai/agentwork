@@ -30,20 +30,22 @@ router.get('/:id', (req, res) => {
 
 // Create (hire) agent
 router.post('/', (req, res) => {
-  const { name, avatar, role, provider, model, personality } = req.body;
+  const { name, avatar, role, auth_type, provider, model, personality } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   db.prepare(
-    'INSERT INTO agents (id, name, avatar, role, provider, model, personality) VALUES (?, ?, ?, ?, ?, ?, ?)'
+    'INSERT INTO agents (id, name, avatar, role, auth_type, provider, model, status, personality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
   ).run(
     id,
     name,
     avatar || '🤖',
     role || 'General Developer',
+    auth_type || 'api',
     provider || 'anthropic',
-    model || 'claude-sonnet-4-20250514',
+    model || '',
+    'idle',
     personality || ''
   );
 
@@ -110,17 +112,18 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Agent not found' });
 
-  const { name, avatar, role, provider, model, status, personality } = req.body;
+  const { name, avatar, role, auth_type, provider, model, status, personality } = req.body;
 
   db.prepare(
-    `UPDATE agents SET name = ?, avatar = ?, role = ?, provider = ?, model = ?,
+    `UPDATE agents SET name = ?, avatar = ?, role = ?, auth_type = ?, provider = ?, model = ?,
      status = ?, personality = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     name || existing.name,
     avatar || existing.avatar,
     role || existing.role,
+    auth_type || existing.auth_type,
     provider || existing.provider,
-    model || existing.model,
+    model !== undefined ? model : existing.model,
     status || existing.status,
     personality !== undefined ? personality : existing.personality,
     req.params.id

@@ -33,9 +33,10 @@ db.exec(`
     name TEXT NOT NULL,
     avatar TEXT DEFAULT '🤖',
     role TEXT DEFAULT 'General Developer',
+    auth_type TEXT DEFAULT 'api',
     provider TEXT DEFAULT 'anthropic',
     model TEXT DEFAULT 'claude-sonnet-4-20250514',
-    status TEXT DEFAULT 'offline',
+    status TEXT DEFAULT 'idle',
     personality TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP

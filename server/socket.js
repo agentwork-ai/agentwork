@@ -7,10 +7,10 @@ function initSocket(io) {
     // Send initial status
     socket.emit('system:status', getSystemStatus());
 
-    // Chat messages
+    // Chat messages - save and broadcast, then trigger agent response
     socket.on('chat:send', (data) => {
       const { agentId, content } = data;
-      const { uuidv4 } = require('uuid');
+      const { v4: uuidv4 } = require('uuid');
       const id = uuidv4();
 
       db.prepare(
@@ -28,23 +28,23 @@ function initSocket(io) {
 
       io.emit('chat:message', message);
 
-      // If agent is working on a task and blocked, this might unblock them
-      // The executor service will pick this up
-      io.emit('chat:user_reply', { agentId, content, taskId: data.taskId });
+      // If agent has an active task that's blocked, forward as user reply
+      if (data.taskId) {
+        io.emit('chat:user_reply', { agentId, content, taskId: data.taskId });
+      } else {
+        // Direct chat — trigger agent response via executor
+        io.emit('chat:direct', { agentId, content });
+      }
     });
 
     // Task status changes
     socket.on('task:move', (data) => {
       const { taskId, status } = data;
-      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
-        status,
-        taskId
-      );
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, taskId);
 
       const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
       io.emit('task:updated', task);
 
-      // If moved to "doing", trigger agent execution
       if (status === 'doing' && task && task.agent_id) {
         io.emit('task:execute', { taskId, agentId: task.agent_id });
       }
@@ -53,10 +53,7 @@ function initSocket(io) {
     // Agent status changes
     socket.on('agent:status', (data) => {
       const { agentId, status } = data;
-      db.prepare('UPDATE agents SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
-        status,
-        agentId
-      );
+      db.prepare('UPDATE agents SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, agentId);
       io.emit('agent:status_changed', { agentId, status });
     });
 
@@ -78,7 +75,6 @@ function getSystemStatus() {
   const activeTasks = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'doing'").get().count;
   const totalTasks = db.prepare('SELECT COUNT(*) as count FROM tasks').get().count;
 
-  // Get today's budget usage
   const today = new Date().toISOString().split('T')[0];
   const dailyUsage = db.prepare(
     "SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE date(created_at) = ?"

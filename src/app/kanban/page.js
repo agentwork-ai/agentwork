@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
-  Plus, X, GripVertical, Clock, User, FolderOpen,
-  AlertTriangle, CheckCircle2, ChevronDown, Play, Eye,
+  Plus, X, Clock, User, FolderOpen, Edit2, Trash2,
+  AlertTriangle, CheckCircle2, Play, Eye, Save,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -41,19 +41,24 @@ export default function KanbanPage() {
   useEffect(() => {
     if (!socket) return;
     const onTaskUpdated = (task) => {
-      setTasks((prev) => prev.map((t) => (t.id === task.id ? { ...task, execution_logs: task.execution_logs || [] } : t)));
-      if (viewTask?.id === task.id) setViewTask({ ...task, execution_logs: task.execution_logs || [] });
+      const parsed = { ...task, execution_logs: task.execution_logs || [], attachments: task.attachments || [] };
+      setTasks((prev) => prev.map((t) => (t.id === parsed.id ? parsed : t)));
+      setViewTask((prev) => prev?.id === parsed.id ? parsed : prev);
     };
-    const onTaskCreated = (task) => setTasks((prev) => [task, ...prev]);
-    const onTaskDeleted = ({ id }) => setTasks((prev) => prev.filter((t) => t.id !== id));
+    const onTaskCreated = (task) => setTasks((prev) => [{ ...task, execution_logs: task.execution_logs || [] }, ...prev]);
+    const onTaskDeleted = ({ id }) => {
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      setViewTask((prev) => prev?.id === id ? null : prev);
+    };
     const onTaskLog = ({ taskId, log }) => {
       setTasks((prev) => prev.map((t) => {
         if (t.id !== taskId) return t;
         return { ...t, execution_logs: [...(t.execution_logs || []), log] };
       }));
-      if (viewTask?.id === taskId) {
-        setViewTask((prev) => prev ? { ...prev, execution_logs: [...(prev.execution_logs || []), log] } : prev);
-      }
+      setViewTask((prev) => {
+        if (!prev || prev.id !== taskId) return prev;
+        return { ...prev, execution_logs: [...(prev.execution_logs || []), log] };
+      });
     };
 
     socket.on('task:updated', onTaskUpdated);
@@ -66,7 +71,7 @@ export default function KanbanPage() {
       socket.off('task:deleted', onTaskDeleted);
       socket.off('task:log', onTaskLog);
     };
-  }, [socket, viewTask]);
+  }, [socket]);
 
   const moveTask = async (taskId, newStatus) => {
     try {
@@ -136,9 +141,7 @@ export default function KanbanPage() {
                         key={task.id}
                         task={task}
                         onDragStart={(e) => handleDragStart(e, task)}
-                        onView={() => setViewTask(task)}
-                        onEdit={() => { setEditTask(task); setShowForm(true); }}
-                        onDelete={() => deleteTask(task.id)}
+                        onClick={() => setViewTask(task)}
                       />
                     ))}
                   </div>
@@ -161,26 +164,46 @@ export default function KanbanPage() {
       )}
 
       {viewTask && (
-        <TaskDetailModal task={viewTask} onClose={() => setViewTask(null)} />
+        <TaskDetailModal
+          task={viewTask}
+          agents={agents}
+          projects={projects}
+          onClose={() => setViewTask(null)}
+          onUpdate={(updated) => {
+            setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
+            setViewTask(updated);
+          }}
+          onDelete={() => { deleteTask(viewTask.id); setViewTask(null); }}
+        />
       )}
     </div>
   );
 }
 
-function TaskCard({ task, onDragStart, onView, onEdit, onDelete }) {
+function TaskCard({ task, onDragStart, onClick }) {
   const priorityColors = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
+  const isDoing = task.status === 'doing';
 
   return (
     <div
       draggable
       onDragStart={onDragStart}
-      className="card p-3 cursor-grab active:cursor-grabbing animate-fade-in group"
+      onClick={onClick}
+      className={`card p-3 cursor-pointer active:cursor-grabbing animate-fade-in group transition-all hover:scale-[1.01] ${isDoing ? 'doing-card' : ''}`}
+      style={{
+        borderLeft: isDoing ? '3px solid #fab005' : undefined,
+      }}
     >
+      {/* Pulsing indicator for doing status */}
+      {isDoing && (
+        <div className="flex items-center gap-1.5 mb-2">
+          <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse-slow" />
+          <span className="text-[10px] font-semibold" style={{ color: '#fab005' }}>Working...</span>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
-        <div className="hidden group-hover:flex gap-1 shrink-0">
-          <button onClick={onView} className="p-1 rounded hover:opacity-70"><Eye size={13} style={{ color: 'var(--text-tertiary)' }} /></button>
-        </div>
       </div>
       {task.description && (
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
@@ -194,51 +217,261 @@ function TaskCard({ task, onDragStart, onView, onEdit, onDelete }) {
           </span>
         )}
       </div>
+
+      {/* Mini log preview for doing tasks */}
+      {isDoing && task.execution_logs?.length > 0 && (
+        <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border-light)' }}>
+          <p className="text-[10px] font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>
+            {task.execution_logs[task.execution_logs.length - 1]?.content?.slice(0, 60)}...
+          </p>
+        </div>
+      )}
     </div>
   );
 }
 
-function TaskDetailModal({ task, onClose }) {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="card w-full max-w-2xl max-h-[80vh] flex flex-col animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
-        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
-          <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{task.title}</h3>
-          <button onClick={onClose} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}><X size={18} /></button>
-        </div>
-        <div className="flex-1 overflow-auto p-4 space-y-4">
-          {task.description && (
-            <div>
-              <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Description</p>
-              <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>{task.description}</p>
-            </div>
-          )}
-          <div className="flex gap-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            <span>Agent: {task.agent_name || 'Unassigned'}</span>
-            <span>Project: {task.project_name || 'None'}</span>
-            <span>Priority: {task.priority}</span>
-          </div>
+function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }) {
+  const logsEndRef = useRef(null);
+  const isEditable = task.status === 'backlog' || task.status === 'todo';
+  const isDoing = task.status === 'doing';
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({
+    title: task.title,
+    description: task.description,
+    priority: task.priority,
+    agent_id: task.agent_id || '',
+    project_id: task.project_id || '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
 
-          <div>
-            <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Execution Logs</p>
-            <div className="space-y-1 max-h-96 overflow-auto rounded-lg p-3" style={{ background: 'var(--bg-secondary)' }}>
+  // Auto-scroll logs
+  useEffect(() => {
+    if (activeTab === 'logs') {
+      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [task.execution_logs?.length, activeTab]);
+
+  // Update form when task changes
+  useEffect(() => {
+    setForm({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      agent_id: task.agent_id || '',
+      project_id: task.project_id || '',
+    });
+  }, [task]);
+
+  const saveChanges = async () => {
+    setSaving(true);
+    try {
+      const data = { ...form, agent_id: form.agent_id || null, project_id: form.project_id || null };
+      const updated = await api.updateTask(task.id, data);
+      onUpdate(updated);
+      setEditing(false);
+      toast.success('Task updated');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const statusColor = COLUMNS.find((c) => c.id === task.status)?.color || '#868e96';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="card w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
+        {/* Header */}
+        <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-3">
+            {isDoing && <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse-slow" />}
+            <span className="badge" style={{ background: `${statusColor}20`, color: statusColor }}>
+              {COLUMNS.find((c) => c.id === task.status)?.label}
+            </span>
+            <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{task.title}</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            {isEditable && !editing && (
+              <button className="btn btn-ghost text-xs" onClick={() => setEditing(true)}>
+                <Edit2 size={13} /> Edit
+              </button>
+            )}
+            <button className="btn btn-ghost text-xs" style={{ color: 'var(--danger)' }} onClick={onDelete}>
+              <Trash2 size={13} />
+            </button>
+            <button onClick={onClose} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}>
+              <X size={18} />
+            </button>
+          </div>
+        </div>
+
+        {/* Tabs */}
+        <div className="flex border-b px-4" style={{ borderColor: 'var(--border)' }}>
+          {['details', 'logs'].map((tab) => (
+            <button key={tab}
+              className="px-4 py-2.5 text-xs font-medium border-b-2 transition-colors capitalize"
+              style={{
+                borderColor: activeTab === tab ? 'var(--accent)' : 'transparent',
+                color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)',
+              }}
+              onClick={() => setActiveTab(tab)}
+            >
+              {tab === 'logs' && isDoing && (
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse-slow mr-1.5" />
+              )}
+              {tab === 'logs' ? `Execution Logs (${task.execution_logs?.length || 0})` : 'Details'}
+            </button>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div className="flex-1 overflow-auto p-4">
+          {activeTab === 'details' ? (
+            editing ? (
+              <div className="space-y-4">
+                <div>
+                  <label className="label">Title</label>
+                  <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
+                </div>
+                <div>
+                  <label className="label">Description</label>
+                  <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={4} />
+                </div>
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="label">Priority</label>
+                    <select className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                      <option value="low">Low</option>
+                      <option value="medium">Medium</option>
+                      <option value="high">High</option>
+                      <option value="critical">Critical</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Agent</label>
+                    <select className="input" value={form.agent_id} onChange={(e) => setForm({ ...form, agent_id: e.target.value })}>
+                      <option value="">Unassigned</option>
+                      {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Project</label>
+                    <select className="input" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
+                      <option value="">None</option>
+                      {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <button className="btn btn-secondary text-xs" onClick={() => setEditing(false)}>Cancel</button>
+                  <button className="btn btn-primary text-xs" onClick={saveChanges} disabled={saving}>
+                    <Save size={13} /> {saving ? 'Saving...' : 'Save'}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {task.description ? (
+                  <div>
+                    <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Description</p>
+                    <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{task.description}</p>
+                  </div>
+                ) : (
+                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No description.</p>
+                )}
+
+                <div className="grid grid-cols-3 gap-4 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase mb-0.5" style={{ color: 'var(--text-tertiary)' }}>Agent</p>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                      {task.agent_avatar} {task.agent_name || 'Unassigned'}
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase mb-0.5" style={{ color: 'var(--text-tertiary)' }}>Project</p>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{task.project_name || 'None'}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] font-semibold uppercase mb-0.5" style={{ color: 'var(--text-tertiary)' }}>Priority</p>
+                    <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{task.priority}</p>
+                  </div>
+                </div>
+
+                <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Created: {new Date(task.created_at).toLocaleString()}
+                  {task.completed_at && <> &middot; Completed: {new Date(task.completed_at).toLocaleString()}</>}
+                </div>
+              </div>
+            )
+          ) : (
+            /* Execution Logs Tab */
+            <div className="space-y-0.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
               {(!task.execution_logs || task.execution_logs.length === 0) ? (
-                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>No logs yet.</p>
+                <div className="text-center py-12">
+                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                    {isDoing ? 'Waiting for logs...' : 'No execution logs yet.'}
+                  </p>
+                  {isDoing && <div className="mt-3 flex justify-center gap-1">
+                    {[0,1,2].map((i) => (
+                      <div key={i} className="w-2 h-2 rounded-full animate-pulse-slow"
+                        style={{ background: 'var(--accent)', animationDelay: `${i * 0.3}s` }} />
+                    ))}
+                  </div>}
+                </div>
               ) : (
                 task.execution_logs.map((log, i) => (
-                  <div key={i} className="text-xs font-mono py-1 border-b" style={{ borderColor: 'var(--border-light)' }}>
-                    <span style={{ color: 'var(--text-tertiary)' }}>[{new Date(log.timestamp).toLocaleTimeString()}]</span>
-                    <span className="ml-2" style={{
-                      color: log.type === 'error' ? 'var(--danger)' : log.type === 'success' ? 'var(--success)' :
-                        log.type === 'command' ? 'var(--accent)' : log.type === 'warning' ? 'var(--warning)' : 'var(--text-secondary)',
+                  <div key={i} className="py-1.5 px-2 rounded animate-fade-in flex gap-2"
+                    style={{
+                      background: i % 2 === 0 ? 'transparent' : 'var(--bg-secondary)',
+                    }}>
+                    <span className="shrink-0 w-16 text-right" style={{ color: 'var(--text-tertiary)' }}>
+                      {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                    </span>
+                    <span className="shrink-0 w-3 text-center" style={{
+                      color: log.type === 'error' ? 'var(--danger)' :
+                        log.type === 'success' ? 'var(--success)' :
+                        log.type === 'command' ? '#20c997' :
+                        log.type === 'output' ? 'var(--text-tertiary)' :
+                        log.type === 'warning' ? 'var(--warning)' :
+                        log.type === 'thinking' ? 'var(--accent)' :
+                        'var(--text-secondary)',
+                    }}>
+                      {log.type === 'error' ? '✗' : log.type === 'success' ? '✓' :
+                       log.type === 'command' ? '$' : log.type === 'warning' ? '!' :
+                       log.type === 'thinking' ? '◆' : '·'}
+                    </span>
+                    <span className="flex-1 whitespace-pre-wrap break-all" style={{
+                      color: log.type === 'error' ? 'var(--danger)' :
+                        log.type === 'success' ? 'var(--success)' :
+                        log.type === 'command' ? '#20c997' :
+                        log.type === 'warning' ? 'var(--warning)' :
+                        log.type === 'thinking' ? 'var(--accent)' :
+                        'var(--text-secondary)',
                     }}>
                       {log.content}
                     </span>
                   </div>
                 ))
               )}
+              <div ref={logsEndRef} />
+
+              {/* Live indicator */}
+              {isDoing && task.execution_logs?.length > 0 && (
+                <div className="flex items-center gap-2 py-2 px-2" style={{ color: 'var(--text-tertiary)' }}>
+                  <div className="flex gap-0.5">
+                    {[0,1,2].map((i) => (
+                      <div key={i} className="w-1.5 h-1.5 rounded-full animate-pulse-slow"
+                        style={{ background: '#fab005', animationDelay: `${i * 0.2}s` }} />
+                    ))}
+                  </div>
+                  <span className="text-[10px]">Agent is working...</span>
+                </div>
+              )}
             </div>
-          </div>
+          )}
         </div>
       </div>
     </div>
