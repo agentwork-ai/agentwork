@@ -27,24 +27,34 @@ function initExecutor(socketIo) {
         exec.waitingForUser = false;
       }
     });
-
-    // Direct chat with agent (non-task)
-    socket.on('chat:direct', async (data) => {
-      const { agentId, content } = data;
-      const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
-      if (!agent) return;
-
-      try {
-        if (agent.auth_type === 'cli') {
-          await handleCliChat(agent, content);
-        } else {
-          await handleApiChat(agent, content);
-        }
-      } catch (err) {
-        sendMessage(agentId, 'agent', `Error: ${err.message}`);
-      }
-    });
   });
+}
+
+/**
+ * Handle a direct chat message to an agent (called from socket handler).
+ */
+async function handleDirectChat(agentId, content) {
+  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
+  if (!agent) {
+    sendMessage(agentId, 'agent', 'Error: Agent not found.');
+    return;
+  }
+
+  console.log(`[Chat] Direct message to ${agent.name} (${agent.auth_type}/${agent.provider}): "${content.slice(0, 80)}"`);
+
+  try {
+    if (agent.auth_type === 'cli') {
+      await handleCliChat(agent, content);
+    } else {
+      await handleApiChat(agent, content);
+    }
+  } catch (err) {
+    console.error(`[Chat] Unhandled error for agent ${agent.name}:`, err);
+    sendMessage(agentId, 'agent', `Error: ${err.message}`);
+    // Reset status
+    db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+    io.emit('agent:status_changed', { agentId, status: 'idle' });
+  }
 }
 
 // ─── Direct Chat Handlers ───
@@ -52,13 +62,18 @@ function initExecutor(socketIo) {
 async function handleCliChat(agent, userMessage) {
   const agentId = agent.id;
 
-  // Update status to working
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
   try {
     if (agent.provider === 'anthropic' || agent.provider === 'claude-cli') {
-      const { chatWithClaudeAgent } = require('./ai');
+      let chatWithClaudeAgent;
+      try {
+        ({ chatWithClaudeAgent } = require('./ai'));
+      } catch (importErr) {
+        throw new Error(`Failed to load Claude Agent SDK: ${importErr.message}. Is @anthropic-ai/claude-agent-sdk installed? Is the Claude CLI signed in?`);
+      }
+
       const session = agentSessions.get(agentId) || {};
       const result = await chatWithClaudeAgent(userMessage, session.sessionId, process.cwd());
 
@@ -67,14 +82,20 @@ async function handleCliChat(agent, userMessage) {
       if (result.content) {
         sendMessage(agentId, 'agent', result.content);
       } else {
-        sendMessage(agentId, 'agent', '(No response from agent)');
+        sendMessage(agentId, 'agent', '(Agent returned an empty response)');
       }
     } else if (agent.provider === 'openai' || agent.provider === 'codex-cli') {
-      const { chatWithCodexAgent } = require('./ai');
+      let Codex, chatWithCodexAgent;
+      try {
+        ({ chatWithCodexAgent } = require('./ai'));
+        ({ Codex } = await import('@openai/codex-sdk'));
+      } catch (importErr) {
+        throw new Error(`Failed to load Codex SDK: ${importErr.message}. Is @openai/codex-sdk installed? Is the Codex CLI signed in?`);
+      }
+
       let session = agentSessions.get(agentId);
 
       if (!session?.thread) {
-        const { Codex } = await import('@openai/codex-sdk');
         const client = new Codex();
         const thread = client.startThread({
           workingDirectory: process.cwd(),
@@ -89,11 +110,14 @@ async function handleCliChat(agent, userMessage) {
       if (result.content) {
         sendMessage(agentId, 'agent', result.content);
       } else {
-        sendMessage(agentId, 'agent', '(No response from agent)');
+        sendMessage(agentId, 'agent', '(Agent returned an empty response)');
       }
+    } else {
+      throw new Error(`Unknown CLI provider: ${agent.provider}`);
     }
   } catch (err) {
-    sendMessage(agentId, 'agent', `Sorry, I encountered an error: ${err.message}`);
+    console.error(`[Chat CLI] Error for agent ${agent.name}:`, err);
+    sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`);
   } finally {
     db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'idle' });
@@ -107,6 +131,16 @@ async function handleApiChat(agent, userMessage) {
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
   try {
+    // Check API key first
+    const apiKey = agent.provider === 'anthropic'
+      ? db.prepare("SELECT value FROM settings WHERE key = 'anthropic_api_key'").get()?.value
+      : db.prepare("SELECT value FROM settings WHERE key = 'openai_api_key'").get()?.value;
+    const customBaseUrl = db.prepare("SELECT value FROM settings WHERE key = 'custom_base_url'").get()?.value;
+
+    if (!apiKey && !customBaseUrl) {
+      throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${agent.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key.`);
+    }
+
     // Load the last 20 messages for context
     const recentMsgs = db.prepare(
       'SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20'
@@ -126,12 +160,12 @@ async function handleApiChat(agent, userMessage) {
 
     const response = await createCompletion(agent.provider, agent.model, messages);
 
-    // Log budget
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
 
     sendMessage(agentId, 'agent', response.content);
   } catch (err) {
-    sendMessage(agentId, 'agent', `Sorry, I encountered an error: ${err.message}`);
+    console.error(`[Chat API] Error for agent ${agent.name}:`, err);
+    sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`);
   } finally {
     db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'idle' });
@@ -619,4 +653,4 @@ function getActiveExecutions() {
   return Array.from(activeExecutions.keys());
 }
 
-module.exports = { initExecutor, executeTask, getActiveExecutions };
+module.exports = { initExecutor, executeTask, getActiveExecutions, handleDirectChat };

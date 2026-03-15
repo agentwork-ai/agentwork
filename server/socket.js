@@ -1,5 +1,14 @@
 const { db } = require('./db');
 
+// Lazy-loaded to avoid circular dependency at require time
+let _handleDirectChat = null;
+function getDirectChatHandler() {
+  if (!_handleDirectChat) {
+    _handleDirectChat = require('./services/executor').handleDirectChat;
+  }
+  return _handleDirectChat;
+}
+
 function initSocket(io) {
   io.on('connection', (socket) => {
     console.log(`[Socket] Client connected: ${socket.id}`);
@@ -32,8 +41,15 @@ function initSocket(io) {
       if (data.taskId) {
         io.emit('chat:user_reply', { agentId, content, taskId: data.taskId });
       } else {
-        // Direct chat — trigger agent response via executor
-        io.emit('chat:direct', { agentId, content });
+        // Direct chat — call executor directly (not via socket event)
+        const handler = getDirectChatHandler();
+        if (handler) {
+          handler(agentId, content).catch((err) => {
+            console.error(`[Socket] Direct chat error:`, err);
+          });
+        } else {
+          console.error('[Socket] handleDirectChat not available yet');
+        }
       }
     });
 
