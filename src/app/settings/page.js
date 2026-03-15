@@ -90,6 +90,36 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
+                  <label className="label">DeepSeek API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.deepseek ? 'text' : 'password'}
+                      value={settings.deepseek_api_key || ''}
+                      onChange={(e) => updateField('deepseek_api_key', e.target.value)}
+                      placeholder="sk-..."
+                    />
+                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, deepseek: !p.deepseek }))}>
+                      {showKeys.deepseek ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
+                  <label className="label">Mistral API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.mistral ? 'text' : 'password'}
+                      value={settings.mistral_api_key || ''}
+                      onChange={(e) => updateField('mistral_api_key', e.target.value)}
+                      placeholder="..."
+                    />
+                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, mistral: !p.mistral }))}>
+                      {showKeys.mistral ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
                   <label className="label">OpenRouter API Key</label>
                   <div className="flex gap-2">
                     <input

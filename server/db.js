@@ -92,6 +92,8 @@ const defaultSettings = {
   anthropic_api_key: '',
   openai_api_key: '',
   openrouter_api_key: '',
+  deepseek_api_key: '',
+  mistral_api_key: '',
   custom_base_url: '',
   daily_budget_usd: '10',
   monthly_budget_usd: '100',

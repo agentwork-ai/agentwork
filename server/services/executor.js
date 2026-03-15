@@ -133,7 +133,7 @@ async function handleApiChat(agent, userMessage) {
   try {
     // Check API key first
     let apiKey;
-    const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key' };
+    const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key', deepseek: 'deepseek_api_key', mistral: 'mistral_api_key', google: 'openai_api_key' };
     const keyName = keyMap[agent.provider] || 'openai_api_key';
     apiKey = db.prepare("SELECT value FROM settings WHERE key = ?").get(keyName)?.value;
     const customBaseUrl = db.prepare("SELECT value FROM settings WHERE key = 'custom_base_url'").get()?.value;
@@ -221,7 +221,13 @@ async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) 
   const memory = readFile(path.join(agentDir, 'MEMORY.md'));
   const soul = readFile(path.join(agentDir, 'SOUL.md'));
 
-  // Build a comprehensive prompt for the CLI agent
+  const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
+  const sdkName = isCodex ? 'Codex' : 'Claude';
+
+  addLog(taskId, 'info', `Using ${sdkName} Agent SDK (CLI mode)`);
+  addLog(taskId, 'info', `Provider: ${agent.provider} | Auth: ${agent.auth_type} | Working dir: ${workDir}`);
+
+  // Build prompt
   const prompt = `You are ${agent.name}, a ${agent.role}.
 
 ${soul ? `## Your Configuration\n${soul}\n` : ''}
@@ -235,11 +241,12 @@ Working directory: ${workDir}
 
 Please complete this task autonomously. Analyze the codebase, plan your approach, make the necessary changes, and verify they work.`;
 
+  addLog(taskId, 'info', `Prompt length: ${prompt.length} chars`);
+
   const abortController = new AbortController();
   execState.abortController = abortController;
 
-  addLog(taskId, 'info', `Using ${agent.provider === 'codex-cli' || agent.provider === 'openai' ? 'Codex' : 'Claude'} Agent SDK (CLI mode)`);
-
+  // Event handler — logs everything
   const onEvent = (event) => {
     if (execState.aborted) return;
 
@@ -255,7 +262,7 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
         addLog(taskId, 'output', event.content);
         break;
       case 'file_change':
-        addLog(taskId, 'info', event.content);
+        addLog(taskId, 'info', `File: ${event.content}`);
         break;
       case 'reading':
         io.emit('agent:status_changed', { agentId, status: 'thinking' });
@@ -266,7 +273,7 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
         addLog(taskId, 'thinking', event.content.slice(0, 500));
         break;
       case 'tool':
-        addLog(taskId, 'info', event.content);
+        addLog(taskId, 'info', `Tool: ${event.content}`);
         break;
       case 'error':
         addLog(taskId, 'error', event.content);
@@ -275,36 +282,147 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
         addLog(taskId, 'success', 'Agent finished execution.');
         break;
       case 'session':
-        // Store session for future resume
+        addLog(taskId, 'info', `Session ID: ${event.sessionId}`);
         const session = agentSessions.get(agentId) || {};
         session.sessionId = event.sessionId;
         agentSessions.set(agentId, session);
+        break;
+      default:
+        addLog(taskId, 'info', `[${event.type}] ${event.content || ''}`);
         break;
     }
   };
 
   try {
-    if (agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai')) {
-      await runCodexAgent(prompt, workDir, onEvent, abortController);
+    // Step 1: Try to import the SDK
+    addLog(taskId, 'info', `Loading ${sdkName} SDK...`);
+
+    if (isCodex) {
+      let Codex;
+      try {
+        ({ Codex } = await import('@openai/codex-sdk'));
+        addLog(taskId, 'info', 'Codex SDK loaded successfully');
+      } catch (importErr) {
+        addLog(taskId, 'error', `Failed to load Codex SDK: ${importErr.message}`);
+        addLog(taskId, 'error', 'Make sure @openai/codex-sdk is installed and Codex CLI is signed in');
+        throw importErr;
+      }
+
+      // Step 2: Create client and thread
+      addLog(taskId, 'info', 'Creating Codex client and thread...');
+      let client, thread;
+      try {
+        client = new Codex();
+        thread = client.startThread({
+          workingDirectory: workDir,
+          approvalPolicy: 'never',
+          sandboxMode: 'danger-full-access',
+        });
+        addLog(taskId, 'info', 'Codex thread created');
+      } catch (initErr) {
+        addLog(taskId, 'error', `Failed to create Codex thread: ${initErr.message}`);
+        addLog(taskId, 'error', `Stack: ${initErr.stack?.split('\n').slice(0, 3).join(' | ')}`);
+        throw initErr;
+      }
+
+      // Step 3: Run the task
+      addLog(taskId, 'info', 'Starting Codex streamed run...');
+      let streamedTurn;
+      try {
+        streamedTurn = await thread.runStreamed(prompt, {
+          signal: abortController.signal,
+        });
+        addLog(taskId, 'info', 'Codex stream started, processing events...');
+      } catch (runErr) {
+        addLog(taskId, 'error', `Failed to start Codex run: ${runErr.message}`);
+        addLog(taskId, 'error', `Stack: ${runErr.stack?.split('\n').slice(0, 3).join(' | ')}`);
+        throw runErr;
+      }
+
+      // Step 4: Process events
+      let eventCount = 0;
+      try {
+        for await (const event of streamedTurn.events) {
+          eventCount++;
+          // Log raw event type for debugging
+          if (eventCount <= 5 || eventCount % 10 === 0) {
+            addLog(taskId, 'info', `[Event #${eventCount}] type=${event.type}${event.item ? ` item.type=${event.item.type}` : ''}`);
+          }
+
+          if (event.type === 'item.completed') {
+            const item = event.item;
+            if (item.type === 'agent_message') {
+              onEvent({ type: 'text', content: item.text || '' });
+            } else if (item.type === 'command_execution') {
+              onEvent({ type: 'command', content: `$ ${item.command || ''}` });
+              if (item.output) onEvent({ type: 'output', content: (item.output || '').slice(0, 2000) });
+              if (item.exit_code !== 0) {
+                onEvent({ type: 'error', content: `Command exited with code ${item.exit_code}` });
+              }
+            } else if (item.type === 'file_change') {
+              for (const c of (item.changes || [])) {
+                onEvent({ type: 'file_change', content: `${c.kind || 'update'}: ${c.path || ''}` });
+              }
+            } else if (item.type === 'reasoning') {
+              onEvent({ type: 'thinking', content: item.text || '' });
+            } else if (item.type === 'error') {
+              onEvent({ type: 'error', content: item.text || item.message || 'Unknown item error' });
+            } else {
+              addLog(taskId, 'info', `[Codex item] type=${item.type} ${JSON.stringify(item).slice(0, 300)}`);
+            }
+          } else if (event.type === 'item.started' || event.type === 'item.updated') {
+            // Intermediate events, log sparingly
+          } else if (event.type === 'turn.completed') {
+            const usage = event.usage || {};
+            addLog(taskId, 'info', `Turn completed. Tokens: in=${usage.input_tokens || 0} out=${usage.output_tokens || 0}`);
+            onEvent({ type: 'done', content: 'Agent finished.' });
+          } else if (event.type === 'turn.failed') {
+            const errMsg = event.error?.message || JSON.stringify(event.error) || 'Unknown turn failure';
+            addLog(taskId, 'error', `Turn failed: ${errMsg}`);
+            onEvent({ type: 'error', content: errMsg });
+          } else if (event.type === 'thread.started') {
+            addLog(taskId, 'info', `Thread started: ${event.thread_id || ''}`);
+          } else if (event.type === 'turn.started') {
+            addLog(taskId, 'info', 'Turn started');
+          } else {
+            addLog(taskId, 'info', `[Codex event] ${event.type}: ${JSON.stringify(event).slice(0, 200)}`);
+          }
+        }
+        addLog(taskId, 'info', `Stream ended. Total events: ${eventCount}`);
+      } catch (streamErr) {
+        addLog(taskId, 'error', `Error during Codex stream: ${streamErr.message}`);
+        addLog(taskId, 'error', `Events processed before error: ${eventCount}`);
+        throw streamErr;
+      }
+
     } else {
-      const result = await runClaudeAgent(prompt, workDir, onEvent, abortController);
-      if (result.costUsd) {
-        logBudget(agentId, agent.provider, agent.model || 'claude-cli', 0, 0, result.costUsd);
+      // Claude Agent SDK
+      try {
+        addLog(taskId, 'info', 'Loading Claude Agent SDK...');
+        const result = await runClaudeAgent(prompt, workDir, onEvent, abortController);
+        addLog(taskId, 'info', `Claude agent finished. Cost: $${(result.costUsd || 0).toFixed(4)}`);
+        if (result.costUsd) {
+          logBudget(agentId, agent.provider, agent.model || 'claude-cli', 0, 0, result.costUsd);
+        }
+      } catch (claudeErr) {
+        addLog(taskId, 'error', `Claude Agent SDK error: ${claudeErr.message}`);
+        addLog(taskId, 'error', `Stack: ${claudeErr.stack?.split('\n').slice(0, 3).join(' | ')}`);
+        throw claudeErr;
       }
     }
 
-    // Task completed via CLI
+    // Task completed
     moveTask(taskId, 'done');
     sendMessage(agentId, 'agent', `I've completed the task: ${task.title}`, taskId);
-
-    // Update memory
     updateMemory(agentDir, agent.name, task.title, 'Completed via CLI agent.');
+
   } catch (err) {
     if (err.name === 'AbortError') {
       addLog(taskId, 'warning', 'Task execution was aborted.');
       moveTask(taskId, 'blocked');
     } else {
-      addLog(taskId, 'error', `CLI agent error: ${err.message}`);
+      addLog(taskId, 'error', `${sdkName} agent failed: ${err.message}`);
+      addLog(taskId, 'error', `Full error: ${err.stack?.split('\n').slice(0, 5).join(' | ')}`);
       moveTask(taskId, 'blocked');
       sendMessage(agentId, 'agent', `I encountered an error: ${err.message}`, taskId);
     }

@@ -10,23 +10,29 @@ async function createCompletion(provider, model, messages, options = {}) {
   let apiKey;
   let customBaseUrl = getSetting('custom_base_url');
 
-  if (provider === 'anthropic') {
-    apiKey = getSetting('anthropic_api_key');
-  } else if (provider === 'openrouter') {
-    apiKey = getSetting('openrouter_api_key');
-  } else {
-    apiKey = getSetting('openai_api_key');
-  }
+  const keyMap = {
+    anthropic: 'anthropic_api_key',
+    openai: 'openai_api_key',
+    openrouter: 'openrouter_api_key',
+    deepseek: 'deepseek_api_key',
+    mistral: 'mistral_api_key',
+    google: 'openai_api_key',
+  };
+  apiKey = getSetting(keyMap[provider] || 'openai_api_key');
 
   if (!apiKey && !customBaseUrl) {
-    const label = provider === 'anthropic' ? 'Anthropic' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
-    throw new Error(`No API key configured for "${provider}". Go to Settings → API Providers to add your ${label} API key.`);
+    const labels = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter', deepseek: 'DeepSeek', mistral: 'Mistral', google: 'Google' };
+    throw new Error(`No API key configured for "${provider}". Go to Settings → API Providers to add your ${labels[provider] || provider} API key.`);
   }
 
   if (provider === 'anthropic') {
     return callAnthropic(apiKey, model, messages, options, customBaseUrl);
   } else if (provider === 'openrouter') {
     return callOpenRouter(apiKey, model, messages, options);
+  } else if (provider === 'deepseek') {
+    return callOpenAI(apiKey, model, messages, options, 'https://api.deepseek.com');
+  } else if (provider === 'mistral') {
+    return callOpenAI(apiKey, model, messages, options, 'https://api.mistral.ai/v1');
   } else {
     return callOpenAI(apiKey, model, messages, options, customBaseUrl);
   }
