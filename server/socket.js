@@ -1,0 +1,108 @@
+const { db } = require('./db');
+
+function initSocket(io) {
+  io.on('connection', (socket) => {
+    console.log(`[Socket] Client connected: ${socket.id}`);
+
+    // Send initial status
+    socket.emit('system:status', getSystemStatus());
+
+    // Chat messages
+    socket.on('chat:send', (data) => {
+      const { agentId, content } = data;
+      const { uuidv4 } = require('uuid');
+      const id = uuidv4();
+
+      db.prepare(
+        'INSERT INTO messages (id, agent_id, sender, content, task_id) VALUES (?, ?, ?, ?, ?)'
+      ).run(id, agentId, 'user', content, data.taskId || null);
+
+      const message = {
+        id,
+        agent_id: agentId,
+        sender: 'user',
+        content,
+        task_id: data.taskId || null,
+        created_at: new Date().toISOString(),
+      };
+
+      io.emit('chat:message', message);
+
+      // If agent is working on a task and blocked, this might unblock them
+      // The executor service will pick this up
+      io.emit('chat:user_reply', { agentId, content, taskId: data.taskId });
+    });
+
+    // Task status changes
+    socket.on('task:move', (data) => {
+      const { taskId, status } = data;
+      db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+        status,
+        taskId
+      );
+
+      const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+      io.emit('task:updated', task);
+
+      // If moved to "doing", trigger agent execution
+      if (status === 'doing' && task && task.agent_id) {
+        io.emit('task:execute', { taskId, agentId: task.agent_id });
+      }
+    });
+
+    // Agent status changes
+    socket.on('agent:status', (data) => {
+      const { agentId, status } = data;
+      db.prepare('UPDATE agents SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(
+        status,
+        agentId
+      );
+      io.emit('agent:status_changed', { agentId, status });
+    });
+
+    // Request system status
+    socket.on('system:get_status', () => {
+      socket.emit('system:status', getSystemStatus());
+    });
+
+    socket.on('disconnect', () => {
+      console.log(`[Socket] Client disconnected: ${socket.id}`);
+    });
+  });
+
+  return io;
+}
+
+function getSystemStatus() {
+  const activeAgents = db.prepare("SELECT COUNT(*) as count FROM agents WHERE status != 'offline'").get().count;
+  const activeTasks = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE status = 'doing'").get().count;
+  const totalTasks = db.prepare('SELECT COUNT(*) as count FROM tasks').get().count;
+
+  // Get today's budget usage
+  const today = new Date().toISOString().split('T')[0];
+  const dailyUsage = db.prepare(
+    "SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE date(created_at) = ?"
+  ).get(today);
+
+  const monthStart = new Date();
+  monthStart.setDate(1);
+  const monthlyUsage = db.prepare(
+    "SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE created_at >= ?"
+  ).get(monthStart.toISOString());
+
+  const totalTokens = db.prepare(
+    "SELECT COALESCE(SUM(input_tokens + output_tokens), 0) as total FROM budget_logs"
+  ).get();
+
+  return {
+    connected: true,
+    activeAgents,
+    activeTasks,
+    totalTasks,
+    dailySpend: dailyUsage.total,
+    monthlySpend: monthlyUsage.total,
+    totalTokens: totalTokens.total,
+  };
+}
+
+module.exports = { initSocket, getSystemStatus };

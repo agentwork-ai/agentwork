@@ -1,0 +1,8 @@
+node_modules/
+.next/
+data/agenthub.db
+data/agenthub.log
+data/agenthub.pid
+data/agents/
+.env
+.env.local
