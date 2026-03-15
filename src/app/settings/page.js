@@ -90,6 +90,24 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
+                  <label className="label">OpenRouter API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.openrouter ? 'text' : 'password'}
+                      value={settings.openrouter_api_key || ''}
+                      onChange={(e) => updateField('openrouter_api_key', e.target.value)}
+                      placeholder="sk-or-..."
+                    />
+                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, openrouter: !p.openrouter }))}>
+                      {showKeys.openrouter ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Access 200+ models through a single key. Get one at openrouter.ai
+                  </p>
+                </div>
+                <div>
                   <label className="label">Custom Base URL (for local LLMs like Ollama/LMStudio)</label>
                   <input
                     className="input font-mono text-sm"

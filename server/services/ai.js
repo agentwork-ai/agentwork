@@ -7,19 +7,26 @@ function getSetting(key) {
 
 // API-based completion (requires API key)
 async function createCompletion(provider, model, messages, options = {}) {
-  const apiKey =
-    provider === 'anthropic'
-      ? getSetting('anthropic_api_key')
-      : getSetting('openai_api_key');
+  let apiKey;
+  let customBaseUrl = getSetting('custom_base_url');
 
-  const customBaseUrl = getSetting('custom_base_url');
+  if (provider === 'anthropic') {
+    apiKey = getSetting('anthropic_api_key');
+  } else if (provider === 'openrouter') {
+    apiKey = getSetting('openrouter_api_key');
+  } else {
+    apiKey = getSetting('openai_api_key');
+  }
 
   if (!apiKey && !customBaseUrl) {
-    throw new Error(`No API key configured for ${provider}. Set it in Settings.`);
+    const label = provider === 'anthropic' ? 'Anthropic' : provider === 'openrouter' ? 'OpenRouter' : 'OpenAI';
+    throw new Error(`No API key configured for "${provider}". Go to Settings → API Providers to add your ${label} API key.`);
   }
 
   if (provider === 'anthropic') {
     return callAnthropic(apiKey, model, messages, options, customBaseUrl);
+  } else if (provider === 'openrouter') {
+    return callOpenRouter(apiKey, model, messages, options);
   } else {
     return callOpenAI(apiKey, model, messages, options, customBaseUrl);
   }
@@ -61,6 +68,30 @@ async function callOpenAI(apiKey, model, messages, options, customBaseUrl) {
 
   const response = await client.chat.completions.create({
     model: model || 'gpt-4o',
+    max_tokens: options.maxTokens || 4096,
+    messages,
+  });
+
+  const choice = response.choices[0];
+  const inputTokens = response.usage?.prompt_tokens || 0;
+  const outputTokens = response.usage?.completion_tokens || 0;
+
+  return { content: choice.message.content, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
+}
+
+async function callOpenRouter(apiKey, model, messages, options) {
+  const OpenAI = require('openai');
+  const client = new OpenAI({
+    apiKey,
+    baseURL: 'https://openrouter.ai/api/v1',
+    defaultHeaders: {
+      'HTTP-Referer': 'http://localhost:1248',
+      'X-Title': 'AgentHub',
+    },
+  });
+
+  const response = await client.chat.completions.create({
+    model: model || 'anthropic/claude-sonnet-4',
     max_tokens: options.maxTokens || 4096,
     messages,
   });
@@ -281,6 +312,19 @@ function estimateCost(provider, model, inputTokens, outputTokens) {
     // DeepSeek
     'deepseek-chat': { input: 0.27, output: 1.1 },
     'deepseek-reasoner': { input: 0.55, output: 2.19 },
+    // OpenRouter (uses provider/model format — pricing varies, use approximate)
+    'anthropic/claude-opus-4': { input: 15, output: 75 },
+    'anthropic/claude-sonnet-4': { input: 3, output: 15 },
+    'anthropic/claude-haiku-4': { input: 0.8, output: 4 },
+    'openai/gpt-4o': { input: 2.5, output: 10 },
+    'openai/gpt-4o-mini': { input: 0.15, output: 0.6 },
+    'google/gemini-2.5-pro': { input: 1.25, output: 10 },
+    'google/gemini-2.5-flash': { input: 0.15, output: 0.6 },
+    'deepseek/deepseek-chat-v3': { input: 0.27, output: 1.1 },
+    'meta-llama/llama-4-maverick': { input: 0.2, output: 0.6 },
+    'meta-llama/llama-4-scout': { input: 0.1, output: 0.3 },
+    'mistralai/mistral-large': { input: 2, output: 6 },
+    'qwen/qwen3-235b': { input: 0.5, output: 2 },
   };
 
   const rates = pricing[model] || { input: 3, output: 15 };

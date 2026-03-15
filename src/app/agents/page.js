@@ -66,6 +66,20 @@ const API_MODELS = {
     { id: 'mistral-small-latest', label: 'Mistral Small', tier: 'fast' },
     { id: 'codestral-latest', label: 'Codestral', tier: 'code' },
   ],
+  openrouter: [
+    { id: 'anthropic/claude-opus-4', label: 'Claude Opus 4', tier: 'flagship' },
+    { id: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4', tier: 'balanced' },
+    { id: 'anthropic/claude-haiku-4', label: 'Claude Haiku 4', tier: 'fast' },
+    { id: 'openai/gpt-4o', label: 'GPT-4o', tier: 'balanced' },
+    { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', tier: 'fast' },
+    { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro', tier: 'flagship' },
+    { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'fast' },
+    { id: 'deepseek/deepseek-chat-v3', label: 'DeepSeek V3', tier: 'balanced' },
+    { id: 'meta-llama/llama-4-maverick', label: 'Llama 4 Maverick', tier: 'flagship' },
+    { id: 'meta-llama/llama-4-scout', label: 'Llama 4 Scout', tier: 'balanced' },
+    { id: 'mistralai/mistral-large', label: 'Mistral Large', tier: 'flagship' },
+    { id: 'qwen/qwen3-235b', label: 'Qwen3 235B', tier: 'flagship' },
+  ],
 };
 
 const CLI_PROVIDERS = [
@@ -76,6 +90,7 @@ const CLI_PROVIDERS = [
 const API_PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic (Claude)' },
   { id: 'openai', label: 'OpenAI (GPT)' },
+  { id: 'openrouter', label: 'OpenRouter (Multi-provider)' },
   { id: 'google', label: 'Google (Gemini)' },
   { id: 'deepseek', label: 'DeepSeek' },
   { id: 'mistral', label: 'Mistral AI' },

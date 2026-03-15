@@ -132,13 +132,15 @@ async function handleApiChat(agent, userMessage) {
 
   try {
     // Check API key first
-    const apiKey = agent.provider === 'anthropic'
-      ? db.prepare("SELECT value FROM settings WHERE key = 'anthropic_api_key'").get()?.value
-      : db.prepare("SELECT value FROM settings WHERE key = 'openai_api_key'").get()?.value;
+    let apiKey;
+    const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key' };
+    const keyName = keyMap[agent.provider] || 'openai_api_key';
+    apiKey = db.prepare("SELECT value FROM settings WHERE key = ?").get(keyName)?.value;
     const customBaseUrl = db.prepare("SELECT value FROM settings WHERE key = 'custom_base_url'").get()?.value;
 
     if (!apiKey && !customBaseUrl) {
-      throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${agent.provider === 'anthropic' ? 'Anthropic' : 'OpenAI'} API key.`);
+      const labels = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter', google: 'Google', deepseek: 'DeepSeek', mistral: 'Mistral' };
+      throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${labels[agent.provider] || agent.provider} API key.`);
     }
 
     // Load the last 20 messages for context
