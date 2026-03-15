@@ -462,13 +462,31 @@ function AgentFormModal({ agent, onClose, onSaved }) {
               </div>
               <div>
                 <label className="label">Model</label>
-                <select className="input" value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })}>
+                <select className="input" value={providerModels.some((m) => m.id === form.model) || !form.model ? form.model : '__custom__'}
+                  onChange={(e) => {
+                    if (e.target.value === '__custom__') {
+                      setForm({ ...form, model: '' });
+                    } else {
+                      setForm({ ...form, model: e.target.value });
+                    }
+                  }}>
                   {providerModels.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.label} ({m.tier})
                     </option>
                   ))}
+                  {form.provider === 'openrouter' && (
+                    <option value="__custom__">Custom model ID...</option>
+                  )}
                 </select>
+                {form.provider === 'openrouter' && (!providerModels.some((m) => m.id === form.model)) && (
+                  <input
+                    className="input mt-2 font-mono text-sm"
+                    value={form.model}
+                    onChange={(e) => setForm({ ...form, model: e.target.value })}
+                    placeholder="e.g. anthropic/claude-sonnet-4.5 or meta-llama/llama-4-scout"
+                  />
+                )}
               </div>
             </>
           )}
