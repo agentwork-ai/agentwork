@@ -1,8 +1,10 @@
 const { db } = require('../db');
+const { decrypt, isSensitiveKey } = require('../crypto');
 
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
-  return row ? row.value : '';
+  if (!row) return '';
+  return isSensitiveKey(key) ? decrypt(row.value) : row.value;
 }
 
 // Simple per-provider rate limiter

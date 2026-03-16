@@ -56,7 +56,7 @@
 
 ## 5. Security & Access Control
 
-- [ ] **API Key Encryption at Rest** — Encrypt API keys in the SQLite settings table using OS keychain or a local encryption key.
+- [x] **API Key Encryption at Rest** — Encrypt API keys in the SQLite settings table using OS keychain or a local encryption key.
 - [x] **Dashboard Authentication** — Add optional password protection or local-only binding so the dashboard isn't open to anyone on the network.
 - [x] **Command Sandboxing** — Configurable restrictions for agent commands: blocked patterns (rm -rf /, DROP TABLE), directory jail, optional Docker container isolation.
 - [x] **Audit Log** — Record all user actions (settings changes, agent creation/deletion, task modifications) in a separate audit log table with timestamps.

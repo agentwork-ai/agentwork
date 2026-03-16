@@ -1,13 +1,14 @@
 const express = require('express');
 const router = express.Router();
 const { db, logAudit } = require('../db');
+const { encrypt, decrypt, isSensitiveKey } = require('../crypto');
 
-// Get all settings
+// Get all settings (decrypt sensitive values)
 router.get('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM settings').all();
   const settings = {};
   rows.forEach((r) => {
-    settings[r.key] = r.value;
+    settings[r.key] = isSensitiveKey(r.key) ? decrypt(r.value) : r.value;
   });
   res.json(settings);
 });
@@ -20,7 +21,8 @@ router.put('/', (req, res) => {
 
   const tx = db.transaction((entries) => {
     for (const [key, value] of entries) {
-      upsert.run(key, String(value), String(value));
+      const val = isSensitiveKey(key) ? encrypt(String(value)) : String(value);
+      upsert.run(key, val, val);
     }
   });
 
@@ -30,7 +32,7 @@ router.put('/', (req, res) => {
   const rows = db.prepare('SELECT * FROM settings').all();
   const settings = {};
   rows.forEach((r) => {
-    settings[r.key] = r.value;
+    settings[r.key] = isSensitiveKey(r.key) ? decrypt(r.value) : r.value;
   });
 
   const io = req.app.get('io');
