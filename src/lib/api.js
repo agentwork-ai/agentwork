@@ -53,6 +53,8 @@ export const api = {
   updateSettings: (data) => request('/api/settings', { method: 'PUT', body: JSON.stringify(data) }),
   getBudget: () => request('/api/settings/budget'),
   getBudgetHistory: (days) => request(`/api/settings/budget/history?days=${days || 30}`),
+  getBudgetByAgent: (days) => request(`/api/settings/budget/by-agent?days=${days || 30}`),
+  getBudgetByModel: (days) => request(`/api/settings/budget/by-model?days=${days || 30}`),
 
   // Files
   readFile: (path) => request(`/api/files/read?path=${encodeURIComponent(path)}`),

@@ -74,6 +74,32 @@ router.get('/budget/history', (req, res) => {
   res.json(logs);
 });
 
+// Cost breakdown by agent
+router.get('/budget/by-agent', (req, res) => {
+  const days = parseInt(req.query.days || '30');
+  const rows = db.prepare(
+    `SELECT b.agent_id, a.name as agent_name, a.avatar,
+      SUM(b.cost_usd) as total_cost, SUM(b.input_tokens) as input_tokens, SUM(b.output_tokens) as output_tokens,
+      COUNT(*) as call_count
+     FROM budget_logs b LEFT JOIN agents a ON b.agent_id = a.id
+     WHERE b.created_at >= date('now', ?)
+     GROUP BY b.agent_id ORDER BY total_cost DESC`
+  ).all(`-${days} days`);
+  res.json(rows);
+});
+
+// Cost breakdown by model
+router.get('/budget/by-model', (req, res) => {
+  const days = parseInt(req.query.days || '30');
+  const rows = db.prepare(
+    `SELECT provider, model, SUM(cost_usd) as total_cost,
+      SUM(input_tokens) as input_tokens, SUM(output_tokens) as output_tokens, COUNT(*) as call_count
+     FROM budget_logs WHERE created_at >= date('now', ?)
+     GROUP BY provider, model ORDER BY total_cost DESC`
+  ).all(`-${days} days`);
+  res.json(rows);
+});
+
 // Get audit logs
 router.get('/audit-logs', (req, res) => {
   const limit = parseInt(req.query.limit || '100');

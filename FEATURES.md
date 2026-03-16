@@ -45,7 +45,7 @@
 
 ## 4. Monitoring, Observability & Debugging
 
-- [ ] **Cost Breakdown by Agent / Model / Task** — Add spend breakdowns by agent, by model, and by task so users can see which is most expensive.
+- [x] **Cost Breakdown by Agent / Model / Task** — Add spend breakdowns by agent, by model, and by task so users can see which is most expensive.
 - [ ] **Cost Charts & Sparklines** — Interactive charts for daily spend over time, per-agent distribution, and token usage trends.
 - [ ] **Execution Replay** — Store full execution traces with timestamps and allow replaying them step-by-step to debug agent decisions.
 - [ ] **Agent Performance Metrics** — Track per-agent stats: average task completion time, success rate, average tokens per task, number of iterations, and times blocked.
