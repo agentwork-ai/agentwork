@@ -23,6 +23,8 @@ export const api = {
   deleteProject: (id) => request(`/api/projects/${id}`, { method: 'DELETE' }),
   getProjectFiles: (id, depth) => request(`/api/projects/${id}/files?depth=${depth || 3}`),
   regenerateProjectDoc: (id) => request(`/api/projects/${id}/regenerate-doc`, { method: 'POST' }),
+  searchProjectFiles: (id, query, searchContent) =>
+    request(`/api/projects/${id}/search?q=${encodeURIComponent(query)}${searchContent ? '&content=true' : ''}`),
 
   // Tasks
   getTasks: (params) => {

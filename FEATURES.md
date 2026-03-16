@@ -118,7 +118,7 @@
 ## 12. File & Code Management
 
 - [ ] **Git Status in File Explorer** — Show modified/untracked/staged indicators on files in the project tree.
-- [ ] **File Search in Projects** — Filename and full-text content search within a project.
+- [x] **File Search in Projects** — Filename and full-text content search within a project.
 - [ ] **Multi-File Diff Review** — Consolidated PR-style diff view of all agent changes after task completion.
 - [x] **PROJECT.md Regeneration** — One-click button to refresh the auto-generated PROJECT.md for a project.
 

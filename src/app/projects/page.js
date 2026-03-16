@@ -20,6 +20,10 @@ export default function ProjectsPage() {
   const [fileTree, setFileTree] = useState(null);
   const [fileContent, setFileContent] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
+  const [searching, setSearching] = useState(false);
+  const [searchContent, setSearchContent] = useState(false);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -51,6 +55,8 @@ export default function ProjectsPage() {
   const selectProject = async (project) => {
     setSelected(project);
     setFileContent(null);
+    setSearchQuery('');
+    setSearchResults(null);
     try {
       const tree = await api.getProjectFiles(project.id, 4);
       setFileTree(tree);
@@ -70,6 +76,24 @@ export default function ProjectsPage() {
     } catch (err) {
       toast.error(err.message);
     }
+  };
+
+  const handleSearch = async (e) => {
+    if (e.key !== 'Enter' || !searchQuery.trim() || !selected) return;
+    setSearching(true);
+    try {
+      const results = await api.searchProjectFiles(selected.id, searchQuery.trim(), searchContent);
+      setSearchResults(results);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSearching(false);
+    }
+  };
+
+  const clearSearch = () => {
+    setSearchQuery('');
+    setSearchResults(null);
   };
 
   return (
@@ -135,8 +159,79 @@ export default function ProjectsPage() {
                       </button>
                     </div>
                   </div>
+                  {/* Search input */}
+                  <div className="p-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                    <div className="relative">
+                      <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-tertiary)' }} />
+                      <input
+                        className="input text-xs pl-7 pr-7 py-1.5"
+                        placeholder="Search files... (Enter)"
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={handleSearch}
+                      />
+                      {searchResults !== null && (
+                        <button
+                          className="absolute right-2 top-1/2 -translate-y-1/2"
+                          style={{ color: 'var(--text-tertiary)' }}
+                          onClick={clearSearch}
+                          title="Clear search"
+                        >
+                          <X size={12} />
+                        </button>
+                      )}
+                    </div>
+                    <label className="flex items-center gap-1.5 mt-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={searchContent}
+                        onChange={(e) => setSearchContent(e.target.checked)}
+                        className="rounded"
+                        style={{ accentColor: 'var(--accent)' }}
+                      />
+                      <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>Search file contents</span>
+                    </label>
+                  </div>
                   <div className="flex-1 overflow-auto p-2">
-                    {fileTree ? (
+                    {searching ? (
+                      <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Searching...</p>
+                    ) : searchResults !== null ? (
+                      searchResults.length === 0 ? (
+                        <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>No results found</p>
+                      ) : (
+                        <div className="space-y-0.5">
+                          <p className="text-[10px] px-1 mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                            {searchResults.length} result{searchResults.length !== 1 ? 's' : ''}
+                          </p>
+                          {searchResults.map((r) => (
+                            <button
+                              key={r.path}
+                              className="flex flex-col gap-0.5 py-1.5 px-2 rounded text-xs w-full text-left hover:opacity-80 transition-colors"
+                              style={{ color: 'var(--text-secondary)' }}
+                              onClick={() => {
+                                if (r.type === 'file') openFile(r.path);
+                              }}
+                              title={r.path}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                {r.type === 'directory' ? (
+                                  <Folder size={12} className="shrink-0" style={{ color: 'var(--accent)' }} />
+                                ) : (
+                                  <FileText size={12} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
+                                )}
+                                <span className="truncate">{r.relativePath}</span>
+                                {r.match === 'content' && (
+                                  <span className="shrink-0 text-[9px] px-1 rounded" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>content</span>
+                                )}
+                              </div>
+                              {r.snippet && (
+                                <span className="text-[10px] truncate pl-5 block" style={{ color: 'var(--text-tertiary)' }}>{r.snippet}</span>
+                              )}
+                            </button>
+                          ))}
+                        </div>
+                      )
+                    ) : fileTree ? (
                       fileTree.map((node) => <FileNode key={node.path} node={node} onOpen={openFile} />)
                     ) : (
                       <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>

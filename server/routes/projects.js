@@ -95,6 +95,80 @@ router.post('/:id/regenerate-doc', (req, res) => {
   }
 });
 
+// Search files in project
+router.get('/:id/search', (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const query = (req.query.q || '').trim().toLowerCase();
+  if (!query) return res.json([]);
+
+  const searchContent = req.query.content === 'true';
+  const ignorePatterns = (project.ignore_patterns || '').split(',').map((p) => p.trim()).filter(Boolean);
+  const limit = 50;
+  const results = [];
+
+  function shouldIgnore(name) {
+    return ignorePatterns.some((p) => name === p || name.startsWith('.'));
+  }
+
+  function searchDir(dirPath, relativePath) {
+    if (results.length >= limit) return;
+
+    let entries;
+    try {
+      entries = fs.readdirSync(dirPath, { withFileTypes: true });
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (results.length >= limit) return;
+      if (shouldIgnore(entry.name)) continue;
+
+      const fullPath = path.join(dirPath, entry.name);
+      const relPath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+
+      if (entry.isDirectory()) {
+        // Check if directory name matches
+        if (entry.name.toLowerCase().includes(query)) {
+          results.push({ path: fullPath, relativePath: relPath, type: 'directory', match: 'filename' });
+        }
+        searchDir(fullPath, relPath);
+      } else {
+        // Check filename match
+        if (entry.name.toLowerCase().includes(query)) {
+          results.push({ path: fullPath, relativePath: relPath, type: 'file', match: 'filename' });
+        } else if (searchContent) {
+          // Check file content match for text files
+          try {
+            const stats = fs.statSync(fullPath);
+            if (stats.size > 512 * 1024) continue; // skip files > 512KB
+            const content = fs.readFileSync(fullPath, 'utf-8');
+            if (content.toLowerCase().includes(query)) {
+              // Extract a snippet around the match
+              const idx = content.toLowerCase().indexOf(query);
+              const start = Math.max(0, idx - 40);
+              const end = Math.min(content.length, idx + query.length + 40);
+              const snippet = (start > 0 ? '...' : '') + content.slice(start, end).replace(/\n/g, ' ') + (end < content.length ? '...' : '');
+              results.push({ path: fullPath, relativePath: relPath, type: 'file', match: 'content', snippet });
+            }
+          } catch {
+            // Binary file or read error, skip
+          }
+        }
+      }
+    }
+  }
+
+  try {
+    searchDir(project.path, '');
+    res.json(results);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get project file tree
 router.get('/:id/files', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
