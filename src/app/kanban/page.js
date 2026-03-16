@@ -497,12 +497,23 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
         </div>
       )}
       {(task.task_type || 'single') === 'flow' && task.flow_items?.length > 0 && (
-        <div className="flex items-center gap-1 mt-1.5">
-          <div className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
-            style={{ background: '#0ea5e920', color: '#0ea5e9' }}>
-            <Layers size={9} />
-            <span>Flow {task.flow_items.filter((i) => i.status === 'done').length}/{task.flow_items.length}</span>
-          </div>
+        <div className="mt-2 pt-2 border-t space-y-1" style={{ borderColor: 'var(--border-light)' }}>
+          {task.flow_items.map((item, idx) => {
+            const stepAgent = agents?.find((a) => a.id === item.agent_id);
+            const sc = { pending: 'var(--text-tertiary)', doing: '#fab005', done: '#40c057', failed: 'var(--danger)' }[item.status] || 'var(--text-tertiary)';
+            const icon = { pending: '○', doing: '◆', done: '✓', failed: '✗' }[item.status] || '○';
+            return (
+              <div key={item.id || idx} className="flex items-center gap-1.5 text-[10px]">
+                <span className="shrink-0 font-bold" style={{ color: sc }}>{icon}</span>
+                <span className="flex-1 truncate" style={{ color: item.status === 'doing' ? '#fab005' : 'var(--text-secondary)' }}>
+                  {item.title || `Step ${idx + 1}`}
+                </span>
+                {stepAgent && (
+                  <span className="shrink-0" style={{ color: 'var(--text-tertiary)' }}>{stepAgent.avatar} {stepAgent.name}</span>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
       <div className="flex items-center gap-2 mt-2.5 flex-wrap">
@@ -627,8 +638,9 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
 
 function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }) {
   const logsEndRef = useRef(null);
-  const isEditable = task.status === 'backlog' || task.status === 'todo';
+  const isEditable = task.status !== 'doing';
   const isDoing = task.status === 'doing';
+  const isFlow = (task.task_type || 'single') === 'flow';
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({
     title: task.title,
@@ -636,6 +648,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
     priority: task.priority,
     agent_id: task.agent_id || '',
     project_id: task.project_id || '',
+    flow_items: task.flow_items || [],
   });
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
@@ -645,13 +658,36 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
   }, [task.execution_logs?.length, activeTab]);
 
   useEffect(() => {
-    setForm({ title: task.title, description: task.description, priority: task.priority, agent_id: task.agent_id || '', project_id: task.project_id || '' });
+    setForm({
+      title: task.title,
+      description: task.description,
+      priority: task.priority,
+      agent_id: task.agent_id || '',
+      project_id: task.project_id || '',
+      flow_items: task.flow_items || [],
+    });
   }, [task]);
+
+  const addFlowItem = () => setForm((f) => ({
+    ...f,
+    flow_items: [...f.flow_items, { id: String(Date.now()), title: '', agent_id: '', status: 'pending', output: '' }],
+  }));
+  const removeFlowItem = (idx) => setForm((f) => ({ ...f, flow_items: f.flow_items.filter((_, i) => i !== idx) }));
+  const updateFlowItem = (idx, field, value) => setForm((f) => {
+    const items = [...f.flow_items];
+    items[idx] = { ...items[idx], [field]: value };
+    return { ...f, flow_items: items };
+  });
 
   const saveChanges = async () => {
     setSaving(true);
     try {
-      const data = { ...form, agent_id: form.agent_id || null, project_id: form.project_id || null };
+      const data = {
+        ...form,
+        agent_id: form.agent_id || null,
+        project_id: form.project_id || null,
+        flow_items: isFlow ? form.flow_items : undefined,
+      };
       const updated = await api.updateTask(task.id, data);
       onUpdate(updated);
       setEditing(false);
@@ -712,7 +748,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                 </div>
                 <div>
                   <label className="label">Description</label>
-                  <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={4} />
+                  <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -722,13 +758,15 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                       <option value="high">High</option><option value="critical">Critical</option>
                     </select>
                   </div>
-                  <div>
-                    <label className="label">Agent</label>
-                    <select className="input" value={form.agent_id} onChange={(e) => setForm({ ...form, agent_id: e.target.value })}>
-                      <option value="">Unassigned</option>
-                      {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
-                    </select>
-                  </div>
+                  {!isFlow && (
+                    <div>
+                      <label className="label">Agent</label>
+                      <select className="input" value={form.agent_id} onChange={(e) => setForm({ ...form, agent_id: e.target.value })}>
+                        <option value="">Unassigned</option>
+                        {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
+                      </select>
+                    </div>
+                  )}
                   <div>
                     <label className="label">Project</label>
                     <select className="input" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
@@ -737,6 +775,48 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                     </select>
                   </div>
                 </div>
+                {isFlow && (
+                  <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="label m-0">Flow Steps</label>
+                      <button type="button" className="btn btn-ghost text-xs py-1 px-2" onClick={addFlowItem}>
+                        <Plus size={11} /> Add Step
+                      </button>
+                    </div>
+                    {form.flow_items.length === 0 ? (
+                      <p className="text-xs text-center py-3 rounded-lg" style={{ color: 'var(--text-tertiary)', background: 'var(--bg-secondary)' }}>
+                        No steps. Click "Add Step" to begin.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        {form.flow_items.map((item, idx) => (
+                          <div key={item.id || idx} className="flex gap-2 p-2.5 rounded-lg"
+                            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                            <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-1"
+                              style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+                              {idx + 1}
+                            </div>
+                            <div className="flex-1 space-y-1.5">
+                              <input className="input text-sm py-1.5"
+                                placeholder={`Step ${idx + 1} description…`}
+                                value={item.title}
+                                onChange={(e) => updateFlowItem(idx, 'title', e.target.value)} />
+                              <select className="input text-sm py-1.5" value={item.agent_id}
+                                onChange={(e) => updateFlowItem(idx, 'agent_id', e.target.value)}>
+                                <option value="">Assign agent…</option>
+                                {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
+                              </select>
+                            </div>
+                            <button type="button" className="p-1 rounded hover:opacity-70 shrink-0"
+                              style={{ color: 'var(--text-tertiary)' }} onClick={() => removeFlowItem(idx)}>
+                              <X size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
                 <div className="flex justify-end gap-2">
                   <button className="btn btn-secondary text-xs" onClick={() => setEditing(false)}>Cancel</button>
                   <button className="btn btn-primary text-xs" onClick={saveChanges} disabled={saving}>
