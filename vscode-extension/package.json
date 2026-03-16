@@ -1,0 +1,27 @@
+{
+  "name": "agentwork-vscode",
+  "displayName": "AgentWork",
+  "description": "AgentWork companion extension — view agent activity, create tasks, and monitor execution from VS Code",
+  "version": "0.1.0",
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "agentwork.showStatus", "title": "AgentWork: Show Status" },
+      { "command": "agentwork.createTask", "title": "AgentWork: Create Task" },
+      { "command": "agentwork.listAgents", "title": "AgentWork: List Agents" }
+    ],
+    "configuration": {
+      "title": "AgentWork",
+      "properties": {
+        "agentwork.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:1248",
+          "description": "AgentWork server URL"
+        }
+      }
+    }
+  }
+}

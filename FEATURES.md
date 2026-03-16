@@ -8,7 +8,7 @@
 
 - [x] **Agent-to-Agent Communication** — Agents can message each other directly, enabling a "tech lead" agent to delegate sub-tasks or review another agent's work before marking a task done.
 - [x] **Per-Agent Tool Restrictions** — Allow per-agent tool whitelists (e.g., a "QA Engineer" agent gets `run_bash` for test execution but not `write_file`, while a "Technical Writer" gets only `read_file` and `write_file`).
-- [ ] **Retrieval-Augmented Generation (RAG) for Project Context** — Add vector-indexed embedding search across the project codebase so agents can retrieve relevant files on demand rather than relying on the static PROJECT.md summary.
+- [x] **Retrieval-Augmented Generation (RAG) for Project Context** — Add vector-indexed embedding search across the project codebase so agents can retrieve relevant files on demand rather than relying on the static PROJECT.md summary.
 - [x] **Self-Improving Agent Prompts** — Track success/failure rates per agent and automatically tune the system prompt. If an agent consistently hits `request_help` or max iterations, flag the prompt/personality as needing adjustment and suggest changes to the user.
 - [x] **Agent Cloning / Templates** — Allow cloning an existing agent's configuration (personality, memory files, provider/model) to spin up a new agent with the same starting point. Also support agent templates ("Senior React Developer with Claude Opus" preset).
 - [x] **Multi-Model Fallback Chain** — If the primary model for an agent fails (rate limit, API down), automatically fall back to a secondary model. The agent configuration could have a `fallback_model` field.
@@ -65,14 +65,14 @@
 
 ## 6. Integrations
 
-- [ ] **Discord Bot** — Add Discord as a third platform option alongside Telegram and Slack.
-- [ ] **GitHub Integration** — Auto-create issues from blocked tasks, auto-create PRs from completed tasks, sync task status with GitHub project boards, trigger tasks on webhook events.
-- [ ] **Linear / Jira Sync** — Bidirectional sync between the AgentWork Kanban board and external project management tools.
+- [x] **Discord Bot** — Add Discord as a third platform option alongside Telegram and Slack.
+- [x] **GitHub Integration** — Auto-create issues from blocked tasks, auto-create PRs from completed tasks, sync task status with GitHub project boards, trigger tasks on webhook events.
+- [x] **Linear / Jira Sync** — Bidirectional sync between the AgentWork Kanban board and external project management tools.
 - [x] **Webhook API for External Triggers** — Inbound endpoint (`POST /api/webhooks/trigger`) that creates and/or executes a task from CI/CD, GitHub Actions, or other systems.
 - [x] **Email Notifications** — Allow agents to send email via SMTP or SendGrid for task completion reports and daily summaries.
-- [ ] **VS Code Extension** — Companion extension showing agent activity, quick task creation from the editor, and execution logs in a VS Code panel.
+- [x] **VS Code Extension** — Companion extension showing agent activity, quick task creation from the editor, and execution logs in a VS Code panel.
 - [x] **Native Google Gemini SDK** — Add `@google/generative-ai` for proper Gemini API support beyond the OpenAI compatibility layer.
-- [ ] **MCP (Model Context Protocol) Tool Server** — Expose AgentWork tasks, agents, and projects as MCP resources and tools for Claude Desktop and other MCP clients.
+- [x] **MCP (Model Context Protocol) Tool Server** — Expose AgentWork tasks, agents, and projects as MCP resources and tools for Claude Desktop and other MCP clients.
 
 ## 7. Developer Experience
 
