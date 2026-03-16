@@ -803,7 +803,8 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                               {idx + 1}
                             </div>
                             <div className="flex-1 space-y-1.5">
-                              <input className="input text-sm py-1.5"
+                              <textarea className="input text-sm py-1.5 resize-none"
+                                rows={2}
                                 placeholder={`Step ${idx + 1} description…`}
                                 value={item.title}
                                 onChange={(e) => updateFlowItem(idx, 'title', e.target.value)} />
@@ -1130,7 +1131,8 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
                           {idx + 1}
                         </div>
                         <div className="flex-1 space-y-1.5">
-                          <input className="input text-sm py-1.5"
+                          <textarea className="input text-sm py-1.5 resize-none"
+                            rows={2}
                             placeholder={`Step ${idx + 1} description…`}
                             value={item.title}
                             onChange={(e) => updateFlowItem(idx, 'title', e.target.value)} />
