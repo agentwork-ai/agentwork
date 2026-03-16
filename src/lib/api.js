@@ -113,6 +113,11 @@ export const api = {
   sendRoomMessage: (id, content) => request(`/api/rooms/${id}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
   deleteRoom: (id) => request(`/api/rooms/${id}`, { method: 'DELETE' }),
 
+  // Custom Tools
+  getCustomTools: () => request('/api/tools'),
+  createCustomTool: (data) => request('/api/tools', { method: 'POST', body: JSON.stringify(data) }),
+  deleteCustomTool: (id) => request(`/api/tools/${id}`, { method: 'DELETE' }),
+
   // Status
   getStatus: () => request('/api/status'),
 

@@ -127,6 +127,7 @@ app.prepare().then(() => {
   server.use('/api/files', require('./routes/files'));
   server.use('/api/templates', require('./routes/templates'));
   server.use('/api/rooms', require('./routes/rooms'));
+  server.use('/api/tools', require('./routes/tools'));
 
   // Webhook endpoint for external triggers
   server.post('/api/webhooks/trigger', (req, res) => {
@@ -222,6 +223,9 @@ app.prepare().then(() => {
         { method: 'POST', path: '/api/templates', description: 'Create template' },
         { method: 'POST', path: '/api/templates/:id/use', description: 'Create task from template' },
         { method: 'DELETE', path: '/api/templates/:id', description: 'Delete template' },
+        { method: 'GET', path: '/api/tools', description: 'List custom tools' },
+        { method: 'POST', path: '/api/tools', description: 'Create custom tool', body: '{ name, description, command_template }' },
+        { method: 'DELETE', path: '/api/tools/:id', description: 'Delete custom tool' },
         { method: 'POST', path: '/api/webhooks/trigger', description: 'Create and execute task via webhook', body: '{ title, description, agent_id, project_id }' },
         { method: 'GET', path: '/api/files/read', description: 'Read file content', query: 'path' },
         { method: 'POST', path: '/api/files/write', description: 'Write file content', body: '{ path, content }' },

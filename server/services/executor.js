@@ -443,6 +443,12 @@ async function executeFlowStepApi(taskId, agentId, agent, task, flowItem, previo
 
   addLog(taskId, 'info', `Step ${stepIdx + 1} API mode: ${agent.provider} / ${agent.model}`);
 
+  // Build custom tools section for the system prompt
+  const flowCustomToolDefs = getCustomToolDefinitions();
+  const flowCustomToolsPrompt = flowCustomToolDefs.length > 0
+    ? '\n' + flowCustomToolDefs.map((t) => `- **${t.name}**: ${t.description}`).join('\n')
+    : '';
+
   const systemPrompt = `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
 
 ${soul}
@@ -463,7 +469,7 @@ ${projectDoc ? `## Project Documentation\n${projectDoc}\n` : ''}## Available Too
 - **run_bash**: Execute shell commands
 - **list_directory**: Browse the file structure
 - **task_complete**: Call when your step is fully done (required)
-- **request_help**: Only if truly blocked
+- **request_help**: Only if truly blocked${flowCustomToolsPrompt}
 
 ## Rules
 1. ALWAYS proceed autonomously. Never ask for confirmation.
@@ -1128,8 +1134,42 @@ function executeTool(name, input, workDir, taskId, agentId) {
         return `Error sending message: ${err.message}`;
       }
     }
-    default:
+    default: {
+      // Check if this is a user-defined custom tool
+      const customTool = db.prepare('SELECT * FROM custom_tools WHERE name = ?').get(name);
+      if (customTool) {
+        const toolInput = (input && input.input) || '';
+        // Replace {{input}} placeholders in the command template
+        const command = customTool.command_template.replace(/\{\{input\}\}/g, toolInput);
+
+        // Apply the same sandboxing as run_bash
+        const blockedPattern = isCommandBlocked(command);
+        if (blockedPattern) {
+          addLog(taskId, 'error', `Sandbox violation: custom tool "${name}" command blocked by pattern ${blockedPattern}`);
+          return `Error: Custom tool command rejected — matches dangerous pattern ${blockedPattern}.`;
+        }
+
+        addLog(taskId, 'command', `[custom:${name}] $ ${command}`);
+        io.emit('agent:status_changed', { agentId, status: 'executing' });
+        try {
+          const output = execSync(command, {
+            cwd: workDir,
+            timeout: 120000,
+            encoding: 'utf8',
+            maxBuffer: 2 * 1024 * 1024,
+            shell: true,
+          });
+          const result = output.toString().slice(0, 3000);
+          addLog(taskId, 'output', result || '(no output)');
+          return result || '(command completed with no output)';
+        } catch (err) {
+          const errMsg = ((err.stderr || '') + '\n' + (err.stdout || '') + '\n' + err.message).trim().slice(0, 2000);
+          addLog(taskId, 'error', `Custom tool "${name}" failed: ${errMsg}`);
+          return `Custom tool "${name}" failed (exit ${err.status || 'unknown'}): ${errMsg}`;
+        }
+      }
       return `Unknown tool: ${name}`;
+    }
   }
 }
 
@@ -1176,6 +1216,12 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     dirListing = execSync('ls -la', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1000);
   } catch {}
 
+  // Build custom tools section for the system prompt
+  const customToolDefs = getCustomToolDefinitions();
+  const customToolsPrompt = customToolDefs.length > 0
+    ? '\n' + customToolDefs.map((t) => `- **${t.name}**: ${t.description}`).join('\n')
+    : '';
+
   const systemPrompt = `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
 
 ${soul}
@@ -1198,7 +1244,7 @@ Use tools to complete your task — do NOT write explanations without acting:
 - **run_bash**: Execute shell commands (npm, git, mkdir, etc.)
 - **list_directory**: Browse the file structure
 - **task_complete**: Call when ALL work is done (required to finish the task)
-- **request_help**: Only if truly blocked (missing credentials, broken env)
+- **request_help**: Only if truly blocked (missing credentials, broken env)${customToolsPrompt}
 
 ## Rules
 1. ALWAYS proceed autonomously. Never ask for confirmation or clarification.
