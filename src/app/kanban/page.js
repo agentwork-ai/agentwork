@@ -442,6 +442,14 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                       <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{task.description}</p></div>
                   : <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No description.</p>
                 }
+                {task.completion_output && (
+                  <div>
+                    <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Completion Output</p>
+                    <div className="p-3 rounded-lg text-sm whitespace-pre-wrap" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', borderLeft: '3px solid #40c057' }}>
+                      {task.completion_output}
+                    </div>
+                  </div>
+                )}
                 <div className="grid grid-cols-3 gap-4 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
                   <div>
                     <p className="text-[10px] font-semibold uppercase mb-0.5" style={{ color: 'var(--text-tertiary)' }}>Agent</p>

@@ -360,7 +360,7 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
       }
     }
 
-    moveTask(taskId, 'done');
+    moveTask(taskId, 'done', 'Completed via CLI agent.');
     sendMessage(agentId, 'agent', `I've completed the task: ${task.title}`, taskId);
     reflectAfterTask(agent, agentDir, task.title, 'Completed via CLI agent.', project);
   } catch (err) {
@@ -659,7 +659,7 @@ Use tools to complete your task — do NOT write explanations without acting:
 
       if (taskDone) {
         addLog(taskId, 'success', 'Task completed!');
-        moveTask(taskId, 'done');
+        moveTask(taskId, 'done', summary);
         sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${summary}`, taskId);
         reflectAfterTask(agent, agentDir, task.title, summary, project);
         break;
@@ -690,8 +690,9 @@ Use tools to complete your task — do NOT write explanations without acting:
       // Legacy text signals (fallback)
       if (response.content?.includes('[TASK_COMPLETE]')) {
         addLog(taskId, 'success', 'Task completed (text signal)!');
-        moveTask(taskId, 'done');
-        sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${extractSummary(response.content)}`, taskId);
+        const textSummary = extractSummary(response.content);
+        moveTask(taskId, 'done', textSummary);
+        sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${textSummary}`, taskId);
         reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);
         break;
       }
@@ -753,9 +754,13 @@ function addLog(taskId, type, content) {
   if (io) io.emit('task:log', { taskId, log: entry });
 }
 
-function moveTask(taskId, status) {
+function moveTask(taskId, status, output) {
   const completedAt = status === 'done' ? new Date().toISOString() : null;
-  db.prepare('UPDATE tasks SET status = ?, completed_at = COALESCE(?, completed_at), updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, completedAt, taskId);
+  if (output !== undefined) {
+    db.prepare('UPDATE tasks SET status = ?, completed_at = COALESCE(?, completed_at), completion_output = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, completedAt, output, taskId);
+  } else {
+    db.prepare('UPDATE tasks SET status = ?, completed_at = COALESCE(?, completed_at), updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, completedAt, taskId);
+  }
   const task = db.prepare(
     'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
   ).get(taskId);

@@ -98,6 +98,12 @@ db.exec(`
   );
 `);
 
+// Migrate tasks table: add completion_output column if missing
+const taskCols = db.prepare("PRAGMA table_info(tasks)").all().map((c) => c.name);
+if (!taskCols.includes('completion_output')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN completion_output TEXT DEFAULT ''");
+}
+
 // Migrate agents table: add platform columns if missing
 const agentCols = db.prepare("PRAGMA table_info(agents)").all().map((c) => c.name);
 if (!agentCols.includes('chat_enabled')) {
