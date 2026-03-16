@@ -100,6 +100,30 @@ router.get('/budget/by-model', (req, res) => {
   res.json(rows);
 });
 
+// Export data as JSON
+router.get('/export', (req, res) => {
+  const type = req.query.type || 'all';
+  const data = {};
+  if (type === 'all' || type === 'tasks') {
+    data.tasks = db.prepare('SELECT * FROM tasks ORDER BY created_at DESC').all();
+  }
+  if (type === 'all' || type === 'agents') {
+    data.agents = db.prepare('SELECT id, name, avatar, role, auth_type, provider, model, status, personality, created_at FROM agents ORDER BY created_at DESC').all();
+  }
+  if (type === 'all' || type === 'projects') {
+    data.projects = db.prepare('SELECT * FROM projects ORDER BY created_at DESC').all();
+  }
+  if (type === 'all' || type === 'budget') {
+    data.budget_logs = db.prepare('SELECT * FROM budget_logs ORDER BY created_at DESC LIMIT 10000').all();
+  }
+  if (type === 'all' || type === 'messages') {
+    data.messages = db.prepare('SELECT * FROM messages ORDER BY created_at DESC LIMIT 10000').all();
+  }
+  data.exported_at = new Date().toISOString();
+  res.setHeader('Content-Disposition', `attachment; filename="agentwork-export-${new Date().toISOString().split('T')[0]}.json"`);
+  res.json(data);
+});
+
 // Get audit logs
 router.get('/audit-logs', (req, res) => {
   const limit = parseInt(req.query.limit || '100');

@@ -96,7 +96,7 @@
 ## 9. Data & Analytics
 
 - [ ] **Analytics Dashboard Page** — Dedicated `/analytics` page with completion trends, agent utilization, cost charts, model comparison, and peak usage hours.
-- [ ] **Data Export** — CSV/JSON export for tasks, execution logs, budget history, and agent performance data.
+- [x] **Data Export** — CSV/JSON export for tasks, execution logs, budget history, and agent performance data.
 - [ ] **Usage Report Generation** — Auto-generated weekly/monthly summaries: total spend, tasks per agent, top models by cost-efficiency, blocked task root causes.
 - [ ] **Project Health Score** — Composite score per project based on task completion rates, average completion time, recent activity, and code change velocity.
 

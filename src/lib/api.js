@@ -61,6 +61,9 @@ export const api = {
   readFile: (path) => request(`/api/files/read?path=${encodeURIComponent(path)}`),
   browseFolder: () => request('/api/files/browse-folder'),
 
+  // Export
+  exportData: (type) => request(`/api/settings/export?type=${type || 'all'}`),
+
   // Status
   getStatus: () => request('/api/status'),
 };
