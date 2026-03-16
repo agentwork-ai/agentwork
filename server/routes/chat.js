@@ -24,6 +24,26 @@ router.get('/:agentId/search', (req, res) => {
   res.json(messages);
 });
 
+// Export chat as markdown
+router.get('/:agentId/export', (req, res) => {
+  const agent = db.prepare('SELECT name FROM agents WHERE id = ?').get(req.params.agentId);
+  const agentName = agent?.name || 'Agent';
+  const messages = db.prepare(
+    'SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at ASC'
+  ).all(req.params.agentId);
+
+  let md = `# Chat with ${agentName}\n\nExported: ${new Date().toISOString()}\n\n---\n\n`;
+  for (const msg of messages) {
+    const time = new Date(msg.created_at).toLocaleString();
+    const sender = msg.sender === 'user' ? 'You' : agentName;
+    md += `**${sender}** (${time}):\n\n${msg.content}\n\n---\n\n`;
+  }
+
+  res.setHeader('Content-Type', 'text/markdown');
+  res.setHeader('Content-Disposition', `attachment; filename="chat-${agentName.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.md"`);
+  res.send(md);
+});
+
 // Get unread notification count
 router.get('/notifications/count', (req, res) => {
   // Messages from agents that haven't been responded to

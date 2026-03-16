@@ -136,7 +136,7 @@
 - [ ] **Group Chat** — Multi-agent chat rooms for brainstorming sessions where the user discusses a topic and agents respond by expertise.
 - [x] **Chat History Search** — Full-text search across all conversation history with any agent.
 - [ ] **Rich Messages** — Support images, files, and code snippets in chat messages (user-to-agent and agent-to-user).
-- [ ] **Chat Export** — Export conversation history as Markdown or PDF.
+- [x] **Chat Export** — Export conversation history as Markdown or PDF.
 - [ ] **Proactive Agent Notifications** — Agents initiate alerts based on scheduled scans (e.g., "test suite is failing" or "dependency has a CVE").
 
 ## 15. Mobile & Accessibility
