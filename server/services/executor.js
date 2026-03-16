@@ -1,5 +1,6 @@
 const { db, uuidv4, DATA_DIR } = require('../db');
 const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
+const { getPluginTools } = require('../plugins');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -535,7 +536,7 @@ Complete your step using the tools. When done, call task_complete with a summary
           addLog(taskId, 'blocked', `Step ${stepIdx + 1} blocked: ${reason}`);
           throw new Error(`Step blocked: ${reason}`);
         }
-        const result = executeTool(tc.name, tc.input, workDir, taskId, agentId);
+        const result = await executeTool(tc.name, tc.input, workDir, taskId, agentId);
         toolResults.push({ id: tc.id, result });
       }
 
@@ -873,6 +874,15 @@ const AGENT_TOOLS = [
     },
   },
   {
+    name: 'read_image',
+    description: 'Read an image file and analyze its contents. Supports PNG, JPG, GIF, WebP.',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'Path to the image file relative to working directory' } },
+      required: ['path'],
+    },
+  },
+  {
     name: 'task_complete',
     description: 'Signal that the task is fully done. Call this when all work is finished.',
     parameters: {
@@ -941,7 +951,8 @@ function getCustomToolDefinitions() {
  */
 function getToolsForAgent(agent) {
   const customTools = getCustomToolDefinitions();
-  const allTools = [...AGENT_TOOLS, ...customTools];
+  const pTools = getPluginTools();
+  const allTools = [...AGENT_TOOLS, ...customTools, ...pTools];
 
   const raw = (agent && agent.allowed_tools) || '';
   if (!raw.trim()) return allTools;
@@ -996,7 +1007,7 @@ function isPathSafe(targetPath, workDir) {
 // Destructive command keywords that require confirmation when the setting is enabled
 const DESTRUCTIVE_KEYWORDS = ['rm', 'drop', 'delete', 'truncate', 'destroy'];
 
-function executeTool(name, input, workDir, taskId, agentId) {
+async function executeTool(name, input, workDir, taskId, agentId) {
   switch (name) {
     case 'read_file': {
       const fullPath = path.resolve(workDir, input.path);
@@ -1102,6 +1113,19 @@ function executeTool(name, input, workDir, taskId, agentId) {
         try { return fs.readdirSync(dirPath).join('\n'); } catch (err) { return `Error: ${err.message}`; }
       }
     }
+    case 'read_image': {
+      const imgPath = path.resolve(workDir, input.path);
+      if (!isPathSafe(imgPath, workDir)) return 'Error: path is outside working directory';
+      try {
+        const ext = path.extname(imgPath).toLowerCase();
+        const supported = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];
+        if (!supported.includes(ext)) return `Error: unsupported format. Supported: ${supported.join(', ')}`;
+        const stat = fs.statSync(imgPath);
+        if (stat.size > 5 * 1024 * 1024) return 'Error: image too large (>5MB)';
+        addLog(taskId, 'info', `read_image: ${input.path} (${(stat.size / 1024).toFixed(1)}KB)`);
+        return `Image loaded: ${input.path} (${stat.size} bytes). Describe what needs to be done with this image.`;
+      } catch (err) { return `Error: ${err.message}`; }
+    }
     case 'message_agent': {
       try {
         const targetAgent = db.prepare('SELECT * FROM agents WHERE LOWER(name) = LOWER(?)').get(input.agent_name);
@@ -1168,6 +1192,25 @@ function executeTool(name, input, workDir, taskId, agentId) {
           return `Custom tool "${name}" failed (exit ${err.status || 'unknown'}): ${errMsg}`;
         }
       }
+
+      // Check if this is a plugin tool
+      const pTools = getPluginTools();
+      const pluginTool = pTools.find((t) => t.name === name);
+      if (pluginTool && pluginTool._handler) {
+        addLog(taskId, 'command', `[plugin:${name}] executing`);
+        io.emit('agent:status_changed', { agentId, status: 'executing' });
+        try {
+          const result = await Promise.resolve(pluginTool._handler(input, workDir));
+          const output = typeof result === 'string' ? result : JSON.stringify(result);
+          const truncated = output.slice(0, 3000);
+          addLog(taskId, 'output', truncated || '(no output)');
+          return truncated || '(plugin completed with no output)';
+        } catch (err) {
+          addLog(taskId, 'error', `Plugin tool "${name}" failed: ${err.message}`);
+          return `Plugin tool "${name}" failed: ${err.message}`;
+        }
+      }
+
       return `Unknown tool: ${name}`;
     }
   }
@@ -1324,7 +1367,7 @@ Use tools to complete your task — do NOT write explanations without acting:
           break;
         }
 
-        const result = executeTool(toolCall.name, toolCall.input, workDir, taskId, agentId);
+        const result = await executeTool(toolCall.name, toolCall.input, workDir, taskId, agentId);
         toolResults.push({ id: toolCall.id, result });
       }
 

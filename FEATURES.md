@@ -15,7 +15,7 @@
 - [x] **Streaming Chat Responses** — Stream tokens to the UI in real time using Socket.io so the user sees the agent "typing" character by character, instead of waiting for the full completion.
 - [x] **Context Window Management** — Add automatic context window management that summarizes older messages when approaching the model's token limit, preventing truncation errors.
 - [x] **Agent Warm-Up / Pre-Caching** — When an agent is assigned a task, pre-load its memory files and project context into a cached session object so that execution starts faster.
-- [ ] **Vision / Image Understanding** — Allow agents to analyze screenshots, diagrams, or UI mockups attached to tasks. Pass image attachments as base64 content blocks in the messages array.
+- [x] **Vision / Image Understanding** — Allow agents to analyze screenshots, diagrams, or UI mockups attached to tasks. Pass image attachments as base64 content blocks in the messages array.
 
 ## 2. Task Management & Workflow
 
