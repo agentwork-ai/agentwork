@@ -13,7 +13,7 @@
 - [x] **Agent Cloning / Templates** — Allow cloning an existing agent's configuration (personality, memory files, provider/model) to spin up a new agent with the same starting point. Also support agent templates ("Senior React Developer with Claude Opus" preset).
 - [x] **Multi-Model Fallback Chain** — If the primary model for an agent fails (rate limit, API down), automatically fall back to a secondary model. The agent configuration could have a `fallback_model` field.
 - [x] **Streaming Chat Responses** — Stream tokens to the UI in real time using Socket.io so the user sees the agent "typing" character by character, instead of waiting for the full completion.
-- [ ] **Context Window Management** — Add automatic context window management that summarizes older messages when approaching the model's token limit, preventing truncation errors.
+- [x] **Context Window Management** — Add automatic context window management that summarizes older messages when approaching the model's token limit, preventing truncation errors.
 - [ ] **Agent Warm-Up / Pre-Caching** — When an agent is assigned a task, pre-load its memory files and project context into a cached session object so that execution starts faster.
 - [ ] **Vision / Image Understanding** — Allow agents to analyze screenshots, diagrams, or UI mockups attached to tasks. Pass image attachments as base64 content blocks in the messages array.
 

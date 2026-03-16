@@ -1104,6 +1104,14 @@ Use tools to complete your task — do NOT write explanations without acting:
     addLog(taskId, 'thinking', `Iteration ${iterations}...`);
     io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
+    // Prune context if too large
+    const pruned = pruneMessages(messages);
+    if (pruned.length < messages.length) {
+      messages.length = 0;
+      messages.push(...pruned);
+      addLog(taskId, 'info', `Context pruned: ${pruned.length} messages (was larger)`);
+    }
+
     let response;
     try {
       response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS, fallbackModel: agent.fallback_model });
@@ -1245,6 +1253,37 @@ function readFile(filePath) {
     if (fs.existsSync(filePath)) return fs.readFileSync(filePath, 'utf8');
   } catch {}
   return '';
+}
+
+// Context window management: prune old messages when approaching limits
+const MAX_CONTEXT_CHARS = 200000; // ~50K tokens rough estimate
+
+function pruneMessages(messages) {
+  // Estimate total size
+  const totalChars = messages.reduce((sum, m) => {
+    const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    return sum + content.length;
+  }, 0);
+
+  if (totalChars <= MAX_CONTEXT_CHARS) return messages;
+
+  // Keep system message (first) and last 10 messages, summarize the middle
+  const system = messages[0];
+  const recent = messages.slice(-10);
+  const middle = messages.slice(1, -10);
+
+  // Summarize middle messages
+  const summaryParts = middle.map((m) => {
+    const content = typeof m.content === 'string' ? m.content : JSON.stringify(m.content);
+    return `[${m.role}]: ${content.slice(0, 100)}...`;
+  });
+
+  const summaryMsg = {
+    role: 'user',
+    content: `[Context compressed — ${middle.length} earlier messages summarized]\n${summaryParts.slice(-5).join('\n')}`,
+  };
+
+  return [system, summaryMsg, ...recent];
 }
 
 const MAX_EXECUTION_LOGS = 500;
