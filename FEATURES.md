@@ -128,7 +128,7 @@
 - [x] **Configurable Max Iterations** — Per-task or global iteration limit instead of the hardcoded 30.
 - [ ] **Custom Accent Colors** — Theme customization with preset color schemes (purple, green, orange) beyond dark/light.
 - [ ] **Granular Notification Preferences** — Per-event-type controls: task complete, task blocked, budget threshold, quiet hours.
-- [ ] **Per-Project Default Agent** — Auto-assign a specific agent when creating new tasks for a project.
+- [x] **Per-Project Default Agent** — Auto-assign a specific agent when creating new tasks for a project.
 - [ ] **Custom Memory Files** — Add project-specific memory files beyond the standard 4 (SOUL, USER, AGENTS, MEMORY).
 
 ## 14. Communication

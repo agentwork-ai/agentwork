@@ -231,9 +231,15 @@ function ProjectFormModal({ project, onClose, onSaved }) {
     description: project?.description || '',
     path: project?.path || '',
     ignore_patterns: project?.ignore_patterns || 'node_modules,.git,dist,build,.next',
+    default_agent_id: project?.default_agent_id || '',
   });
   const [saving, setSaving] = useState(false);
   const [browsing, setBrowsing] = useState(false);
+  const [agents, setAgents] = useState([]);
+
+  useEffect(() => {
+    api.getAgents().then(setAgents).catch(() => {});
+  }, []);
 
   const handleBrowse = async () => {
     setBrowsing(true);
@@ -300,6 +306,17 @@ function ProjectFormModal({ project, onClose, onSaved }) {
           <div>
             <label className="label">Description</label>
             <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} />
+          </div>
+          <div>
+            <label className="label">Default Agent</label>
+            <select className="input" value={form.default_agent_id}
+              onChange={(e) => setForm({ ...form, default_agent_id: e.target.value })}>
+              <option value="">None</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.avatar} {a.name} — {a.role}</option>
+              ))}
+            </select>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Auto-assign this agent to new tasks for this project</p>
           </div>
           <div>
             <label className="label">Ignore Patterns (comma-separated)</label>

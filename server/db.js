@@ -128,6 +128,12 @@ if (!taskCols.includes('tags')) {
   db.exec("ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT ''");
 }
 
+// Migrate projects table: add default_agent_id if missing
+const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
+if (!projectCols.includes('default_agent_id')) {
+  db.exec("ALTER TABLE projects ADD COLUMN default_agent_id TEXT DEFAULT NULL");
+}
+
 // Migrate agents table: add platform columns if missing
 const agentCols = db.prepare("PRAGMA table_info(agents)").all().map((c) => c.name);
 if (!agentCols.includes('chat_enabled')) {
