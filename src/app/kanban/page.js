@@ -356,17 +356,30 @@ const PRIORITY_COLORS = { low: '#868e96', medium: '#fab005', high: '#fa5252', cr
 
 function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange }) {
   const isDoing = task.status === 'doing';
-  const [openDropdown, setOpenDropdown] = useState(null); // 'agent' | 'project' | null
+  const [openDropdown, setOpenDropdown] = useState(null); // 'priority' | 'project' | 'agent' | null
+  const cardRef = useRef(null);
 
-  const cyclePriority = (e) => {
-    e.stopPropagation();
-    const next = PRIORITIES[(PRIORITIES.indexOf(task.priority) + 1) % PRIORITIES.length];
-    onPriorityChange(task.id, next);
-  };
+  // Close dropdown on outside click
+  useEffect(() => {
+    if (!openDropdown) return;
+    const handler = (e) => {
+      if (cardRef.current && !cardRef.current.contains(e.target)) {
+        setOpenDropdown(null);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [openDropdown]);
 
   const toggleDropdown = (e, name) => {
     e.stopPropagation();
     setOpenDropdown((prev) => (prev === name ? null : name));
+  };
+
+  const selectPriority = (e, priority) => {
+    e.stopPropagation();
+    onPriorityChange(task.id, priority);
+    setOpenDropdown(null);
   };
 
   const selectAgent = (e, agentId) => {
@@ -383,9 +396,11 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
 
   const assignedAgent = agents?.find((a) => a.id === task.agent_id);
   const assignedProject = projects?.find((p) => p.id === task.project_id);
+  const priorityColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium;
 
   return (
     <div
+      ref={cardRef}
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
@@ -405,16 +420,36 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
       )}
       <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-        {/* Priority */}
-        <button
-          onClick={cyclePriority}
-          className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:opacity-80"
-          style={{ background: `${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium}20` }}
-          title="Click to change priority"
-        >
-          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }} />
-          <span className="text-[10px] uppercase font-semibold" style={{ color: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }}>{task.priority}</span>
-        </button>
+        {/* Priority dropdown */}
+        <div className="relative">
+          <button
+            onClick={(e) => toggleDropdown(e, 'priority')}
+            className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:opacity-80"
+            style={{ background: `${priorityColor}20` }}
+          >
+            <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: priorityColor }} />
+            <span className="text-[10px] uppercase font-semibold" style={{ color: priorityColor }}>{task.priority}</span>
+          </button>
+          {openDropdown === 'priority' && (
+            <div
+              className="absolute left-0 top-full mt-1 rounded-lg shadow-lg z-50 py-1 min-w-[100px]"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              {PRIORITIES.map((p) => (
+                <button
+                  key={p}
+                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:opacity-80 transition-colors"
+                  style={{ background: task.priority === p ? `${PRIORITY_COLORS[p]}20` : 'transparent', color: PRIORITY_COLORS[p] }}
+                  onClick={(e) => selectPriority(e, p)}
+                >
+                  <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PRIORITY_COLORS[p] }} />
+                  <span className="uppercase font-semibold">{p}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
 
         {/* Project picker */}
         <div className="relative">
