@@ -112,9 +112,10 @@ app.prepare().then(() => {
   initExecutor(io);
 
   // Recover orphaned tasks (stuck in 'doing' from previous crash)
-  const orphaned = db.prepare("SELECT id FROM tasks WHERE status = 'doing'").all();
+  const { db: dbRecover } = require('./db');
+  const orphaned = dbRecover.prepare("SELECT id FROM tasks WHERE status = 'doing'").all();
   if (orphaned.length > 0) {
-    db.prepare("UPDATE tasks SET status = 'todo', updated_at = CURRENT_TIMESTAMP WHERE status = 'doing'").run();
+    dbRecover.prepare("UPDATE tasks SET status = 'todo', updated_at = CURRENT_TIMESTAMP WHERE status = 'doing'").run();
     console.log(`[AgentWork] Recovered ${orphaned.length} orphaned task(s) from 'doing' → 'todo'`);
   }
 
