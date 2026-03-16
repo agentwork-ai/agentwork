@@ -90,6 +90,14 @@ export default function KanbanPage() {
     toast.success('Task deleted');
   };
 
+  const changePriority = async (taskId, priority) => {
+    try {
+      await api.updateTask(taskId, { priority });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   const handleDragStart = (e, task) => {
     setDragTask(task);
     e.dataTransfer.effectAllowed = 'move';
@@ -284,6 +292,7 @@ export default function KanbanPage() {
                         showProject={!selectedProjectId}
                         onDragStart={(e) => handleDragStart(e, task)}
                         onClick={() => setViewTask(task)}
+                        onPriorityChange={changePriority}
                       />
                     ))}
                   </div>
@@ -323,12 +332,20 @@ export default function KanbanPage() {
   );
 }
 
-function TaskCard({ task, projects, showProject, onDragStart, onClick }) {
-  const priorityColors = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
+const PRIORITIES = ['low', 'medium', 'high', 'critical'];
+const PRIORITY_COLORS = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
+
+function TaskCard({ task, projects, showProject, onDragStart, onClick, onPriorityChange }) {
   const isDoing = task.status === 'doing';
   const projectName = showProject && task.project_id
     ? projects.find((p) => p.id === task.project_id)?.name
     : null;
+
+  const cyclePriority = (e) => {
+    e.stopPropagation();
+    const next = PRIORITIES[(PRIORITIES.indexOf(task.priority) + 1) % PRIORITIES.length];
+    onPriorityChange(task.id, next);
+  };
 
   return (
     <div
@@ -351,8 +368,15 @@ function TaskCard({ task, projects, showProject, onDragStart, onClick }) {
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
       )}
       <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: priorityColors[task.priority] || priorityColors.medium }} />
-        <span className="text-[10px] uppercase font-semibold" style={{ color: 'var(--text-tertiary)' }}>{task.priority}</span>
+        <button
+          onClick={cyclePriority}
+          className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:opacity-80"
+          style={{ background: `${PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium}20` }}
+          title="Click to change priority"
+        >
+          <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }} />
+          <span className="text-[10px] uppercase font-semibold" style={{ color: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }}>{task.priority}</span>
+        </button>
         {projectName && (
           <span className="text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
             <FolderOpen size={10} /> {projectName}
