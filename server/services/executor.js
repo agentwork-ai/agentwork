@@ -1099,12 +1099,20 @@ function readFile(filePath) {
   return '';
 }
 
+const MAX_EXECUTION_LOGS = 500;
+
 function addLog(taskId, type, content) {
   const task = db.prepare('SELECT execution_logs FROM tasks WHERE id = ?').get(taskId);
   if (!task) return;
-  const logs = JSON.parse(task.execution_logs || '[]');
+  let logs = JSON.parse(task.execution_logs || '[]');
   const entry = { timestamp: new Date().toISOString(), type, content };
   logs.push(entry);
+  // Trim old logs if exceeding limit, keeping first 5 (start markers) and last N
+  if (logs.length > MAX_EXECUTION_LOGS) {
+    const header = logs.slice(0, 5);
+    const recent = logs.slice(-(MAX_EXECUTION_LOGS - 6));
+    logs = [...header, { timestamp: new Date().toISOString(), type: 'info', content: `... ${logs.length - MAX_EXECUTION_LOGS} older log entries trimmed ...` }, ...recent];
+  }
   db.prepare('UPDATE tasks SET execution_logs = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(JSON.stringify(logs), taskId);
   if (io) io.emit('task:log', { taskId, log: entry });
 }
