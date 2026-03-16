@@ -208,6 +208,29 @@ router.get('/:id/search', (req, res) => {
   }
 });
 
+// Get git status for a project
+router.get('/:id/git-status', (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  try {
+    const { execSync } = require('child_process');
+    execSync('git rev-parse --is-inside-work-tree', { cwd: project.path, stdio: 'pipe' });
+
+    const status = execSync('git status --porcelain', { cwd: project.path, encoding: 'utf8', timeout: 5000 });
+    const branch = execSync('git branch --show-current', { cwd: project.path, encoding: 'utf8', timeout: 5000 }).trim();
+    const files = {};
+    for (const line of status.split('\n').filter(Boolean)) {
+      const code = line.slice(0, 2).trim();
+      const filePath = line.slice(3);
+      files[filePath] = code === 'M' ? 'modified' : code === 'A' ? 'added' : code === 'D' ? 'deleted' : code === '??' ? 'untracked' : code;
+    }
+    res.json({ isGitRepo: true, branch, files, changedCount: Object.keys(files).length });
+  } catch {
+    res.json({ isGitRepo: false, branch: null, files: {}, changedCount: 0 });
+  }
+});
+
 // Get project file tree
 router.get('/:id/files', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
