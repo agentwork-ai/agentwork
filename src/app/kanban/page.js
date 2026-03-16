@@ -29,8 +29,11 @@ export default function KanbanPage() {
   const [editTask, setEditTask] = useState(null);
   const [viewTask, setViewTask] = useState(null);
   const [dragTask, setDragTask] = useState(null);
-  const [quickAddCol, setQuickAddCol] = useState(null); // column id with inline add open
+  const [quickAddCol, setQuickAddCol] = useState(null);
   const [quickAddTitle, setQuickAddTitle] = useState('');
+  const [quickAddPriority, setQuickAddPriority] = useState('medium');
+  const [quickAddAgentId, setQuickAddAgentId] = useState('');
+  const [quickAddProjectId, setQuickAddProjectId] = useState('');
   const quickAddRef = useRef(null);
 
   const loadData = useCallback(async () => {
@@ -144,29 +147,37 @@ export default function KanbanPage() {
 
   const openQuickAdd = (colId) => {
     setQuickAddTitle('');
+    setQuickAddPriority('medium');
+    setQuickAddAgentId('');
+    setQuickAddProjectId(selectedProjectId || '');
     setQuickAddCol(colId);
   };
 
-  const submitQuickAdd = async () => {
-    const title = quickAddTitle.trim();
-    if (!title) { setQuickAddCol(null); return; }
-    try {
-      await api.createTask({
-        title,
-        status: quickAddCol,
-        priority: 'medium',
-        project_id: selectedProjectId || null,
-      });
-    } catch (err) {
-      toast.error(err.message);
-    }
+  const closeQuickAdd = () => {
     setQuickAddCol(null);
     setQuickAddTitle('');
   };
 
+  const submitQuickAdd = async () => {
+    const title = quickAddTitle.trim();
+    if (!title) { closeQuickAdd(); return; }
+    try {
+      await api.createTask({
+        title,
+        status: quickAddCol,
+        priority: quickAddPriority,
+        agent_id: quickAddAgentId || null,
+        project_id: quickAddProjectId || null,
+      });
+    } catch (err) {
+      toast.error(err.message);
+    }
+    closeQuickAdd();
+  };
+
   const onQuickAddKey = (e) => {
     if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(); }
-    else if (e.key === 'Escape') { setQuickAddCol(null); setQuickAddTitle(''); }
+    else if (e.key === 'Escape') { closeQuickAdd(); }
   };
 
   // Filter tasks by selected project
@@ -294,7 +305,7 @@ export default function KanbanPage() {
                   </div>
                   <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
                     {quickAddCol === col.id && (
-                      <div className="rounded-lg p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)' }}>
+                      <div className="rounded-lg p-2.5 space-y-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)' }}>
                         <input
                           ref={quickAddRef}
                           className="w-full bg-transparent text-sm outline-none"
@@ -303,8 +314,54 @@ export default function KanbanPage() {
                           value={quickAddTitle}
                           onChange={(e) => setQuickAddTitle(e.target.value)}
                           onKeyDown={onQuickAddKey}
-                          onBlur={submitQuickAdd}
                         />
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          {/* Priority */}
+                          <select
+                            className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                            style={{
+                              background: `${PRIORITY_COLORS[quickAddPriority]}20`,
+                              color: PRIORITY_COLORS[quickAddPriority],
+                              border: 'none',
+                            }}
+                            value={quickAddPriority}
+                            onChange={(e) => setQuickAddPriority(e.target.value)}
+                          >
+                            {PRIORITIES.map((p) => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+
+                          {/* Agent */}
+                          <select
+                            className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
+                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
+                            value={quickAddAgentId}
+                            onChange={(e) => setQuickAddAgentId(e.target.value)}
+                          >
+                            <option value="">No agent</option>
+                            {agents.map((a) => (
+                              <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>
+                            ))}
+                          </select>
+
+                          {/* Project */}
+                          <select
+                            className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
+                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
+                            value={quickAddProjectId}
+                            onChange={(e) => setQuickAddProjectId(e.target.value)}
+                          >
+                            <option value="">No project</option>
+                            {projects.map((p) => (
+                              <option key={p.id} value={p.id}>{p.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex justify-end gap-1.5">
+                          <button className="btn btn-ghost text-[10px] py-0.5 px-2" onClick={closeQuickAdd}>Cancel</button>
+                          <button className="btn btn-primary text-[10px] py-0.5 px-2" onClick={submitQuickAdd}>Add</button>
+                        </div>
                       </div>
                     )}
                     {colTasks.map((task) => (
