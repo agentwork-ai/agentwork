@@ -72,7 +72,14 @@ function initSocket(io) {
 
       db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, taskId);
 
-      const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+      const task = db.prepare(
+        'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+      ).get(taskId);
+      if (task) {
+        task.execution_logs = JSON.parse(task.execution_logs || '[]');
+        task.attachments = JSON.parse(task.attachments || '[]');
+        task.flow_items = JSON.parse(task.flow_items || '[]');
+      }
       io.emit('task:updated', task);
 
       if (status === 'doing' && task) {

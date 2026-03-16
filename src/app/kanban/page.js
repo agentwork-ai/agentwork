@@ -47,12 +47,18 @@ export default function KanbanPage() {
 
   useEffect(() => {
     if (!socket) return;
+    const parseTaskFields = (task) => ({
+      ...task,
+      execution_logs: Array.isArray(task.execution_logs) ? task.execution_logs : JSON.parse(task.execution_logs || '[]'),
+      attachments: Array.isArray(task.attachments) ? task.attachments : JSON.parse(task.attachments || '[]'),
+      flow_items: Array.isArray(task.flow_items) ? task.flow_items : JSON.parse(task.flow_items || '[]'),
+    });
     const onTaskUpdated = (task) => {
-      const parsed = { ...task, execution_logs: task.execution_logs || [], attachments: task.attachments || [], flow_items: task.flow_items || [] };
+      const parsed = parseTaskFields(task);
       setTasks((prev) => prev.map((t) => (t.id === parsed.id ? parsed : t)));
       setViewTask((prev) => prev?.id === parsed.id ? parsed : prev);
     };
-    const onTaskCreated = (task) => setTasks((prev) => [{ ...task, execution_logs: task.execution_logs || [] }, ...prev]);
+    const onTaskCreated = (task) => setTasks((prev) => [parseTaskFields(task), ...prev]);
     const onTaskDeleted = ({ id }) => {
       setTasks((prev) => prev.filter((t) => t.id !== id));
       setViewTask((prev) => prev?.id === id ? null : prev);
@@ -1071,6 +1077,75 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
             <label className="label">Description</label>
             <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
           </div>
+
+          {/* Task Type */}
+          <div>
+            <label className="label">Task Type</label>
+            <div className="grid grid-cols-2 gap-2">
+              {[
+                { id: 'single', label: 'Single', desc: 'One agent handles the task', icon: <Play size={13} /> },
+                { id: 'flow',   label: 'Flow',   desc: 'Sequential steps with different agents', icon: <Layers size={13} /> },
+              ].map((t) => (
+                <button key={t.id} type="button"
+                  className="p-2.5 rounded-lg text-left transition-all"
+                  style={{
+                    background: form.task_type === t.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                    border: `1px solid ${form.task_type === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                  }}
+                  onClick={() => setForm({ ...form, task_type: t.id })}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5" style={{ color: form.task_type === t.id ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                    {t.icon}
+                    <span className="text-xs font-semibold">{t.label}</span>
+                  </div>
+                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{t.desc}</p>
+                </button>
+              ))}
+            </div>
+            {form.task_type === 'flow' && (
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Flow Steps</span>
+                  <button type="button" className="btn btn-ghost text-xs py-1 px-2" onClick={addFlowItem}>
+                    <Plus size={11} /> Add Step
+                  </button>
+                </div>
+                {form.flow_items.length === 0 ? (
+                  <p className="text-xs text-center py-4 rounded-lg" style={{ color: 'var(--text-tertiary)', background: 'var(--bg-secondary)' }}>
+                    No steps yet. Click "Add Step" to begin.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {form.flow_items.map((item, idx) => (
+                      <div key={item.id || idx} className="flex gap-2 p-2.5 rounded-lg"
+                        style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-1"
+                          style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 space-y-1.5">
+                          <input className="input text-sm py-1.5"
+                            placeholder={`Step ${idx + 1} description…`}
+                            value={item.title}
+                            onChange={(e) => updateFlowItem(idx, 'title', e.target.value)} />
+                          <select className="input text-sm py-1.5" value={item.agent_id}
+                            onChange={(e) => updateFlowItem(idx, 'agent_id', e.target.value)}>
+                            <option value="">Assign agent…</option>
+                            {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
+                          </select>
+                        </div>
+                        <button type="button" className="p-1 rounded hover:opacity-70 shrink-0"
+                          style={{ color: 'var(--text-tertiary)' }} onClick={() => removeFlowItem(idx)}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="label">Priority</label>
@@ -1160,77 +1235,6 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
                   <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                     Expression: <code className="font-mono">{form.trigger_cron}</code> · Task moves back to To Do after each run
                   </p>
-                )}
-              </div>
-            )}
-          </div>
-
-          {/* Task Type */}
-          <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-            <label className="label">Task Type</label>
-            <div className="grid grid-cols-2 gap-2 mb-3">
-              {[
-                { id: 'single', label: 'Single', desc: 'One agent handles the task', icon: <Play size={13} /> },
-                { id: 'flow',   label: 'Flow',   desc: 'Sequential steps with different agents', icon: <Layers size={13} /> },
-              ].map((t) => (
-                <button key={t.id} type="button"
-                  className="p-2.5 rounded-lg text-left transition-all"
-                  style={{
-                    background: form.task_type === t.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
-                    border: `1px solid ${form.task_type === t.id ? 'var(--accent)' : 'var(--border)'}`,
-                  }}
-                  onClick={() => setForm({ ...form, task_type: t.id })}
-                >
-                  <div className="flex items-center gap-1.5 mb-0.5" style={{ color: form.task_type === t.id ? 'var(--accent)' : 'var(--text-secondary)' }}>
-                    {t.icon}
-                    <span className="text-xs font-semibold">{t.label}</span>
-                  </div>
-                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{t.desc}</p>
-                </button>
-              ))}
-            </div>
-
-            {form.task_type === 'flow' && (
-              <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="label m-0">Flow Steps</span>
-                  <button type="button" className="btn btn-ghost text-xs py-1 px-2" onClick={addFlowItem}>
-                    <Plus size={11} /> Add Step
-                  </button>
-                </div>
-                {form.flow_items.length === 0 ? (
-                  <p className="text-xs text-center py-4 rounded-lg" style={{ color: 'var(--text-tertiary)', background: 'var(--bg-secondary)' }}>
-                    No steps yet. Click "Add Step" to begin.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    {form.flow_items.map((item, idx) => (
-                      <div key={item.id || idx} className="flex gap-2 p-3 rounded-lg"
-                        style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
-                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-1"
-                          style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
-                          {idx + 1}
-                        </div>
-                        <div className="flex-1 space-y-1.5">
-                          <input
-                            className="input text-sm py-1.5"
-                            placeholder={`Step ${idx + 1} description…`}
-                            value={item.title}
-                            onChange={(e) => updateFlowItem(idx, 'title', e.target.value)}
-                          />
-                          <select className="input text-sm py-1.5" value={item.agent_id}
-                            onChange={(e) => updateFlowItem(idx, 'agent_id', e.target.value)}>
-                            <option value="">Assign agent…</option>
-                            {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
-                          </select>
-                        </div>
-                        <button type="button" className="p-1 rounded hover:opacity-70 shrink-0"
-                          style={{ color: 'var(--text-tertiary)' }} onClick={() => removeFlowItem(idx)}>
-                          <X size={14} />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
                 )}
               </div>
             )}
