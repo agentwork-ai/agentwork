@@ -8,14 +8,14 @@ export default function BottomBar() {
 
   return (
     <footer
-      className="flex items-center justify-between px-4 h-9 border-t text-xs shrink-0"
+      className="flex items-center justify-between px-2 md:px-4 h-9 border-t text-xs shrink-0"
       style={{
         background: 'var(--bg-secondary)',
         borderColor: 'var(--border)',
         color: 'var(--text-tertiary)',
       }}
     >
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 md:gap-4">
         {/* Connection status */}
         <div className="flex items-center gap-1.5">
           {status.connected ? (
@@ -31,30 +31,30 @@ export default function BottomBar() {
           )}
         </div>
 
-        {/* Active agents */}
-        <div className="flex items-center gap-1.5">
+        {/* Active agents - hidden on mobile */}
+        <div className="hidden md:flex items-center gap-1.5">
           <Cpu size={13} />
           <span>{status.activeAgents || 0} agents active</span>
         </div>
 
-        {/* Active tasks */}
-        <div className="flex items-center gap-1.5">
+        {/* Active tasks - hidden on mobile */}
+        <div className="hidden md:flex items-center gap-1.5">
           <Activity size={13} />
           <span>{status.activeTasks || 0} tasks running</span>
         </div>
       </div>
 
-      <div className="flex items-center gap-4">
-        {/* Token usage */}
-        <div className="flex items-center gap-1.5">
+      <div className="flex items-center gap-2 md:gap-4">
+        {/* Token usage - hidden on mobile */}
+        <div className="hidden md:flex items-center gap-1.5">
           <Coins size={13} />
           <span>{formatTokens(status.totalTokens || 0)} tokens</span>
         </div>
 
-        {/* Cost */}
+        {/* Cost - always visible */}
         <div className="flex items-center gap-1.5">
           <DollarSign size={13} />
-          <span>Today: ${(status.dailySpend || 0).toFixed(4)}</span>
+          <span>${(status.dailySpend || 0).toFixed(4)}</span>
         </div>
       </div>
     </footer>

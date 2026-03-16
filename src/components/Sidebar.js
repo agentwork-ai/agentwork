@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useTheme, useUnread } from '@/app/providers';
@@ -17,6 +17,8 @@ import {
   Sun,
   Moon,
   Zap,
+  Menu,
+  X,
 } from 'lucide-react';
 
 const navItems = [
@@ -34,6 +36,12 @@ export default function Sidebar() {
   const { theme, toggleTheme } = useTheme();
   const { unread } = useUnread();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  // Close mobile sidebar on route change
+  useEffect(() => {
+    setMobileOpen(false);
+  }, [pathname]);
 
   // Listen for keyboard shortcut toggle event
   useEffect(() => {
@@ -42,18 +50,22 @@ export default function Sidebar() {
     return () => window.removeEventListener('sidebar:toggle', handler);
   }, []);
 
+  // Prevent body scroll when mobile sidebar is open
+  useEffect(() => {
+    if (mobileOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    return () => { document.body.style.overflow = ''; };
+  }, [mobileOpen]);
+
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+
   const totalUnread = Object.values(unread).reduce((sum, v) => sum + (v.count || 0), 0);
 
-  return (
-    <aside
-      className={`flex flex-col border-r transition-all duration-200 ${
-        collapsed ? 'w-[68px]' : 'w-[220px]'
-      }`}
-      style={{
-        background: 'var(--bg-secondary)',
-        borderColor: 'var(--border)',
-      }}
-    >
+  const sidebarContent = (
+    <>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-14 border-b" style={{ borderColor: 'var(--border)' }}>
         <div
@@ -67,6 +79,15 @@ export default function Sidebar() {
             AgentWork
           </span>
         )}
+        {/* Close button on mobile */}
+        <button
+          onClick={closeMobile}
+          className="md:hidden ml-auto flex items-center justify-center w-8 h-8 rounded-lg"
+          style={{ color: 'var(--text-secondary)' }}
+          aria-label="Close sidebar"
+        >
+          <X size={20} />
+        </button>
       </div>
 
       {/* Navigation */}
@@ -80,7 +101,7 @@ export default function Sidebar() {
               key={item.href}
               href={item.href}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-150 ${
-                collapsed ? 'justify-center' : ''
+                collapsed ? 'md:justify-center' : ''
               }`}
               style={{
                 background: isActive ? 'var(--accent-light)' : 'transparent',
@@ -96,7 +117,8 @@ export default function Sidebar() {
                   </span>
                 )}
               </div>
-              {!collapsed && <span>{item.label}</span>}
+              {/* On mobile, always show label. On desktop, respect collapsed state. */}
+              <span className={collapsed ? 'md:hidden' : ''}>{item.label}</span>
             </Link>
           );
         })}
@@ -107,17 +129,17 @@ export default function Sidebar() {
         <button
           onClick={toggleTheme}
           className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm w-full transition-colors ${
-            collapsed ? 'justify-center' : ''
+            collapsed ? 'md:justify-center' : ''
           }`}
           style={{ color: 'var(--text-secondary)' }}
         >
           {theme === 'dark' ? <Sun size={20} /> : <Moon size={20} />}
-          {!collapsed && <span>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>}
+          <span className={collapsed ? 'md:hidden' : ''}>{theme === 'dark' ? 'Light mode' : 'Dark mode'}</span>
         </button>
 
         <button
           onClick={() => setCollapsed(!collapsed)}
-          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm w-full transition-colors ${
+          className={`hidden md:flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm w-full transition-colors ${
             collapsed ? 'justify-center' : ''
           }`}
           style={{ color: 'var(--text-tertiary)' }}
@@ -126,6 +148,50 @@ export default function Sidebar() {
           {!collapsed && <span>Collapse</span>}
         </button>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Mobile hamburger button - fixed in top-left */}
+      <button
+        onClick={() => setMobileOpen(true)}
+        className="md:hidden fixed top-3 left-3 z-50 flex items-center justify-center w-10 h-10 rounded-lg"
+        style={{
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border)',
+          color: 'var(--text-primary)',
+          boxShadow: 'var(--shadow-md)',
+        }}
+        aria-label="Open menu"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Mobile overlay backdrop */}
+      {mobileOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50"
+          style={{ background: 'rgba(0, 0, 0, 0.5)' }}
+          onClick={closeMobile}
+        />
+      )}
+
+      {/* Sidebar - desktop: static in flex layout; mobile: fixed overlay */}
+      <aside
+        className={`
+          flex flex-col border-r transition-all duration-200
+          max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-[260px]
+          ${mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}
+          ${collapsed ? 'md:w-[68px]' : 'md:w-[220px]'}
+        `}
+        style={{
+          background: 'var(--bg-secondary)',
+          borderColor: 'var(--border)',
+        }}
+      >
+        {sidebarContent}
+      </aside>
+    </>
   );
 }

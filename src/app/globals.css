@@ -247,3 +247,29 @@ textarea.input {
   0%, 100% { opacity: 1; transform: scale(1); }
   50% { opacity: 0.4; transform: scale(0.75); }
 }
+
+/* ========================================
+   Mobile Responsive Styles (< 768px)
+   ======================================== */
+@media (max-width: 767px) {
+  /* Add top padding on pages to make room for hamburger button */
+  main {
+    padding-top: 3.5rem !important;
+  }
+
+  /* Bottom bar: smaller text */
+  footer {
+    font-size: 10px;
+  }
+
+  /* Cards: reduce padding on mobile */
+  .card {
+    border-radius: 10px;
+  }
+
+  /* Buttons: slightly smaller on mobile */
+  .btn {
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+}
