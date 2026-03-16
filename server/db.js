@@ -104,6 +104,40 @@ db.exec(`
   );
 `);
 
+// ─── Versioned Migration System ───
+db.exec(`
+  CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+function runMigrations() {
+  const applied = new Set(db.prepare('SELECT version FROM schema_migrations').all().map((r) => r.version));
+  const migrationsDir = path.join(__dirname, 'migrations');
+  if (!fs.existsSync(migrationsDir)) return;
+
+  const files = fs.readdirSync(migrationsDir)
+    .filter((f) => f.endsWith('.js') && /^\d+/.test(f))
+    .sort((a, b) => parseInt(a) - parseInt(b));
+
+  for (const file of files) {
+    const version = parseInt(file);
+    if (applied.has(version)) continue;
+    try {
+      const migration = require(path.join(migrationsDir, file));
+      migration.up(db);
+      db.prepare('INSERT INTO schema_migrations (version, name) VALUES (?, ?)').run(version, file);
+      console.log(`[DB] Migration applied: ${file}`);
+    } catch (err) {
+      console.error(`[DB] Migration failed: ${file}:`, err.message);
+      break;
+    }
+  }
+}
+
+// Run legacy ad-hoc migrations (kept for backwards compatibility)
 // Migrate tasks table: add new columns if missing
 const taskCols = db.prepare("PRAGMA table_info(tasks)").all().map((c) => c.name);
 if (!taskCols.includes('completion_output')) {
@@ -263,5 +297,8 @@ function logAudit(action, resourceType, resourceId, details) {
     );
   } catch {}
 }
+
+// Run versioned migrations
+runMigrations();
 
 module.exports = { db, uuidv4, DATA_DIR, logAudit };
