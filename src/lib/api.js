@@ -56,6 +56,7 @@ export const api = {
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: 'DELETE' }),
   bulkTaskAction: (action, taskIds, data) =>
     request('/api/tasks/bulk', { method: 'POST', body: JSON.stringify({ action, task_ids: taskIds, data }) }),
+  getTaskReplay: (id) => request(`/api/tasks/${id}/replay`),
   getSubtasks: (id) => request(`/api/tasks/${id}/subtasks`),
   createSubtask: (id, data) => request(`/api/tasks/${id}/subtasks`, { method: 'POST', body: JSON.stringify(data) }),
   getTaskComments: (taskId) => request(`/api/tasks/${taskId}/comments`),
@@ -91,6 +92,9 @@ export const api = {
   getBudgetByAgent: (days) => request(`/api/settings/budget/by-agent?days=${days || 30}`),
   getBudgetByModel: (days) => request(`/api/settings/budget/by-model?days=${days || 30}`),
 
+  // Plugins
+  getPlugins: () => request('/api/settings/plugins'),
+
   // Files
   readFile: (path) => request(`/api/files/read?path=${encodeURIComponent(path)}`),
   writeFile: (path, content) => request('/api/files/write', { method: 'POST', body: JSON.stringify({ path, content }) }),
@@ -112,6 +116,14 @@ export const api = {
   getRoomMessages: (id, limit) => request(`/api/rooms/${id}/messages?limit=${limit || 200}`),
   sendRoomMessage: (id, content) => request(`/api/rooms/${id}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
   deleteRoom: (id) => request(`/api/rooms/${id}`, { method: 'DELETE' }),
+
+  // Pipelines
+  getPipelines: () => request('/api/pipelines'),
+  getPipeline: (id) => request(`/api/pipelines/${id}`),
+  createPipeline: (data) => request('/api/pipelines', { method: 'POST', body: JSON.stringify(data) }),
+  updatePipeline: (id, data) => request(`/api/pipelines/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deletePipeline: (id) => request(`/api/pipelines/${id}`, { method: 'DELETE' }),
+  runPipeline: (id) => request(`/api/pipelines/${id}/run`, { method: 'POST' }),
 
   // Custom Tools
   getCustomTools: () => request('/api/tools'),

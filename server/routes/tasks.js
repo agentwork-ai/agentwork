@@ -391,6 +391,33 @@ router.post('/:id/log', (req, res) => {
   res.json({ success: true });
 });
 
+// Get execution replay data
+router.get('/:id/replay', (req, res) => {
+  const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const logs = JSON.parse(task.execution_logs || '[]');
+  if (logs.length === 0) return res.json({ events: [], duration: 0 });
+
+  const startTime = new Date(logs[0]?.timestamp).getTime();
+  const events = logs.map((log, i) => ({
+    index: i,
+    type: log.type,
+    content: log.content,
+    timestamp: log.timestamp,
+    offsetMs: new Date(log.timestamp).getTime() - startTime,
+  }));
+
+  const duration = events.length > 1 ? events[events.length - 1].offsetMs : 0;
+  res.json({
+    taskTitle: task.title,
+    startedAt: logs[0]?.timestamp,
+    events,
+    duration,
+    totalEvents: events.length,
+  });
+});
+
 // Get all comments for a task
 router.get('/:id/comments', (req, res) => {
   const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);

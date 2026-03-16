@@ -47,7 +47,7 @@
 
 - [x] **Cost Breakdown by Agent / Model / Task** — Add spend breakdowns by agent, by model, and by task so users can see which is most expensive.
 - [ ] **Cost Charts & Sparklines** — Interactive charts for daily spend over time, per-agent distribution, and token usage trends.
-- [ ] **Execution Replay** — Store full execution traces with timestamps and allow replaying them step-by-step to debug agent decisions.
+- [x] **Execution Replay** — Store full execution traces with timestamps and allow replaying them step-by-step to debug agent decisions.
 - [x] **Agent Performance Metrics** — Track per-agent stats: average task completion time, success rate, average tokens per task, number of iterations, and times blocked.
 - [x] **Error Alerting & Escalation** — Send push notifications via Telegram/Slack to the user when tasks fail. Add webhook support for external alerting (PagerDuty, Discord, email).
 - [x] **Health Check Endpoint** — Add `/api/health` that verifies database connectivity, disk space, memory usage, and active bot connections.
