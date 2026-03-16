@@ -22,6 +22,7 @@ export const api = {
   updateProject: (id, data) => request(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteProject: (id) => request(`/api/projects/${id}`, { method: 'DELETE' }),
   getProjectFiles: (id, depth) => request(`/api/projects/${id}/files?depth=${depth || 3}`),
+  regenerateProjectDoc: (id) => request(`/api/projects/${id}/regenerate-doc`, { method: 'POST' }),
 
   // Tasks
   getTasks: (params) => {

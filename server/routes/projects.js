@@ -81,6 +81,19 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Regenerate PROJECT.md
+router.post('/:id/regenerate-doc', (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  try {
+    generateProjectDoc(project.path, project.name, project.description);
+    res.json({ success: true, message: 'PROJECT.md regenerated' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Get project file tree
 router.get('/:id/files', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);

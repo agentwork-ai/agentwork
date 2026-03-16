@@ -124,9 +124,16 @@ export default function ProjectsPage() {
                 <div className="w-64 border-r flex flex-col shrink-0" style={{ borderColor: 'var(--border)' }}>
                   <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
                     <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>File Explorer</span>
-                    <button onClick={() => selectProject(selected)} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}>
-                      <RefreshCw size={13} />
-                    </button>
+                    <div className="flex gap-1">
+                      <button onClick={async () => {
+                        try { await api.regenerateProjectDoc(selected.id); toast.success('PROJECT.md regenerated'); selectProject(selected); } catch (err) { toast.error(err.message); }
+                      }} className="p-1 rounded text-xs" style={{ color: 'var(--text-tertiary)' }} title="Regenerate PROJECT.md">
+                        <FileText size={13} />
+                      </button>
+                      <button onClick={() => selectProject(selected)} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }} title="Refresh">
+                        <RefreshCw size={13} />
+                      </button>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-auto p-2">
                     {fileTree ? (
