@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
+import OnboardingWizard from '@/components/OnboardingWizard';
 import { api } from '@/lib/api';
 import { useStatus, useSocket } from '@/app/providers';
 import {
@@ -79,6 +80,7 @@ export default function DashboardPage() {
   const [activities, setActivities] = useState([]);
   const [hasNew, setHasNew] = useState(false);
   const newTimerRef = useRef(null);
+  const [showOnboarding, setShowOnboarding] = useState(false);
 
   const addActivity = useCallback((event, data) => {
     const item = {
@@ -118,18 +120,30 @@ export default function DashboardPage() {
     };
   }, [socket, addActivity]);
 
-  useEffect(() => {
-    Promise.all([api.getProjects(), api.getAgents(), api.getTasks()]).then(
-      ([projects, agents, tasks]) => {
+  const loadDashboard = useCallback(() => {
+    Promise.all([api.getProjects(), api.getAgents(), api.getTasks(), api.getSettings()]).then(
+      ([projects, agents, tasks, settings]) => {
         setStats({
           projects: projects.length,
           agents: agents.length,
           tasks,
           recentTasks: tasks.slice(0, 5),
         });
+        // Show onboarding when there are no projects, no agents, and onboarding hasn't been dismissed
+        if (
+          projects.length === 0 &&
+          agents.length === 0 &&
+          settings.onboarding_complete !== 'true'
+        ) {
+          setShowOnboarding(true);
+        }
       }
     ).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
 
   const tasksByStatus = {
     backlog: stats.tasks.filter((t) => t.status === 'backlog').length,
@@ -144,6 +158,14 @@ export default function DashboardPage() {
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
         <main className="flex-1 overflow-auto p-6" style={{ background: 'var(--bg-primary)' }}>
+          {showOnboarding && (
+            <OnboardingWizard
+              onComplete={() => {
+                setShowOnboarding(false);
+                loadDashboard();
+              }}
+            />
+          )}
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>

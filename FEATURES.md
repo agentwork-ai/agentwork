@@ -41,7 +41,7 @@
 - [x] **Live Activity Feed** — Replace the static "Recent Tasks" list on the home page with a real-time event stream showing task completions, agent status changes, budget alerts, and error notifications.
 - [x] **Responsive Mobile Layout** — Add a responsive hamburger menu and touch-friendly Kanban interactions for mobile screens.
 - [ ] **Diff Viewer for File Changes** — Show a side-by-side diff in the execution log when agents modify files.
-- [ ] **Onboarding Wizard** — A guided setup wizard for first-time users: add an API key, create a project, hire an agent, run a first task.
+- [x] **Onboarding Wizard** — A guided setup wizard for first-time users: add an API key, create a project, hire an agent, run a first task.
 
 ## 4. Monitoring, Observability & Debugging
 
