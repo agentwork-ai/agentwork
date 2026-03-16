@@ -157,6 +157,9 @@ if (!agentCols.includes('chat_allowed_ids')) {
 if (!agentCols.includes('daily_budget_usd')) {
   db.exec("ALTER TABLE agents ADD COLUMN daily_budget_usd REAL DEFAULT 0");
 }
+if (!agentCols.includes('fallback_model')) {
+  db.exec("ALTER TABLE agents ADD COLUMN fallback_model TEXT DEFAULT ''");
+}
 
 // Seed default settings if not present
 const defaultSettings = {

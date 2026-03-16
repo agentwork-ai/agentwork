@@ -46,8 +46,20 @@ async function fetchOpenRouterPricing() {
   }
 }
 
-// API-based completion (requires API key)
+// API-based completion with optional fallback
 async function createCompletion(provider, model, messages, options = {}) {
+  try {
+    return await _createCompletion(provider, model, messages, options);
+  } catch (err) {
+    if (options.fallbackModel && options.fallbackModel !== model) {
+      console.log(`[AI] Primary model ${model} failed (${err.message}), falling back to ${options.fallbackModel}`);
+      return await _createCompletion(provider, options.fallbackModel, messages, { ...options, fallbackModel: undefined });
+    }
+    throw err;
+  }
+}
+
+async function _createCompletion(provider, model, messages, options = {}) {
   let apiKey;
   let customBaseUrl = getSetting('custom_base_url');
 

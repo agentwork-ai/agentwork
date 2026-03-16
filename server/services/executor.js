@@ -958,7 +958,7 @@ Use tools to complete your task — do NOT write explanations without acting:
 
     let response;
     try {
-      response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS });
+      response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS, fallbackModel: agent.fallback_model });
     } catch (err) {
       addLog(taskId, 'error', `AI Error: ${err.message}`);
       moveTask(taskId, 'blocked');
