@@ -35,6 +35,11 @@ export const api = {
   createTask: (data) => request('/api/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id, data) => request(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: 'DELETE' }),
+  getSubtasks: (id) => request(`/api/tasks/${id}/subtasks`),
+  createSubtask: (id, data) => request(`/api/tasks/${id}/subtasks`, { method: 'POST', body: JSON.stringify(data) }),
+  getTaskComments: (taskId) => request(`/api/tasks/${taskId}/comments`),
+  addTaskComment: (taskId, content) =>
+    request(`/api/tasks/${taskId}/comments`, { method: 'POST', body: JSON.stringify({ content }) }),
 
   // Agents
   getAgents: () => request('/api/agents'),
@@ -63,6 +68,12 @@ export const api = {
   // Files
   readFile: (path) => request(`/api/files/read?path=${encodeURIComponent(path)}`),
   browseFolder: () => request('/api/files/browse-folder'),
+
+  // Templates
+  getTemplates: () => request('/api/templates'),
+  createTemplate: (data) => request('/api/templates', { method: 'POST', body: JSON.stringify(data) }),
+  useTemplate: (id, overrides) => request(`/api/templates/${id}/use`, { method: 'POST', body: JSON.stringify(overrides || {}) }),
+  deleteTemplate: (id) => request(`/api/templates/${id}`, { method: 'DELETE' }),
 
   // Export
   exportData: (type) => request(`/api/settings/export?type=${type || 'all'}`),

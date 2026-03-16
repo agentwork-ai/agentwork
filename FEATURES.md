@@ -20,7 +20,7 @@
 ## 2. Task Management & Workflow
 
 - [x] **Task Dependencies / Blockers** — Add a `depends_on` field to tasks so a task cannot move to "Doing" until its dependencies are in "Done." This enables DAG-based execution pipelines beyond linear Flow tasks.
-- [ ] **Sub-Tasks** — Allow tasks to have nested sub-tasks (parent_id foreign key). The parent task auto-completes when all sub-tasks are done.
+- [x] **Sub-Tasks** — Allow tasks to have nested sub-tasks (parent_id foreign key). The parent task auto-completes when all sub-tasks are done.
 - [x] **Priority Queue per Agent** — Add a priority queue per agent so when one task finishes, the next highest-priority "To Do" task auto-starts.
 - [ ] **Task Templates / Recurring Blueprints** — Allow saving a task as a "template" with pre-filled title, description, agent, and project. One-click to create a new task from the template.
 - [ ] **Time Estimates & SLA Tracking** — Add estimated duration per task and track actual execution time. Surface SLA violations (tasks taking 3x longer than estimated) in the dashboard.

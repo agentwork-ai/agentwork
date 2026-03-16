@@ -221,6 +221,43 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Get sub-tasks for a parent
+router.get('/:id/subtasks', (req, res) => {
+  const subtasks = db.prepare(
+    'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id WHERE t.parent_id = ? ORDER BY t.created_at ASC'
+  ).all(req.params.id);
+  subtasks.forEach((t) => {
+    t.execution_logs = JSON.parse(t.execution_logs || '[]');
+    t.attachments = JSON.parse(t.attachments || '[]');
+    t.flow_items = JSON.parse(t.flow_items || '[]');
+    t.depends_on = JSON.parse(t.depends_on || '[]');
+  });
+  res.json(subtasks);
+});
+
+// Create sub-task
+router.post('/:id/subtasks', (req, res) => {
+  const parent = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
+  if (!parent) return res.status(404).json({ error: 'Parent task not found' });
+
+  const { title, description, priority, agent_id } = req.body;
+  if (!title) return res.status(400).json({ error: 'Title is required' });
+
+  const id = uuidv4();
+  db.prepare(
+    'INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+  ).run(id, title, description || '', 'todo', priority || parent.priority, agent_id || parent.agent_id, parent.project_id, req.params.id);
+
+  const task = db.prepare(
+    'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+  ).get(id);
+  task.execution_logs = []; task.attachments = []; task.flow_items = []; task.depends_on = [];
+
+  const io = req.app.get('io');
+  if (io) io.emit('task:created', task);
+  res.status(201).json(task);
+});
+
 // Append execution log
 router.post('/:id/log', (req, res) => {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
@@ -242,6 +279,41 @@ router.post('/:id/log', (req, res) => {
   if (io) io.emit('task:log', { taskId: req.params.id, log: logs[logs.length - 1] });
 
   res.json({ success: true });
+});
+
+// Get all comments for a task
+router.get('/:id/comments', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const comments = db.prepare(
+    'SELECT * FROM task_comments WHERE task_id = ? ORDER BY created_at ASC'
+  ).all(req.params.id);
+
+  res.json(comments);
+});
+
+// Add a comment to a task
+router.post('/:id/comments', (req, res) => {
+  const task = db.prepare('SELECT id FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const { content } = req.body;
+  if (!content || !content.trim()) return res.status(400).json({ error: 'Content is required' });
+
+  const id = uuidv4();
+  db.prepare(
+    'INSERT INTO task_comments (id, task_id, content) VALUES (?, ?, ?)'
+  ).run(id, req.params.id, content.trim());
+
+  const comment = db.prepare('SELECT * FROM task_comments WHERE id = ?').get(id);
+
+  logAudit('comment', 'task', req.params.id, { comment_id: id });
+
+  const io = req.app.get('io');
+  if (io) io.emit('task:comment', { taskId: req.params.id, comment });
+
+  res.status(201).json(comment);
 });
 
 module.exports = router;

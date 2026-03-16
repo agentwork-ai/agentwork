@@ -130,6 +130,9 @@ if (!taskCols.includes('tags')) {
 if (!taskCols.includes('depends_on')) {
   db.exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]'");
 }
+if (!taskCols.includes('parent_id')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN parent_id TEXT DEFAULT NULL");
+}
 
 // Migrate projects table: add default_agent_id if missing
 const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
@@ -196,6 +199,22 @@ for (const [key, value] of Object.entries(defaultSettings)) {
   insertSetting.run(key, value);
 }
 
+// Create task_templates table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS task_templates (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    priority TEXT DEFAULT 'medium',
+    agent_id TEXT,
+    project_id TEXT,
+    task_type TEXT DEFAULT 'single',
+    flow_items TEXT DEFAULT '[]',
+    tags TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
 // Create audit_logs table
 db.exec(`
   CREATE TABLE IF NOT EXISTS audit_logs (
@@ -205,6 +224,17 @@ db.exec(`
     resource_id TEXT,
     details TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+// Create task_comments table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS task_comments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (task_id) REFERENCES tasks(id) ON DELETE CASCADE
   )
 `);
 
