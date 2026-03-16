@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
-  Layers, ChevronRight, Clock, RefreshCw, Play, Lock,
+  Layers, ChevronRight, ChevronDown, Clock, RefreshCw, Play, Lock,
   Search, Filter, Copy, FileText, MessageSquare, Send,
   CheckSquare, ArrowRight, UserPlus, XCircle,
 } from 'lucide-react';
@@ -38,6 +38,8 @@ export default function KanbanPage() {
   const [quickAddProjectId, setQuickAddProjectId] = useState('');
   const quickAddRef = useRef(null);
   const [selectedTasks, setSelectedTasks] = useState(new Set());
+  const [groupBy, setGroupBy] = useState(null); // null | 'agent' | 'project' | 'priority'
+  const [collapsedSwimlanes, setCollapsedSwimlanes] = useState(new Set());
 
   const loadData = useCallback(async () => {
     const [t, a, p] = await Promise.all([api.getTasks(), api.getAgents(), api.getProjects()]);
@@ -246,6 +248,71 @@ export default function KanbanPage() {
   // Task counts per project for the panel
   const countByProject = (pid) => tasks.filter((t) => t.project_id === pid).length;
 
+  // Swimlane toggle
+  const toggleSwimlane = (key) => {
+    setCollapsedSwimlanes((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Compute swimlane groups from visibleTasks based on groupBy
+  const swimlaneGroups = (() => {
+    if (!groupBy) return null;
+
+    const groupMap = new Map();
+
+    const addToGroup = (key, label, task) => {
+      if (!groupMap.has(key)) groupMap.set(key, { key, label, tasks: [] });
+      groupMap.get(key).tasks.push(task);
+    };
+
+    if (groupBy === 'agent') {
+      visibleTasks.forEach((t) => {
+        if (t.agent_id) {
+          const agent = agents.find((a) => a.id === t.agent_id);
+          addToGroup(t.agent_id, agent ? `${agent.avatar} ${agent.name}` : 'Unknown Agent', t);
+        } else {
+          addToGroup('__unassigned__', 'Unassigned', t);
+        }
+      });
+    } else if (groupBy === 'project') {
+      visibleTasks.forEach((t) => {
+        if (t.project_id) {
+          const project = projects.find((p) => p.id === t.project_id);
+          addToGroup(t.project_id, project ? project.name : 'Unknown Project', t);
+        } else {
+          addToGroup('__no_project__', 'No Project', t);
+        }
+      });
+    } else if (groupBy === 'priority') {
+      const priorityOrder = ['critical', 'high', 'medium', 'low'];
+      // Initialize groups in order
+      priorityOrder.forEach((p) => groupMap.set(p, { key: p, label: p.charAt(0).toUpperCase() + p.slice(1), tasks: [] }));
+      visibleTasks.forEach((t) => {
+        const prio = t.priority || 'medium';
+        addToGroup(prio, prio.charAt(0).toUpperCase() + prio.slice(1), t);
+      });
+      // Return in priority order, skipping empty groups
+      return priorityOrder
+        .map((p) => groupMap.get(p))
+        .filter((g) => g && g.tasks.length > 0);
+    }
+
+    // Sort: put unassigned/no-project groups at the end
+    const entries = Array.from(groupMap.values());
+    entries.sort((a, b) => {
+      const aSpecial = a.key.startsWith('__');
+      const bSpecial = b.key.startsWith('__');
+      if (aSpecial && !bSpecial) return 1;
+      if (!aSpecial && bSpecial) return -1;
+      return a.label.localeCompare(b.label);
+    });
+    return entries;
+  })();
+
   return (
     <div className="flex h-screen">
       <Sidebar />
@@ -322,127 +389,233 @@ export default function KanbanPage() {
               </>
             )}
           </div>
-          <button
-            className="btn btn-primary text-sm"
-            onClick={() => { setShowForm(true); setEditTask(null); }}
-          >
-            <Plus size={15} /> New Task
-          </button>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-medium" style={{ color: 'var(--text-tertiary)' }}>Group by</span>
+              <select
+                className="text-xs rounded-lg px-2.5 py-1.5 outline-none cursor-pointer"
+                style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border)' }}
+                value={groupBy || ''}
+                onChange={(e) => {
+                  setGroupBy(e.target.value || null);
+                  setCollapsedSwimlanes(new Set());
+                }}
+              >
+                <option value="">None</option>
+                <option value="agent">Agent</option>
+                <option value="project">Project</option>
+                <option value="priority">Priority</option>
+              </select>
+            </div>
+            <button
+              className="btn btn-primary text-sm"
+              onClick={() => { setShowForm(true); setEditTask(null); }}
+            >
+              <Plus size={15} /> New Task
+            </button>
+          </div>
         </div>
 
-        <main className="flex-1 overflow-x-auto overflow-y-hidden p-4" style={{ background: 'var(--bg-primary)' }}>
-          <div className="flex gap-4 h-full min-w-max">
-            {COLUMNS.map((col) => {
-              const colTasks = visibleTasks.filter((t) => t.status === col.id);
-              return (
-                <div
-                  key={col.id}
-                  className="w-72 flex flex-col rounded-xl shrink-0"
-                  style={{ background: 'var(--bg-secondary)' }}
-                  onDragOver={handleDragOver}
-                  onDrop={(e) => handleDrop(e, col.id)}
-                >
-                  <div className="flex items-center gap-2 px-3 py-2.5">
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.color }} />
-                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{col.label}</span>
-                    <span className="text-xs ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
-                      {colTasks.length}
-                    </span>
-                    {(col.id === 'backlog' || col.id === 'todo') && (
-                      <button
-                        onClick={() => openQuickAdd(col.id)}
-                        className="w-5 h-5 rounded flex items-center justify-center transition-colors"
-                        style={{ color: 'var(--text-tertiary)' }}
-                        title="Quick add task"
-                      >
-                        <Plus size={14} />
-                      </button>
-                    )}
-                  </div>
-                  <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
-                    {quickAddCol === col.id && (
-                      <div className="rounded-lg p-2.5 space-y-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)' }}>
-                        <input
-                          ref={quickAddRef}
-                          className="w-full bg-transparent text-sm outline-none"
-                          style={{ color: 'var(--text-primary)' }}
-                          placeholder="Task title…"
-                          value={quickAddTitle}
-                          onChange={(e) => setQuickAddTitle(e.target.value)}
-                          onKeyDown={onQuickAddKey}
+        <main className="flex-1 overflow-auto p-4" style={{ background: 'var(--bg-primary)' }}>
+          {!groupBy ? (
+            /* Flat layout (no grouping) */
+            <div className="flex gap-4 h-full min-w-max">
+              {COLUMNS.map((col) => {
+                const colTasks = visibleTasks.filter((t) => t.status === col.id);
+                return (
+                  <div
+                    key={col.id}
+                    className="w-72 flex flex-col rounded-xl shrink-0"
+                    style={{ background: 'var(--bg-secondary)' }}
+                    onDragOver={handleDragOver}
+                    onDrop={(e) => handleDrop(e, col.id)}
+                  >
+                    <div className="flex items-center gap-2 px-3 py-2.5">
+                      <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.color }} />
+                      <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{col.label}</span>
+                      <span className="text-xs ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                        {colTasks.length}
+                      </span>
+                      {(col.id === 'backlog' || col.id === 'todo') && (
+                        <button
+                          onClick={() => openQuickAdd(col.id)}
+                          className="w-5 h-5 rounded flex items-center justify-center transition-colors"
+                          style={{ color: 'var(--text-tertiary)' }}
+                          title="Quick add task"
+                        >
+                          <Plus size={14} />
+                        </button>
+                      )}
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
+                      {quickAddCol === col.id && (
+                        <div className="rounded-lg p-2.5 space-y-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)' }}>
+                          <input
+                            ref={quickAddRef}
+                            className="w-full bg-transparent text-sm outline-none"
+                            style={{ color: 'var(--text-primary)' }}
+                            placeholder="Task title…"
+                            value={quickAddTitle}
+                            onChange={(e) => setQuickAddTitle(e.target.value)}
+                            onKeyDown={onQuickAddKey}
+                          />
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {/* Priority */}
+                            <select
+                              className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer"
+                              style={{
+                                background: `${PRIORITY_COLORS[quickAddPriority]}20`,
+                                color: PRIORITY_COLORS[quickAddPriority],
+                                border: 'none',
+                              }}
+                              value={quickAddPriority}
+                              onChange={(e) => setQuickAddPriority(e.target.value)}
+                            >
+                              {PRIORITIES.map((p) => (
+                                <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
+                              ))}
+                            </select>
+
+                            {/* Agent */}
+                            <select
+                              className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
+                              style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
+                              value={quickAddAgentId}
+                              onChange={(e) => setQuickAddAgentId(e.target.value)}
+                            >
+                              <option value="">No agent</option>
+                              {agents.map((a) => (
+                                <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>
+                              ))}
+                            </select>
+
+                            {/* Project */}
+                            <select
+                              className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
+                              style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
+                              value={quickAddProjectId}
+                              onChange={(e) => setQuickAddProjectId(e.target.value)}
+                            >
+                              <option value="">No project</option>
+                              {projects.map((p) => (
+                                <option key={p.id} value={p.id}>{p.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="flex justify-end gap-1.5">
+                            <button className="btn btn-ghost text-[10px] py-0.5 px-2" onClick={closeQuickAdd}>Cancel</button>
+                            <button className="btn btn-primary text-[10px] py-0.5 px-2" onClick={submitQuickAdd}>Add</button>
+                          </div>
+                        </div>
+                      )}
+                      {colTasks.map((task) => (
+                        <TaskCard
+                          key={task.id}
+                          task={task}
+                          agents={agents}
+                          projects={projects}
+                          allTasks={tasks}
+                          showProject={!selectedProjectId}
+                          onDragStart={(e) => handleDragStart(e, task)}
+                          onClick={() => setViewTask(task)}
+                          onPriorityChange={changePriority}
+                          onAgentChange={changeAgent}
+                          onProjectChange={changeProject}
+                          isSelected={selectedTasks.has(task.id)}
+                          selectionActive={selectedTasks.size > 0}
+                          onToggleSelect={() => toggleTaskSelection(task.id)}
                         />
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          {/* Priority */}
-                          <select
-                            className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer"
-                            style={{
-                              background: `${PRIORITY_COLORS[quickAddPriority]}20`,
-                              color: PRIORITY_COLORS[quickAddPriority],
-                              border: 'none',
-                            }}
-                            value={quickAddPriority}
-                            onChange={(e) => setQuickAddPriority(e.target.value)}
-                          >
-                            {PRIORITIES.map((p) => (
-                              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
-                            ))}
-                          </select>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            /* Swimlane layout (grouped) */
+            <div className="space-y-4 min-w-max">
+              {swimlaneGroups && swimlaneGroups.map((group) => {
+                const isCollapsed = collapsedSwimlanes.has(group.key);
+                const groupPriorityColor = groupBy === 'priority' ? PRIORITY_COLORS[group.key] : null;
+                return (
+                  <div key={group.key} className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                    {/* Swimlane header */}
+                    <button
+                      onClick={() => toggleSwimlane(group.key)}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 transition-colors hover:opacity-90"
+                      style={{ background: 'var(--bg-secondary)' }}
+                    >
+                      {isCollapsed
+                        ? <ChevronRight size={16} style={{ color: 'var(--text-tertiary)' }} />
+                        : <ChevronDown size={16} style={{ color: 'var(--text-tertiary)' }} />
+                      }
+                      {groupPriorityColor && (
+                        <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: groupPriorityColor }} />
+                      )}
+                      <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {group.label}
+                      </span>
+                      <span className="text-xs px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                        {group.tasks.length} {group.tasks.length === 1 ? 'task' : 'tasks'}
+                      </span>
+                    </button>
 
-                          {/* Agent */}
-                          <select
-                            className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
-                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
-                            value={quickAddAgentId}
-                            onChange={(e) => setQuickAddAgentId(e.target.value)}
-                          >
-                            <option value="">No agent</option>
-                            {agents.map((a) => (
-                              <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>
-                            ))}
-                          </select>
-
-                          {/* Project */}
-                          <select
-                            className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
-                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
-                            value={quickAddProjectId}
-                            onChange={(e) => setQuickAddProjectId(e.target.value)}
-                          >
-                            <option value="">No project</option>
-                            {projects.map((p) => (
-                              <option key={p.id} value={p.id}>{p.name}</option>
-                            ))}
-                          </select>
-                        </div>
-                        <div className="flex justify-end gap-1.5">
-                          <button className="btn btn-ghost text-[10px] py-0.5 px-2" onClick={closeQuickAdd}>Cancel</button>
-                          <button className="btn btn-primary text-[10px] py-0.5 px-2" onClick={submitQuickAdd}>Add</button>
-                        </div>
+                    {/* Swimlane columns */}
+                    {!isCollapsed && (
+                      <div className="flex gap-4 p-3" style={{ background: 'var(--bg-primary)' }}>
+                        {COLUMNS.map((col) => {
+                          const colTasks = group.tasks.filter((t) => t.status === col.id);
+                          return (
+                            <div
+                              key={col.id}
+                              className="w-72 shrink-0 rounded-xl flex flex-col"
+                              style={{ background: 'var(--bg-secondary)' }}
+                              onDragOver={handleDragOver}
+                              onDrop={(e) => handleDrop(e, col.id)}
+                            >
+                              <div className="flex items-center gap-2 px-3 py-2">
+                                <div className="w-2 h-2 rounded-full shrink-0" style={{ background: col.color }} />
+                                <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{col.label}</span>
+                                <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                                  {colTasks.length}
+                                </span>
+                              </div>
+                              <div className="px-2 pb-2 space-y-2 min-h-[60px]">
+                                {colTasks.map((task) => (
+                                  <TaskCard
+                                    key={task.id}
+                                    task={task}
+                                    agents={agents}
+                                    projects={projects}
+                                    allTasks={tasks}
+                                    showProject={!selectedProjectId}
+                                    onDragStart={(e) => handleDragStart(e, task)}
+                                    onClick={() => setViewTask(task)}
+                                    onPriorityChange={changePriority}
+                                    onAgentChange={changeAgent}
+                                    onProjectChange={changeProject}
+                                    isSelected={selectedTasks.has(task.id)}
+                                    selectionActive={selectedTasks.size > 0}
+                                    onToggleSelect={() => toggleTaskSelection(task.id)}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
                     )}
-                    {colTasks.map((task) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        agents={agents}
-                        projects={projects}
-                        allTasks={tasks}
-                        showProject={!selectedProjectId}
-                        onDragStart={(e) => handleDragStart(e, task)}
-                        onClick={() => setViewTask(task)}
-                        onPriorityChange={changePriority}
-                        onAgentChange={changeAgent}
-                        onProjectChange={changeProject}
-                        isSelected={selectedTasks.has(task.id)}
-                        selectionActive={selectedTasks.size > 0}
-                        onToggleSelect={() => toggleTaskSelection(task.id)}
-                      />
-                    ))}
                   </div>
+                );
+              })}
+
+              {swimlaneGroups && swimlaneGroups.length === 0 && (
+                <div className="text-center py-12">
+                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No tasks to display.</p>
                 </div>
-              );
-            })}
-          </div>
+              )}
+            </div>
+          )}
         </main>
         <BottomBar />
 
