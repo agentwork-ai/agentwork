@@ -221,6 +221,48 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Get agent performance metrics
+router.get('/:id/metrics', (req, res) => {
+  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+  const agentId = req.params.id;
+  const totalTasks = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE agent_id = ?").get(agentId).count;
+  const completedTasks = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE agent_id = ? AND status = 'done'").get(agentId).count;
+  const blockedTasks = db.prepare("SELECT COUNT(*) as count FROM tasks WHERE agent_id = ? AND status = 'blocked'").get(agentId).count;
+  const successRate = totalTasks > 0 ? Math.round((completedTasks / totalTasks) * 100) : 0;
+
+  const budget = db.prepare(
+    "SELECT COALESCE(SUM(cost_usd), 0) as total_cost, COALESCE(SUM(input_tokens), 0) as input_tokens, COALESCE(SUM(output_tokens), 0) as output_tokens, COUNT(*) as api_calls FROM budget_logs WHERE agent_id = ?"
+  ).get(agentId);
+
+  const avgCostPerTask = completedTasks > 0 ? budget.total_cost / completedTasks : 0;
+
+  const recentTasks = db.prepare(
+    "SELECT id, title, status, created_at, completed_at FROM tasks WHERE agent_id = ? ORDER BY updated_at DESC LIMIT 10"
+  ).all(agentId);
+
+  // Calculate average completion time from tasks that have both created_at and completed_at
+  const completedWithTime = db.prepare(
+    "SELECT created_at, completed_at FROM tasks WHERE agent_id = ? AND status = 'done' AND completed_at IS NOT NULL"
+  ).all(agentId);
+  let avgCompletionMinutes = 0;
+  if (completedWithTime.length > 0) {
+    const totalMs = completedWithTime.reduce((sum, t) => sum + (new Date(t.completed_at) - new Date(t.created_at)), 0);
+    avgCompletionMinutes = Math.round(totalMs / completedWithTime.length / 60000);
+  }
+
+  res.json({
+    totalTasks, completedTasks, blockedTasks, successRate,
+    totalCost: budget.total_cost,
+    totalTokens: budget.input_tokens + budget.output_tokens,
+    apiCalls: budget.api_calls,
+    avgCostPerTask,
+    avgCompletionMinutes,
+    recentTasks,
+  });
+});
+
 // Clone agent
 router.post('/:id/clone', (req, res) => {
   const source = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
