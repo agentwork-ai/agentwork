@@ -259,11 +259,14 @@ function StepNode({
 }
 
 // ─── Pipeline List Sidebar ───
-function PipelineList({ pipelines, selectedId, onSelect, onCreate, onDelete }) {
+function PipelineList({ pipelines, selectedId, onSelect, onCreate, onDelete, onRename }) {
+  const [renamingId, setRenamingId] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+
   return (
     <div
       className="w-[220px] shrink-0 border-r flex flex-col"
-      style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)' }}
+      style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border)', zIndex: 10 }}
     >
       <div className="flex items-center justify-between px-3 py-2 border-b" style={{ borderColor: 'var(--border)' }}>
         <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Pipelines</span>
@@ -286,32 +289,54 @@ function PipelineList({ pipelines, selectedId, onSelect, onCreate, onDelete }) {
         )}
         {pipelines.map((p) => {
           const stepCount = (p.steps || []).length;
+          const isRenaming = renamingId === p.id;
           return (
             <div
               key={p.id}
-              className={`flex items-center gap-2 px-3 py-2 mx-1 rounded-md cursor-pointer text-sm transition-colors ${
-                selectedId === p.id ? '' : 'hover:opacity-80'
-              }`}
+              className="group flex items-center gap-2 px-3 py-2 mx-1 rounded-md cursor-pointer text-sm transition-colors"
               style={{
                 background: selectedId === p.id ? 'var(--accent-light)' : 'transparent',
                 color: selectedId === p.id ? 'var(--accent)' : 'var(--text-secondary)',
               }}
-              onClick={() => onSelect(p.id)}
+              onClick={() => { if (!isRenaming) onSelect(p.id); }}
             >
-              <GitBranch size={14} />
-              <span className="flex-1 truncate">{p.name}</span>
-              <span className="text-[10px] opacity-60">{stepCount}s</span>
-              <button
-                className="p-0.5 rounded opacity-0 group-hover:opacity-100 hover:text-red-500"
-                style={{ color: 'var(--text-tertiary)' }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onDelete(p.id);
-                }}
-                title="Delete"
-              >
-                <Trash2 size={12} />
-              </button>
+              <GitBranch size={14} className="shrink-0" />
+              {isRenaming ? (
+                <input
+                  className="flex-1 text-sm bg-transparent outline-none border-b"
+                  style={{ borderColor: 'var(--accent)', color: 'var(--text-primary)' }}
+                  value={renameValue}
+                  onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => { if (renameValue.trim()) onRename(p.id, renameValue.trim()); setRenamingId(null); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') { if (renameValue.trim()) onRename(p.id, renameValue.trim()); setRenamingId(null); }
+                    if (e.key === 'Escape') setRenamingId(null);
+                  }}
+                  autoFocus
+                  onClick={(e) => e.stopPropagation()}
+                />
+              ) : (
+                <span className="flex-1 truncate">{p.name}</span>
+              )}
+              <span className="text-[10px] opacity-60 shrink-0">{stepCount}s</span>
+              <div className="flex gap-0.5 opacity-0 group-hover:opacity-100 shrink-0">
+                <button
+                  className="p-0.5 rounded hover:opacity-80"
+                  style={{ color: 'var(--text-tertiary)' }}
+                  onClick={(e) => { e.stopPropagation(); setRenamingId(p.id); setRenameValue(p.name); }}
+                  title="Rename"
+                >
+                  <Edit2 size={11} />
+                </button>
+                <button
+                  className="p-0.5 rounded hover:opacity-80"
+                  style={{ color: 'var(--danger, #fa5252)' }}
+                  onClick={(e) => { e.stopPropagation(); onDelete(p.id); }}
+                  title="Delete"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
             </div>
           );
         })}
@@ -570,10 +595,10 @@ export default function PipelinesPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
+    <div className="flex h-screen" style={{ background: 'var(--bg-primary)' }}>
       <Sidebar />
 
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
         {/* Top toolbar */}
         <header
           className="flex items-center gap-3 px-4 h-14 border-b shrink-0"
@@ -656,6 +681,16 @@ export default function PipelinesPage() {
             }}
             onCreate={handleCreate}
             onDelete={handleDelete}
+            onRename={async (id, newName) => {
+              try {
+                const pipeline = pipelines.find((p) => p.id === id);
+                if (!pipeline) return;
+                await api.updatePipeline(id, { ...pipeline, name: newName, steps: pipeline.steps || [] });
+                setPipelines((prev) => prev.map((p) => p.id === id ? { ...p, name: newName } : p));
+                if (selectedPipelineId === id) setPipelineName(newName);
+                toast.success('Pipeline renamed');
+              } catch (err) { toast.error(err.message); }
+            }}
           />
 
           {/* Canvas area */}
