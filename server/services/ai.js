@@ -5,6 +5,26 @@ function getSetting(key) {
   return row ? row.value : '';
 }
 
+// Simple per-provider rate limiter
+const rateLimitState = {}; // { provider: { lastCallMs, minIntervalMs } }
+
+function enforceRateLimit(provider) {
+  const minIntervalMs = parseInt(getSetting('rate_limit_ms') || '0', 10);
+  if (minIntervalMs <= 0) return Promise.resolve();
+
+  if (!rateLimitState[provider]) rateLimitState[provider] = { lastCallMs: 0 };
+  const state = rateLimitState[provider];
+  const now = Date.now();
+  const elapsed = now - state.lastCallMs;
+  state.lastCallMs = now;
+
+  if (elapsed < minIntervalMs) {
+    const waitMs = minIntervalMs - elapsed;
+    return new Promise((resolve) => setTimeout(resolve, waitMs));
+  }
+  return Promise.resolve();
+}
+
 // Cache of OpenRouter model pricing: { modelId: { input, output } } in $/M tokens
 let openRouterPricingCache = null;
 let openRouterPricingFetchedAt = 0;
@@ -60,6 +80,7 @@ async function createCompletion(provider, model, messages, options = {}) {
 }
 
 async function _createCompletion(provider, model, messages, options = {}) {
+  await enforceRateLimit(provider);
   let apiKey;
   let customBaseUrl = getSetting('custom_base_url');
 

@@ -180,6 +180,7 @@ const defaultSettings = {
   default_workspace: '',
   max_iterations: '30',
   task_timeout_minutes: '0',
+  rate_limit_ms: '0',
 };
 
 // Allow env var overrides: AGENTWORK_SETTING_<KEY> (e.g., AGENTWORK_SETTING_ANTHROPIC_API_KEY)
