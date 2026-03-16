@@ -418,8 +418,7 @@ function estimateCost(provider, model, inputTokens, outputTokens) {
     rates = openRouterPricingCache[model];
   }
 
-  // Final fallback: Claude Sonnet rates
-  if (!rates) rates = { input: 3, output: 15 };
+  if (!rates) return 0;
 
   return (inputTokens * rates.input + outputTokens * rates.output) / 1_000_000;
 }
