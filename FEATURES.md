@@ -35,7 +35,7 @@
 - [ ] **Syntax-Highlighted Code Viewer** — Add syntax highlighting (Prism.js or highlight.js) to the project file viewer based on file extension.
 - [ ] **Execution Log Filtering** — Add log-level filtering (show only errors, hide thinking steps), text search within logs, and timestamp-relative display.
 - [ ] **In-Line File Editor** — Add the ability to edit and save files directly from the dashboard Projects page.
-- [ ] **Markdown Rendering in Chat** — Render agent responses with proper markdown formatting (code blocks, lists, headers) instead of raw text.
+- [x] **Markdown Rendering in Chat** — Render agent responses with proper markdown formatting (code blocks, lists, headers) instead of raw text.
 - [ ] **Keyboard Shortcuts** — Cmd/Ctrl+K for quick task creation, Cmd+/ to toggle sidebar, Escape to close modals, arrow keys for Kanban navigation.
 - [ ] **Kanban Board Swimlanes** — Add optional horizontal swimlanes by agent, project, or priority.
 - [ ] **Live Activity Feed** — Replace the static "Recent Tasks" list on the home page with a real-time event stream showing task completions, agent status changes, budget alerts, and error notifications.

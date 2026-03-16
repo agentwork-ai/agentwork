@@ -3,6 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
+import MarkdownContent from '@/components/MarkdownContent';
 import { api } from '@/lib/api';
 import { useSocket, useUnread } from '@/app/providers';
 import { Send, Bot, User, Key, Terminal, Search, X } from 'lucide-react';
@@ -262,7 +263,11 @@ export default function ChatPage() {
                               borderBottomLeftRadius: msg.sender !== 'user' ? '4px' : undefined,
                             }}
                           >
-                            <p className="whitespace-pre-wrap">{msg.content}</p>
+                            {msg.sender === 'agent' ? (
+                              <MarkdownContent content={msg.content} />
+                            ) : (
+                              <p className="whitespace-pre-wrap">{msg.content}</p>
+                            )}
                             <p className="text-[10px] mt-1 opacity-60">
                               {new Date(msg.created_at).toLocaleTimeString()}
                             </p>
