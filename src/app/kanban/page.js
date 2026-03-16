@@ -29,6 +29,9 @@ export default function KanbanPage() {
   const [editTask, setEditTask] = useState(null);
   const [viewTask, setViewTask] = useState(null);
   const [dragTask, setDragTask] = useState(null);
+  const [quickAddCol, setQuickAddCol] = useState(null); // column id with inline add open
+  const [quickAddTitle, setQuickAddTitle] = useState('');
+  const quickAddRef = useRef(null);
 
   const loadData = useCallback(async () => {
     const [t, a, p] = await Promise.all([api.getTasks(), api.getAgents(), api.getProjects()]);
@@ -101,6 +104,38 @@ export default function KanbanPage() {
     e.preventDefault();
     if (dragTask && dragTask.status !== columnId) moveTask(dragTask.id, columnId);
     setDragTask(null);
+  };
+
+  // Autofocus quick-add input when opened
+  useEffect(() => {
+    if (quickAddCol) quickAddRef.current?.focus();
+  }, [quickAddCol]);
+
+  const openQuickAdd = (colId) => {
+    setQuickAddTitle('');
+    setQuickAddCol(colId);
+  };
+
+  const submitQuickAdd = async () => {
+    const title = quickAddTitle.trim();
+    if (!title) { setQuickAddCol(null); return; }
+    try {
+      await api.createTask({
+        title,
+        status: quickAddCol,
+        priority: 'medium',
+        project_id: selectedProjectId || null,
+      });
+    } catch (err) {
+      toast.error(err.message);
+    }
+    setQuickAddCol(null);
+    setQuickAddTitle('');
+  };
+
+  const onQuickAddKey = (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); submitQuickAdd(); }
+    else if (e.key === 'Escape') { setQuickAddCol(null); setQuickAddTitle(''); }
   };
 
   // Filter tasks by selected project
@@ -210,13 +245,37 @@ export default function KanbanPage() {
                   onDrop={(e) => handleDrop(e, col.id)}
                 >
                   <div className="flex items-center gap-2 px-3 py-2.5">
-                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: col.color }} />
+                    {(col.id === 'backlog' || col.id === 'todo') && (
+                      <button
+                        onClick={() => openQuickAdd(col.id)}
+                        className="w-5 h-5 rounded flex items-center justify-center transition-colors"
+                        style={{ color: 'var(--text-tertiary)' }}
+                        title="Quick add task"
+                      >
+                        <Plus size={14} />
+                      </button>
+                    )}
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.color }} />
                     <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{col.label}</span>
                     <span className="text-xs ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
                       {colTasks.length}
                     </span>
                   </div>
                   <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
+                    {quickAddCol === col.id && (
+                      <div className="rounded-lg p-2" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--accent)' }}>
+                        <input
+                          ref={quickAddRef}
+                          className="w-full bg-transparent text-sm outline-none"
+                          style={{ color: 'var(--text-primary)' }}
+                          placeholder="Task title…"
+                          value={quickAddTitle}
+                          onChange={(e) => setQuickAddTitle(e.target.value)}
+                          onKeyDown={onQuickAddKey}
+                          onBlur={submitQuickAdd}
+                        />
+                      </div>
+                    )}
                     {colTasks.map((task) => (
                       <TaskCard
                         key={task.id}
