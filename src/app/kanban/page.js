@@ -48,7 +48,7 @@ export default function KanbanPage() {
   useEffect(() => {
     if (!socket) return;
     const onTaskUpdated = (task) => {
-      const parsed = { ...task, execution_logs: task.execution_logs || [], attachments: task.attachments || [] };
+      const parsed = { ...task, execution_logs: task.execution_logs || [], attachments: task.attachments || [], flow_items: task.flow_items || [] };
       setTasks((prev) => prev.map((t) => (t.id === parsed.id ? parsed : t)));
       setViewTask((prev) => prev?.id === parsed.id ? parsed : prev);
     };
@@ -83,8 +83,12 @@ export default function KanbanPage() {
     if (newStatus !== 'backlog' && newStatus !== 'todo') {
       const task = tasks.find((t) => t.id === taskId);
       if (task && !task.agent_id) {
-        toast.error('Assign an agent before moving this task.');
-        return;
+        const isFlowTask = (task.task_type || 'single') === 'flow';
+        const flowHasAgents = task.flow_items?.some((i) => i.agent_id);
+        if (!isFlowTask || !flowHasAgents) {
+          toast.error('Assign an agent before moving this task.');
+          return;
+        }
       }
     }
     try {
@@ -492,6 +496,15 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
           </div>
         </div>
       )}
+      {(task.task_type || 'single') === 'flow' && task.flow_items?.length > 0 && (
+        <div className="flex items-center gap-1 mt-1.5">
+          <div className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ background: '#0ea5e920', color: '#0ea5e9' }}>
+            <Layers size={9} />
+            <span>Flow {task.flow_items.filter((i) => i.status === 'done').length}/{task.flow_items.length}</span>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2 mt-2.5 flex-wrap">
         {/* Priority dropdown */}
         <div className="relative">
@@ -760,6 +773,48 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                     <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{task.priority}</p>
                   </div>
                 </div>
+                {(task.task_type || 'single') === 'flow' && task.flow_items?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Flow Steps</p>
+                    <div className="space-y-2">
+                      {task.flow_items.map((item, idx) => {
+                        const stepAgent = agents.find((a) => a.id === item.agent_id);
+                        const statusColors = { pending: 'var(--text-tertiary)', doing: '#fab005', done: '#40c057', failed: 'var(--danger)' };
+                        const statusIcons = { pending: '○', doing: '◆', done: '✓', failed: '✗' };
+                        const sc = statusColors[item.status] || statusColors.pending;
+                        return (
+                          <div key={item.id || idx} className="p-3 rounded-lg"
+                            style={{ background: 'var(--bg-secondary)', border: `1px solid ${item.status === 'doing' ? '#fab005' : 'var(--border)'}` }}>
+                            <div className="flex items-start gap-3">
+                              <div className="w-5 h-5 rounded-full flex items-center justify-center text-xs shrink-0 mt-0.5 font-bold"
+                                style={{ background: `${sc}20`, color: sc }}>
+                                {statusIcons[item.status] || idx + 1}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.title || `Step ${idx + 1}`}</p>
+                                {stepAgent && (
+                                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                                    {stepAgent.avatar} {stepAgent.name}
+                                  </p>
+                                )}
+                                {item.output && (
+                                  <div className="mt-2 p-2 rounded text-xs whitespace-pre-wrap"
+                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', borderLeft: '2px solid #40c057' }}>
+                                    {item.output}
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-[10px] capitalize px-1.5 py-0.5 rounded shrink-0"
+                                style={{ background: `${sc}20`, color: sc }}>
+                                {item.status || 'pending'}
+                              </span>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {task.trigger_type && task.trigger_type !== 'manual' && (
                   <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
                     <div className="flex items-center gap-1.5 font-medium text-xs"
@@ -862,12 +917,30 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
     trigger_type: task?.trigger_type || 'manual',
     trigger_at: task?.trigger_at ? task.trigger_at.slice(0, 16) : '',
     trigger_cron: task?.trigger_cron || '',
+    task_type: task?.task_type || 'single',
+    flow_items: task?.flow_items || [],
   });
   const [cronPreset, setCronPreset] = useState(() => {
     const match = CRON_PRESETS.find((p) => p.value === task?.trigger_cron && p.value !== '__custom__');
     return match ? match.value : (task?.trigger_cron ? '__custom__' : '0 9 * * *');
   });
   const [saving, setSaving] = useState(false);
+
+  const addFlowItem = () => setForm((f) => ({
+    ...f,
+    flow_items: [...f.flow_items, { id: String(Date.now()), title: '', agent_id: '', status: 'pending', output: '' }],
+  }));
+
+  const removeFlowItem = (idx) => setForm((f) => ({
+    ...f,
+    flow_items: f.flow_items.filter((_, i) => i !== idx),
+  }));
+
+  const updateFlowItem = (idx, field, value) => setForm((f) => {
+    const items = [...f.flow_items];
+    items[idx] = { ...items[idx], [field]: value };
+    return { ...f, flow_items: items };
+  });
 
   const handleCronPreset = (val) => {
     setCronPreset(val);
@@ -884,6 +957,7 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
         project_id: form.project_id || null,
         trigger_at: form.trigger_type === 'schedule' ? (form.trigger_at ? new Date(form.trigger_at).toISOString() : null) : null,
         trigger_cron: form.trigger_type === 'cron' ? form.trigger_cron : '',
+        flow_items: form.task_type === 'flow' ? form.flow_items : [],
       };
       if (task) {
         await api.updateTask(task.id, data);
@@ -932,13 +1006,15 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
               </select>
             </div>
           </div>
-          <div>
-            <label className="label">Assign Agent</label>
-            <select className="input" value={form.agent_id} onChange={(e) => setForm({ ...form, agent_id: e.target.value })}>
-              <option value="">Unassigned</option>
-              {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name} — {a.role}</option>)}
-            </select>
-          </div>
+          {form.task_type !== 'flow' && (
+            <div>
+              <label className="label">Assign Agent</label>
+              <select className="input" value={form.agent_id} onChange={(e) => setForm({ ...form, agent_id: e.target.value })}>
+                <option value="">Unassigned</option>
+                {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name} — {a.role}</option>)}
+              </select>
+            </div>
+          )}
           <div>
             <label className="label">Project</label>
             <select className="input" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
@@ -1004,6 +1080,77 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
                   <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                     Expression: <code className="font-mono">{form.trigger_cron}</code> · Task moves back to To Do after each run
                   </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Task Type */}
+          <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+            <label className="label">Task Type</label>
+            <div className="grid grid-cols-2 gap-2 mb-3">
+              {[
+                { id: 'single', label: 'Single', desc: 'One agent handles the task', icon: <Play size={13} /> },
+                { id: 'flow',   label: 'Flow',   desc: 'Sequential steps with different agents', icon: <Layers size={13} /> },
+              ].map((t) => (
+                <button key={t.id} type="button"
+                  className="p-2.5 rounded-lg text-left transition-all"
+                  style={{
+                    background: form.task_type === t.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                    border: `1px solid ${form.task_type === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                  }}
+                  onClick={() => setForm({ ...form, task_type: t.id })}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5" style={{ color: form.task_type === t.id ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                    {t.icon}
+                    <span className="text-xs font-semibold">{t.label}</span>
+                  </div>
+                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{t.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {form.task_type === 'flow' && (
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="label m-0">Flow Steps</span>
+                  <button type="button" className="btn btn-ghost text-xs py-1 px-2" onClick={addFlowItem}>
+                    <Plus size={11} /> Add Step
+                  </button>
+                </div>
+                {form.flow_items.length === 0 ? (
+                  <p className="text-xs text-center py-4 rounded-lg" style={{ color: 'var(--text-tertiary)', background: 'var(--bg-secondary)' }}>
+                    No steps yet. Click "Add Step" to begin.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {form.flow_items.map((item, idx) => (
+                      <div key={item.id || idx} className="flex gap-2 p-3 rounded-lg"
+                        style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                        <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold shrink-0 mt-1"
+                          style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 space-y-1.5">
+                          <input
+                            className="input text-sm py-1.5"
+                            placeholder={`Step ${idx + 1} description…`}
+                            value={item.title}
+                            onChange={(e) => updateFlowItem(idx, 'title', e.target.value)}
+                          />
+                          <select className="input text-sm py-1.5" value={item.agent_id}
+                            onChange={(e) => updateFlowItem(idx, 'agent_id', e.target.value)}>
+                            <option value="">Assign agent…</option>
+                            {agents.map((a) => <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>)}
+                          </select>
+                        </div>
+                        <button type="button" className="p-1 rounded hover:opacity-70 shrink-0"
+                          style={{ color: 'var(--text-tertiary)' }} onClick={() => removeFlowItem(idx)}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
             )}

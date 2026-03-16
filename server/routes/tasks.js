@@ -37,6 +37,7 @@ router.get('/', (req, res) => {
   tasks.forEach((t) => {
     t.execution_logs = JSON.parse(t.execution_logs || '[]');
     t.attachments = JSON.parse(t.attachments || '[]');
+    t.flow_items = JSON.parse(t.flow_items || '[]');
   });
 
   res.json(tasks);
@@ -52,6 +53,7 @@ router.get('/:id', (req, res) => {
 
   task.execution_logs = JSON.parse(task.execution_logs || '[]');
   task.attachments = JSON.parse(task.attachments || '[]');
+  task.flow_items = JSON.parse(task.flow_items || '[]');
 
   res.json(task);
 });
@@ -59,22 +61,24 @@ router.get('/:id', (req, res) => {
 // Create task
 router.post('/', (req, res) => {
   const { title, description, status, priority, agent_id, project_id,
-          trigger_type, trigger_at, trigger_cron } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items } = req.body;
 
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
   const id = uuidv4();
   db.prepare(
     `INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id,
-      trigger_type, trigger_at, trigger_cron)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      trigger_type, trigger_at, trigger_cron, task_type, flow_items)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, title, description || '',
     status || 'backlog', priority || 'medium',
     agent_id || null, project_id || null,
     trigger_type || 'manual',
     trigger_at || null,
-    trigger_cron || ''
+    trigger_cron || '',
+    task_type || 'single',
+    flow_items ? JSON.stringify(flow_items) : '[]'
   );
 
   const task = db.prepare(
@@ -83,6 +87,7 @@ router.post('/', (req, res) => {
 
   task.execution_logs = JSON.parse(task.execution_logs || '[]');
   task.attachments = JSON.parse(task.attachments || '[]');
+  task.flow_items = JSON.parse(task.flow_items || '[]');
 
   const io = req.app.get('io');
   if (io) io.emit('task:created', task);
@@ -102,14 +107,19 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Task not found' });
 
   const { title, description, status, priority, agent_id, project_id, execution_logs, attachments,
-          trigger_type, trigger_at, trigger_cron } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items } = req.body;
 
   const newStatus = status || existing.status;
-
-  // Prevent moving unassigned tasks to active columns
   const newAgentId = agent_id !== undefined ? agent_id : existing.agent_id;
+
+  // Prevent moving unassigned tasks to active columns (flow tasks are exempt if they have step agents)
   if (newStatus !== 'backlog' && newStatus !== 'todo' && newStatus !== existing.status && !newAgentId) {
-    return res.status(400).json({ error: 'Assign an agent before moving this task.' });
+    const newTaskType = task_type !== undefined ? task_type : (existing.task_type || 'single');
+    const newFlowItems = flow_items || JSON.parse(existing.flow_items || '[]');
+    const flowHasAgents = newTaskType === 'flow' && newFlowItems.some((i) => i.agent_id);
+    if (!flowHasAgents) {
+      return res.status(400).json({ error: 'Assign an agent before moving this task.' });
+    }
   }
 
   const completedAt = newStatus === 'done' && existing.status !== 'done' ? new Date().toISOString() : existing.completed_at;
@@ -118,6 +128,7 @@ router.put('/:id', (req, res) => {
     `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, agent_id = ?, project_id = ?,
      execution_logs = ?, attachments = ?, completed_at = ?,
      trigger_type = ?, trigger_at = ?, trigger_cron = ?,
+     task_type = ?, flow_items = ?,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     title || existing.title,
@@ -132,6 +143,8 @@ router.put('/:id', (req, res) => {
     trigger_type !== undefined ? trigger_type : existing.trigger_type,
     trigger_at !== undefined ? trigger_at : existing.trigger_at,
     trigger_cron !== undefined ? trigger_cron : existing.trigger_cron,
+    task_type !== undefined ? task_type : (existing.task_type || 'single'),
+    flow_items ? JSON.stringify(flow_items) : existing.flow_items,
     req.params.id
   );
 
@@ -141,18 +154,23 @@ router.put('/:id', (req, res) => {
 
   task.execution_logs = JSON.parse(task.execution_logs || '[]');
   task.attachments = JSON.parse(task.attachments || '[]');
+  task.flow_items = JSON.parse(task.flow_items || '[]');
 
   const io = req.app.get('io');
   if (io) {
     io.emit('task:updated', task);
 
-    // If moved to "doing", trigger agent execution directly
-    if (newStatus === 'doing' && existing.status !== 'doing' && task.agent_id) {
-      const exec = getExecuteTask();
-      if (exec) {
-        exec(task.id, task.agent_id).catch((err) => {
-          console.error(`[Tasks] Failed to execute task ${task.id}:`, err);
-        });
+    // If moved to "doing", trigger agent execution
+    if (newStatus === 'doing' && existing.status !== 'doing') {
+      const isFlowTask = (task.task_type || 'single') === 'flow';
+      const flowHasAgents = task.flow_items.some((i) => i.agent_id);
+      if (task.agent_id || (isFlowTask && flowHasAgents)) {
+        const exec = getExecuteTask();
+        if (exec) {
+          exec(task.id, task.agent_id).catch((err) => {
+            console.error(`[Tasks] Failed to execute task ${task.id}:`, err);
+          });
+        }
       }
     }
   }

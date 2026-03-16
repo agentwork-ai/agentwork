@@ -151,28 +151,36 @@ async function handleApiChat(agent, userMessage, platformChatId) {
 
 async function executeTask(taskId, agentId) {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
-  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
-  const project = task?.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
+  if (!task) return;
 
-  if (!task || !agent) return;
+  const isFlow = (task.task_type || 'single') === 'flow';
+  const agent = agentId ? db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId) : null;
+  const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
+
+  if (!isFlow && !agent) return;
 
   const execState = { waitingForUser: false, userReply: null, aborted: false };
   activeExecutions.set(taskId, execState);
 
-  db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
-  io.emit('agent:status_changed', { agentId, status: 'working' });
-  addLog(taskId, 'info', `Agent ${agent.name} started working on: ${task.title}`);
+  if (!isFlow) {
+    db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+    io.emit('agent:status_changed', { agentId, status: 'working' });
+    addLog(taskId, 'info', `Agent ${agent.name} started working on: ${task.title}`);
+  } else {
+    addLog(taskId, 'info', `Flow task started: ${task.title}`);
+  }
 
   try {
     const workDir = project?.path || process.cwd();
 
-    // Ensure working directory exists
-    if (!fs.existsSync(workDir)) {
+    if (!isFlow && !fs.existsSync(workDir)) {
       addLog(taskId, 'info', `Creating working directory: ${workDir}`);
       fs.mkdirSync(workDir, { recursive: true });
     }
 
-    if (agent.auth_type === 'cli') {
+    if (isFlow) {
+      await executeFlowTask(taskId, agentId, task, project, execState);
+    } else if (agent.auth_type === 'cli') {
       await executeTaskCli(taskId, agentId, agent, task, workDir, execState);
     } else {
       await executeTaskApi(taskId, agentId, agent, task, project, workDir, execState);
@@ -180,12 +188,337 @@ async function executeTask(taskId, agentId) {
   } catch (err) {
     addLog(taskId, 'error', `Execution error: ${err.message}`);
     moveTask(taskId, 'blocked');
-    sendMessage(agentId, 'agent', `An unexpected error occurred: ${err.message}`, taskId);
+    sendMessage(agentId || 'system', 'agent', `An unexpected error occurred: ${err.message}`, taskId);
   } finally {
     activeExecutions.delete(taskId);
-    db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
-    io.emit('agent:status_changed', { agentId, status: 'idle' });
+    if (!isFlow && agent) {
+      db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+      io.emit('agent:status_changed', { agentId, status: 'idle' });
+    }
     io.emit('system:status_update');
+  }
+}
+
+// ─── Flow Task Execution ───
+
+async function executeFlowTask(taskId, mainAgentId, task, project, execState) {
+  const workDir = project?.path || process.cwd();
+
+  let flowItems = JSON.parse(task.flow_items || '[]');
+  if (flowItems.length === 0) {
+    addLog(taskId, 'warning', 'Flow task has no steps configured.');
+    moveTask(taskId, 'done', 'No flow steps to execute.');
+    return;
+  }
+
+  // If all items are already done (re-triggered cron), reset them
+  if (flowItems.every((i) => i.status === 'done')) {
+    flowItems = flowItems.map((i) => ({ ...i, status: 'pending', output: '' }));
+    updateFlowItems(taskId, flowItems);
+  }
+
+  addLog(taskId, 'info', `Starting flow with ${flowItems.length} step(s)`);
+
+  while (!execState.aborted) {
+    const currentTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+    if (!currentTask || currentTask.status === 'blocked') break;
+
+    flowItems = JSON.parse(currentTask.flow_items || '[]');
+    const currentIdx = flowItems.findIndex((i) => i.status === 'pending');
+    if (currentIdx === -1) break;
+
+    const currentItem = flowItems[currentIdx];
+    const agentId = currentItem.agent_id || mainAgentId;
+    if (!agentId) {
+      addLog(taskId, 'error', `Step ${currentIdx + 1}: No agent assigned`);
+      moveTask(taskId, 'blocked');
+      return;
+    }
+
+    const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
+    if (!agent) {
+      addLog(taskId, 'error', `Step ${currentIdx + 1}: Agent not found`);
+      moveTask(taskId, 'blocked');
+      return;
+    }
+
+    // Mark step as doing
+    flowItems[currentIdx] = { ...currentItem, status: 'doing' };
+    updateFlowItems(taskId, flowItems);
+    addLog(taskId, 'info', `▶ Step ${currentIdx + 1}/${flowItems.length}: "${currentItem.title}" (${agent.name})`);
+
+    // Build context from completed steps
+    const previousContext = flowItems
+      .slice(0, currentIdx)
+      .filter((i) => i.status === 'done' && i.output)
+      .map((i, idx) => `=== Step ${idx + 1}: ${i.title} ===\n${i.output}`)
+      .join('\n\n');
+
+    db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+    io.emit('agent:status_changed', { agentId, status: 'working' });
+
+    let stepOutput = '';
+    let stepFailed = false;
+
+    try {
+      if (agent.auth_type === 'cli') {
+        stepOutput = await executeFlowStepCli(taskId, agentId, agent, task, currentItem, previousContext, workDir, execState, currentIdx, flowItems.length);
+      } else {
+        stepOutput = await executeFlowStepApi(taskId, agentId, agent, task, currentItem, previousContext, project, workDir, execState, currentIdx, flowItems.length);
+      }
+    } catch (err) {
+      addLog(taskId, 'error', `Step ${currentIdx + 1} failed: ${err.message}`);
+      // Re-read latest flowItems before marking failed
+      const latest = JSON.parse(db.prepare('SELECT flow_items FROM tasks WHERE id = ?').get(taskId)?.flow_items || '[]');
+      latest[currentIdx] = { ...currentItem, status: 'failed' };
+      updateFlowItems(taskId, latest);
+      stepFailed = true;
+    } finally {
+      db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+      io.emit('agent:status_changed', { agentId, status: 'idle' });
+    }
+
+    if (stepFailed) {
+      moveTask(taskId, 'blocked');
+      sendMessage(agentId, 'agent', `Flow step ${currentIdx + 1} failed. Task blocked for review.`, taskId);
+      return;
+    }
+
+    // Mark step done
+    const latestItems = JSON.parse(db.prepare('SELECT flow_items FROM tasks WHERE id = ?').get(taskId)?.flow_items || '[]');
+    latestItems[currentIdx] = { ...currentItem, status: 'done', output: stepOutput };
+    updateFlowItems(taskId, latestItems);
+    addLog(taskId, 'success', `Step ${currentIdx + 1} completed.`);
+    flowItems = latestItems;
+  }
+
+  if (execState.aborted) return;
+
+  // Check if all steps completed
+  const finalTask = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
+  if (!finalTask || finalTask.status === 'blocked') return;
+
+  const finalItems = JSON.parse(finalTask.flow_items || '[]');
+  const allDone = finalItems.length > 0 && finalItems.every((i) => i.status === 'done');
+
+  if (allDone) {
+    const summaryLines = finalItems.map((item, i) => `Step ${i + 1}: ${item.title}\n${item.output || '(no output)'}`);
+    const completionMsg = `Flow task completed: ${task.title}\n\n${summaryLines.join('\n\n')}`;
+    const doneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
+    moveTask(taskId, doneStatus, completionMsg);
+
+    const notifyAgentId = mainAgentId || finalItems[finalItems.length - 1]?.agent_id;
+    if (notifyAgentId) sendMessage(notifyAgentId, 'agent', completionMsg, taskId);
+
+    // For cron: reset steps for next run
+    if (task.trigger_type === 'cron') {
+      updateFlowItems(taskId, finalItems.map((i) => ({ ...i, status: 'pending', output: '' })));
+    }
+
+    try { require('./scheduler').onTaskCompleted(task); } catch {}
+  }
+}
+
+async function executeFlowStepApi(taskId, agentId, agent, task, flowItem, previousContext, project, workDir, execState, stepIdx, totalSteps) {
+  const agentDir = path.join(DATA_DIR, 'agents', agent.id);
+  const soul = readFile(path.join(agentDir, 'SOUL.md'));
+  const userPrefs = readFile(path.join(agentDir, 'USER.md'));
+  const rules = readFile(path.join(agentDir, 'AGENTS.md'));
+  const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+
+  let projectDoc = '';
+  if (project?.path) {
+    const docPath = path.join(project.path, 'PROJECT.md');
+    if (fs.existsSync(docPath)) projectDoc = fs.readFileSync(docPath, 'utf8');
+  }
+
+  if (!checkBudget()) throw new Error('Budget limit exceeded');
+
+  addLog(taskId, 'info', `Step ${stepIdx + 1} API mode: ${agent.provider} / ${agent.model}`);
+
+  const systemPrompt = `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
+
+${soul}
+
+## User Preferences
+${userPrefs}
+
+## Operational Rules
+${rules}
+
+## Your Memory
+${memory}
+
+${projectDoc ? `## Project Documentation\n${projectDoc}\n` : ''}## Available Tools
+- **read_file**: Read any file
+- **write_file**: Create or modify files
+- **delete_path**: Remove files or directories
+- **run_bash**: Execute shell commands
+- **list_directory**: Browse the file structure
+- **task_complete**: Call when your step is fully done (required)
+- **request_help**: Only if truly blocked
+
+## Rules
+1. ALWAYS proceed autonomously. Never ask for confirmation.
+2. Use tools to do the work, then call task_complete with a summary.
+3. ${project ? `Working directory: ${project.path}` : 'Use the provided working directory.'}`;
+
+  const userContent = `You are working on step ${stepIdx + 1} of ${totalSteps} in a multi-step flow task.
+
+## Overall Task
+Title: ${task.title}
+${task.description ? `Description: ${task.description}` : ''}
+
+## Your Step (${stepIdx + 1}/${totalSteps})
+${flowItem.title}
+
+${previousContext ? `## Output from Previous Steps\n${previousContext}\n` : ''}Working directory: ${workDir}
+
+Complete your step using the tools. When done, call task_complete with a summary of what you accomplished.`;
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userContent },
+  ];
+
+  let iterations = 0;
+  const maxIterations = 30;
+  let stepOutput = '';
+
+  while (iterations < maxIterations && !execState.aborted) {
+    iterations++;
+    addLog(taskId, 'thinking', `Step ${stepIdx + 1} · Iteration ${iterations}...`);
+    io.emit('agent:status_changed', { agentId, status: 'thinking' });
+
+    let response;
+    try {
+      response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS });
+    } catch (err) {
+      addLog(taskId, 'error', `AI Error: ${err.message}`);
+      throw err;
+    }
+
+    logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
+    if (response.content) addLog(taskId, 'response', response.content);
+
+    const toolCalls = response.toolCalls || [];
+
+    if (toolCalls.length > 0) {
+      if (response.rawAssistantMsg) messages.push(response.rawAssistantMsg);
+      else messages.push({ role: 'assistant', content: response.content || '' });
+
+      let stepDone = false;
+      const toolResults = [];
+
+      for (const tc of toolCalls) {
+        if (tc.name === 'task_complete') {
+          stepDone = true;
+          stepOutput = tc.input.summary || `Step ${stepIdx + 1} completed.`;
+          toolResults.push({ id: tc.id, result: 'Step marked as complete.' });
+          break;
+        }
+        if (tc.name === 'request_help') {
+          const reason = tc.input.reason || 'Agent needs help.';
+          addLog(taskId, 'blocked', `Step ${stepIdx + 1} blocked: ${reason}`);
+          throw new Error(`Step blocked: ${reason}`);
+        }
+        const result = executeTool(tc.name, tc.input, workDir, taskId, agentId);
+        toolResults.push({ id: tc.id, result });
+      }
+
+      if (stepDone) {
+        addLog(taskId, 'success', `Step ${stepIdx + 1}: ${stepOutput.slice(0, 100)}`);
+        break;
+      }
+
+      appendToolResults(messages, toolResults, agent.provider);
+    } else {
+      messages.push({ role: 'assistant', content: response.content || '' });
+      if (response.content?.includes('[TASK_COMPLETE]')) {
+        stepOutput = extractSummary(response.content);
+        break;
+      }
+      messages.push({ role: 'user', content: 'Use the provided tools to complete your step. When done, call task_complete.' });
+    }
+
+    if (!checkBudget()) throw new Error('Budget limit exceeded');
+  }
+
+  return stepOutput || `Step ${stepIdx + 1}: ${flowItem.title} — completed`;
+}
+
+async function executeFlowStepCli(taskId, agentId, agent, task, flowItem, previousContext, workDir, execState, stepIdx, totalSteps) {
+  const agentDir = path.join(DATA_DIR, 'agents', agent.id);
+  const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+  const soul = readFile(path.join(agentDir, 'SOUL.md'));
+  const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
+
+  if (isCodex) ensureGitRepo(workDir, taskId);
+
+  const prompt = `You are ${agent.name}, a ${agent.role}.
+${soul ? `## Your Configuration\n${soul}\n` : ''}${memory ? `## Your Memory\n${memory}\n` : ''}
+## Overall Task
+Title: ${task.title}
+${task.description ? `Description: ${task.description}` : ''}
+
+## Your Step (${stepIdx + 1}/${totalSteps})
+${flowItem.title}
+
+${previousContext ? `## Output from Previous Steps\n${previousContext}\n` : ''}Working directory: ${workDir}
+
+Complete your step autonomously.`;
+
+  const abortController = new AbortController();
+  execState.abortController = abortController;
+
+  let stepOutput = '';
+  const onEvent = (event) => {
+    if (execState.aborted) return;
+    switch (event.type) {
+      case 'text': addLog(taskId, 'response', event.content); stepOutput = event.content; break;
+      case 'command': io.emit('agent:status_changed', { agentId, status: 'executing' }); addLog(taskId, 'command', event.content); break;
+      case 'output': addLog(taskId, 'output', event.content); break;
+      case 'file_change': addLog(taskId, 'info', `File: ${event.content}`); break;
+      case 'thinking': io.emit('agent:status_changed', { agentId, status: 'thinking' }); addLog(taskId, 'thinking', event.content.slice(0, 500)); break;
+      case 'done': addLog(taskId, 'success', `Step ${stepIdx + 1} finished.`); break;
+      default: break;
+    }
+  };
+
+  if (isCodex) {
+    const { Codex } = await import('@openai/codex-sdk');
+    const client = new Codex();
+    const thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
+    const streamedTurn = await thread.runStreamed(prompt, { signal: abortController.signal });
+    for await (const event of streamedTurn.events) {
+      if (event.type === 'item.completed') {
+        const item = event.item;
+        if (item.type === 'agent_message') onEvent({ type: 'text', content: item.text || '' });
+        else if (item.type === 'command_execution') { onEvent({ type: 'command', content: `$ ${item.command || ''}` }); if (item.output) onEvent({ type: 'output', content: item.output.slice(0, 2000) }); }
+        else if (item.type === 'reasoning') onEvent({ type: 'thinking', content: item.text || '' });
+      } else if (event.type === 'turn.completed') {
+        onEvent({ type: 'done', content: '' });
+      }
+    }
+  } else {
+    const result = await runClaudeAgent(prompt, workDir, onEvent, abortController);
+    if (result.costUsd) logBudget(agentId, agent.provider, agent.model || 'claude-cli', 0, 0, result.costUsd);
+  }
+
+  return stepOutput || `Step ${stepIdx + 1}: ${flowItem.title} — completed`;
+}
+
+function updateFlowItems(taskId, flowItems) {
+  db.prepare('UPDATE tasks SET flow_items = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+    .run(JSON.stringify(flowItems), taskId);
+  const task = db.prepare(
+    'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+  ).get(taskId);
+  if (task) {
+    task.execution_logs = JSON.parse(task.execution_logs || '[]');
+    task.attachments = JSON.parse(task.attachments || '[]');
+    task.flow_items = JSON.parse(task.flow_items || '[]');
+    if (io) io.emit('task:updated', task);
   }
 }
 

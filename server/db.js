@@ -112,6 +112,12 @@ if (!taskCols.includes('trigger_at')) {
 if (!taskCols.includes('trigger_cron')) {
   db.exec("ALTER TABLE tasks ADD COLUMN trigger_cron TEXT DEFAULT ''");
 }
+if (!taskCols.includes('task_type')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN task_type TEXT DEFAULT 'single'");
+}
+if (!taskCols.includes('flow_items')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN flow_items TEXT DEFAULT '[]'");
+}
 
 // Migrate agents table: add platform columns if missing
 const agentCols = db.prepare("PRAGMA table_info(agents)").all().map((c) => c.name);

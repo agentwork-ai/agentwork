@@ -96,7 +96,10 @@ function triggerTask(taskId) {
   ).get(taskId);
 
   if (!task) return;
-  if (!task.agent_id) {
+  const isFlowTask = (task.task_type || 'single') === 'flow';
+  const flowItems = JSON.parse(task.flow_items || '[]');
+  const flowHasAgents = isFlowTask && flowItems.some((i) => i.agent_id);
+  if (!task.agent_id && !flowHasAgents) {
     console.warn(`[Scheduler] Task "${task.title}" has no agent, cannot trigger`);
     return;
   }
