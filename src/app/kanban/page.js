@@ -98,6 +98,22 @@ export default function KanbanPage() {
     }
   };
 
+  const changeAgent = async (taskId, agentId) => {
+    try {
+      await api.updateTask(taskId, { agent_id: agentId });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const changeProject = async (taskId, projectId) => {
+    try {
+      await api.updateTask(taskId, { project_id: projectId });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   const handleDragStart = (e, task) => {
     setDragTask(task);
     e.dataTransfer.effectAllowed = 'move';
@@ -288,11 +304,14 @@ export default function KanbanPage() {
                       <TaskCard
                         key={task.id}
                         task={task}
+                        agents={agents}
                         projects={projects}
                         showProject={!selectedProjectId}
                         onDragStart={(e) => handleDragStart(e, task)}
                         onClick={() => setViewTask(task)}
                         onPriorityChange={changePriority}
+                        onAgentChange={changeAgent}
+                        onProjectChange={changeProject}
                       />
                     ))}
                   </div>
@@ -335,17 +354,35 @@ export default function KanbanPage() {
 const PRIORITIES = ['low', 'medium', 'high', 'critical'];
 const PRIORITY_COLORS = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
 
-function TaskCard({ task, projects, showProject, onDragStart, onClick, onPriorityChange }) {
+function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange }) {
   const isDoing = task.status === 'doing';
-  const projectName = showProject && task.project_id
-    ? projects.find((p) => p.id === task.project_id)?.name
-    : null;
+  const [openDropdown, setOpenDropdown] = useState(null); // 'agent' | 'project' | null
 
   const cyclePriority = (e) => {
     e.stopPropagation();
     const next = PRIORITIES[(PRIORITIES.indexOf(task.priority) + 1) % PRIORITIES.length];
     onPriorityChange(task.id, next);
   };
+
+  const toggleDropdown = (e, name) => {
+    e.stopPropagation();
+    setOpenDropdown((prev) => (prev === name ? null : name));
+  };
+
+  const selectAgent = (e, agentId) => {
+    e.stopPropagation();
+    onAgentChange(task.id, agentId);
+    setOpenDropdown(null);
+  };
+
+  const selectProject = (e, projectId) => {
+    e.stopPropagation();
+    onProjectChange(task.id, projectId);
+    setOpenDropdown(null);
+  };
+
+  const assignedAgent = agents?.find((a) => a.id === task.agent_id);
+  const assignedProject = projects?.find((p) => p.id === task.project_id);
 
   return (
     <div
@@ -368,6 +405,7 @@ function TaskCard({ task, projects, showProject, onDragStart, onClick, onPriorit
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
       )}
       <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+        {/* Priority */}
         <button
           onClick={cyclePriority}
           className="flex items-center gap-1 rounded px-1 py-0.5 transition-colors hover:opacity-80"
@@ -377,16 +415,83 @@ function TaskCard({ task, projects, showProject, onDragStart, onClick, onPriorit
           <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }} />
           <span className="text-[10px] uppercase font-semibold" style={{ color: PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium }}>{task.priority}</span>
         </button>
-        {projectName && (
-          <span className="text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
-            <FolderOpen size={10} /> {projectName}
-          </span>
-        )}
-        {task.agent_name && (
-          <span className="text-[10px] ml-auto flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}>
-            <span>{task.agent_avatar}</span> {task.agent_name}
-          </span>
-        )}
+
+        {/* Project picker */}
+        <div className="relative">
+          <button
+            onClick={(e) => toggleDropdown(e, 'project')}
+            className="text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded transition-colors hover:opacity-80"
+            style={assignedProject
+              ? { background: 'var(--accent-light)', color: 'var(--accent)' }
+              : { background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}
+          >
+            <FolderOpen size={10} />
+            {assignedProject ? assignedProject.name : 'Project'}
+          </button>
+          {openDropdown === 'project' && (
+            <div
+              className="absolute left-0 top-full mt-1 rounded-lg shadow-lg z-50 py-1 min-w-[140px]"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs hover:opacity-80 transition-colors"
+                style={{ color: 'var(--text-tertiary)' }}
+                onClick={(e) => selectProject(e, null)}
+              >
+                None
+              </button>
+              {projects?.map((p) => (
+                <button
+                  key={p.id}
+                  className="w-full text-left px-3 py-1.5 text-xs hover:opacity-80 transition-colors"
+                  style={{ color: task.project_id === p.id ? 'var(--accent)' : 'var(--text-primary)', background: task.project_id === p.id ? 'var(--accent-light)' : 'transparent' }}
+                  onClick={(e) => selectProject(e, p.id)}
+                >
+                  {p.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Agent picker */}
+        <div className="relative ml-auto">
+          <button
+            onClick={(e) => toggleDropdown(e, 'agent')}
+            className="text-[10px] flex items-center gap-1 px-1.5 py-0.5 rounded transition-colors hover:opacity-80"
+            style={assignedAgent
+              ? { background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }
+              : { background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}
+          >
+            {assignedAgent ? <><span>{assignedAgent.avatar}</span>{assignedAgent.name}</> : '+ Agent'}
+          </button>
+          {openDropdown === 'agent' && (
+            <div
+              className="absolute right-0 top-full mt-1 rounded-lg shadow-lg z-50 py-1 min-w-[140px]"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <button
+                className="w-full text-left px-3 py-1.5 text-xs hover:opacity-80 transition-colors"
+                style={{ color: 'var(--text-tertiary)' }}
+                onClick={(e) => selectAgent(e, null)}
+              >
+                Unassign
+              </button>
+              {agents?.map((a) => (
+                <button
+                  key={a.id}
+                  className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:opacity-80 transition-colors"
+                  style={{ color: task.agent_id === a.id ? 'var(--accent)' : 'var(--text-primary)', background: task.agent_id === a.id ? 'var(--accent-light)' : 'transparent' }}
+                  onClick={(e) => selectAgent(e, a.id)}
+                >
+                  <span>{a.avatar}</span>{a.name}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
       {isDoing && task.execution_logs?.length > 0 && (
         <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border-light)' }}>
