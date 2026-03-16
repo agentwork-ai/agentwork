@@ -162,6 +162,19 @@ async function executeTask(taskId, agentId) {
   const execState = { waitingForUser: false, userReply: null, aborted: false };
   activeExecutions.set(taskId, execState);
 
+  // Task timeout
+  const timeoutMinutes = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'task_timeout_minutes'").get()?.value || '0', 10);
+  let timeoutTimer = null;
+  if (timeoutMinutes > 0) {
+    timeoutTimer = setTimeout(() => {
+      execState.aborted = true;
+      if (execState.abortController) execState.abortController.abort();
+      addLog(taskId, 'error', `Task timed out after ${timeoutMinutes} minute(s).`);
+      moveTask(taskId, 'blocked');
+      sendMessage(agentId || 'system', 'agent', `Task timed out after ${timeoutMinutes} minute(s).`, taskId);
+    }, timeoutMinutes * 60 * 1000);
+  }
+
   if (!isFlow) {
     db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'working' });
@@ -190,6 +203,7 @@ async function executeTask(taskId, agentId) {
     moveTask(taskId, 'blocked');
     sendMessage(agentId || 'system', 'agent', `An unexpected error occurred: ${err.message}`, taskId);
   } finally {
+    if (timeoutTimer) clearTimeout(timeoutTimer);
     activeExecutions.delete(taskId);
     if (!isFlow && agent) {
       db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
@@ -382,7 +396,7 @@ Complete your step using the tools. When done, call task_complete with a summary
   ];
 
   let iterations = 0;
-  const maxIterations = 30;
+  const maxIterations = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'max_iterations'").get()?.value || '30', 10);
   let stepOutput = '';
 
   while (iterations < maxIterations && !execState.aborted) {
@@ -935,7 +949,7 @@ Use tools to complete your task — do NOT write explanations without acting:
   ];
 
   let iterations = 0;
-  const maxIterations = 30;
+  const maxIterations = parseInt(db.prepare("SELECT value FROM settings WHERE key = 'max_iterations'").get()?.value || '30', 10);
 
   while (iterations < maxIterations && !execState.aborted) {
     iterations++;

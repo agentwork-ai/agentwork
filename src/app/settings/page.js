@@ -197,6 +197,40 @@ export default function SettingsPage() {
               )}
             </Section>
 
+            {/* Execution */}
+            <Section icon={<TrendingUp size={18} />} title="Execution">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Max Iterations per Task</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="1"
+                    max="200"
+                    value={settings.max_iterations || '30'}
+                    onChange={(e) => updateField('max_iterations', e.target.value)}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    API-mode agents stop after this many tool-call loops (default: 30)
+                  </p>
+                </div>
+                <div>
+                  <label className="label">Task Timeout (minutes)</label>
+                  <input
+                    className="input"
+                    type="number"
+                    min="0"
+                    max="1440"
+                    value={settings.task_timeout_minutes || '0'}
+                    onChange={(e) => updateField('task_timeout_minutes', e.target.value)}
+                  />
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Auto-block tasks running longer than this (0 = no timeout)
+                  </p>
+                </div>
+              </div>
+            </Section>
+
             {/* Security */}
             <Section icon={<Shield size={18} />} title="Security">
               <div className="flex items-center justify-between">

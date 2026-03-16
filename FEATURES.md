@@ -28,7 +28,7 @@
 - [ ] **Bulk Task Operations** — Add multi-select on the Kanban board for bulk status changes, bulk agent assignment, or bulk deletion.
 - [ ] **Retry with Modified Prompt** — When a task lands in "Blocked," allow the user to edit the task description and retry execution with one click.
 - [ ] **Parallel Flow Steps** — Allow marking certain flow steps as parallelizable so multiple agents can work on different steps simultaneously, with a join step that waits for all parallel branches.
-- [ ] **Task Execution Timeout** — Add a configurable per-task timeout (e.g., 30 minutes) that moves the task to "Blocked" if exceeded.
+- [x] **Task Execution Timeout** — Add a configurable per-task timeout (e.g., 30 minutes) that moves the task to "Blocked" if exceeded.
 
 ## 3. UI/UX Improvements
 
@@ -125,7 +125,7 @@
 ## 13. Configuration & Customization
 
 - [ ] **Custom Agent Tools** — User-defined tools with name, description, parameters, and a bash command template, added to specific agents.
-- [ ] **Configurable Max Iterations** — Per-task or global iteration limit instead of the hardcoded 30.
+- [x] **Configurable Max Iterations** — Per-task or global iteration limit instead of the hardcoded 30.
 - [ ] **Custom Accent Colors** — Theme customization with preset color schemes (purple, green, orange) beyond dark/light.
 - [ ] **Granular Notification Preferences** — Per-event-type controls: task complete, task blocked, budget threshold, quiet hours.
 - [ ] **Per-Project Default Agent** — Auto-assign a specific agent when creating new tasks for a project.

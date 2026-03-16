@@ -157,6 +157,8 @@ const defaultSettings = {
   theme: 'system',
   notification_sounds: 'true',
   default_workspace: '',
+  max_iterations: '30',
+  task_timeout_minutes: '0',
 };
 
 const insertSetting = db.prepare(
