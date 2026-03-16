@@ -6,7 +6,18 @@ const path = require('path');
 
 let io = null;
 const activeExecutions = new Map();
-const agentSessions = new Map();
+const agentSessions = new Map(); // In-memory cache for Codex threads (non-serializable)
+
+// DB-backed session persistence for Claude CLI sessions
+function getPersistedSession(agentId) {
+  const row = db.prepare('SELECT session_id, provider FROM agent_sessions WHERE agent_id = ?').get(agentId);
+  return row || {};
+}
+function persistSession(agentId, sessionId, provider) {
+  db.prepare(
+    'INSERT INTO agent_sessions (agent_id, session_id, provider, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP) ON CONFLICT(agent_id) DO UPDATE SET session_id = ?, provider = ?, updated_at = CURRENT_TIMESTAMP'
+  ).run(agentId, sessionId, provider, sessionId, provider);
+}
 
 function initExecutor(socketIo) {
   io = socketIo;
@@ -68,9 +79,9 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       } catch (importErr) {
         throw new Error(`Failed to load Claude Agent SDK: ${importErr.message}. Is @anthropic-ai/claude-agent-sdk installed?`);
       }
-      const session = agentSessions.get(agentId) || {};
-      const result = await chatWithClaudeAgent(userMessage, session.sessionId, process.cwd());
-      agentSessions.set(agentId, { ...session, sessionId: result.sessionId });
+      const session = getPersistedSession(agentId);
+      const result = await chatWithClaudeAgent(userMessage, session.session_id, process.cwd());
+      persistSession(agentId, result.sessionId, 'anthropic');
       responseContent = result.content || '(Agent returned an empty response)';
     } else if (agent.provider === 'openai' || agent.provider === 'codex-cli') {
       let Codex, chatWithCodexAgent;
@@ -633,9 +644,7 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
       case 'done': addLog(taskId, 'success', 'Agent finished execution.'); break;
       case 'session':
         addLog(taskId, 'info', `Session ID: ${event.sessionId}`);
-        const s = agentSessions.get(agentId) || {};
-        s.sessionId = event.sessionId;
-        agentSessions.set(agentId, s);
+        persistSession(agentId, event.sessionId, 'anthropic');
         break;
       default: addLog(taskId, 'info', `[${event.type}] ${event.content || ''}`); break;
     }

@@ -239,6 +239,17 @@ db.exec(`
   )
 `);
 
+// Agent sessions table (persists CLI chat sessions across restarts)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_sessions (
+    agent_id TEXT PRIMARY KEY,
+    session_id TEXT,
+    provider TEXT,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  )
+`);
+
 function logAudit(action, resourceType, resourceId, details) {
   try {
     db.prepare('INSERT INTO audit_logs (action, resource_type, resource_id, details) VALUES (?, ?, ?, ?)').run(

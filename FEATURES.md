@@ -91,7 +91,7 @@
 - [x] **Graceful Task Recovery on Restart** — On startup, detect orphaned "doing" tasks and move them back to "todo" or "blocked."
 - [x] **Log Rotation & Size Limits** — Cap stored execution logs per task, archive older entries to files.
 - [x] **AI API Rate Limiting** — Configurable per-provider request throttling when multiple agents work simultaneously.
-- [ ] **Persistent Agent Sessions** — Persist CLI-mode chat session IDs to the database so agents can resume conversations after daemon restart.
+- [x] **Persistent Agent Sessions** — Persist CLI-mode chat session IDs to the database so agents can resume conversations after daemon restart.
 
 ## 9. Data & Analytics
 
