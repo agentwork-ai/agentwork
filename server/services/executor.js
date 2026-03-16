@@ -476,7 +476,7 @@ Complete your step using the tools. When done, call task_complete with a summary
 
     let response;
     try {
-      response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS });
+      response = await createCompletion(agent.provider, agent.model, messages, { tools: getToolsForAgent(agent) });
     } catch (err) {
       addLog(taskId, 'error', `AI Error: ${err.message}`);
       throw err;
@@ -861,7 +861,39 @@ const AGENT_TOOLS = [
       required: ['reason'],
     },
   },
+  {
+    name: 'message_agent',
+    description: 'Send a message to another agent. Use this to delegate work, ask for review, or share findings.',
+    parameters: {
+      type: 'object',
+      properties: {
+        agent_name: { type: 'string', description: 'The name of the agent to send a message to' },
+        message: { type: 'string', description: 'The message content to send' },
+      },
+      required: ['agent_name', 'message'],
+    },
+  },
 ];
+
+/**
+ * Filter AGENT_TOOLS based on agent.allowed_tools.
+ * If allowed_tools is empty, all tools are returned.
+ * Otherwise only tools whose name is in the comma-separated whitelist are
+ * included — plus task_complete and request_help which are always required.
+ */
+function getToolsForAgent(agent) {
+  const raw = (agent && agent.allowed_tools) || '';
+  if (!raw.trim()) return AGENT_TOOLS;
+
+  const whitelist = new Set(
+    raw.split(',').map((t) => t.trim()).filter(Boolean)
+  );
+  // Always include these essential tools
+  whitelist.add('task_complete');
+  whitelist.add('request_help');
+
+  return AGENT_TOOLS.filter((tool) => whitelist.has(tool.name));
+}
 
 // ─── Command Sandboxing Helpers ───
 
@@ -1009,6 +1041,38 @@ function executeTool(name, input, workDir, taskId, agentId) {
         try { return fs.readdirSync(dirPath).join('\n'); } catch (err) { return `Error: ${err.message}`; }
       }
     }
+    case 'message_agent': {
+      try {
+        const targetAgent = db.prepare('SELECT * FROM agents WHERE LOWER(name) = LOWER(?)').get(input.agent_name);
+        if (!targetAgent) {
+          const allAgents = db.prepare('SELECT name FROM agents').all().map(a => a.name);
+          return `Error: Agent "${input.agent_name}" not found. Available agents: ${allAgents.join(', ') || 'none'}`;
+        }
+        const msgId = uuidv4();
+        db.prepare(
+          'INSERT INTO agent_messages (id, from_agent_id, to_agent_id, content) VALUES (?, ?, ?, ?)'
+        ).run(msgId, agentId, targetAgent.id, input.message);
+
+        const fromAgent = db.prepare('SELECT name, avatar FROM agents WHERE id = ?').get(agentId);
+        const message = {
+          id: msgId,
+          from_agent_id: agentId,
+          to_agent_id: targetAgent.id,
+          content: input.message,
+          from_agent_name: fromAgent?.name || 'Unknown',
+          from_agent_avatar: fromAgent?.avatar || '',
+          to_agent_name: targetAgent.name,
+          to_agent_avatar: targetAgent.avatar,
+          created_at: new Date().toISOString(),
+        };
+
+        if (io) io.emit('agent:message', message);
+        addLog(taskId, 'info', `Sent message to agent "${targetAgent.name}": ${input.message.slice(0, 200)}`);
+        return `Message sent to ${targetAgent.name} successfully.`;
+      } catch (err) {
+        return `Error sending message: ${err.message}`;
+      }
+    }
     default:
       return `Unknown tool: ${name}`;
   }
@@ -1114,7 +1178,7 @@ Use tools to complete your task — do NOT write explanations without acting:
 
     let response;
     try {
-      response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS, fallbackModel: agent.fallback_model });
+      response = await createCompletion(agent.provider, agent.model, messages, { tools: getToolsForAgent(agent), fallbackModel: agent.fallback_model });
     } catch (err) {
       addLog(taskId, 'error', `AI Error: ${err.message}`);
       moveTask(taskId, 'blocked');

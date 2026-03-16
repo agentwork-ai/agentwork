@@ -6,8 +6,8 @@
 
 ## 1. Agent Capabilities & Intelligence
 
-- [ ] **Agent-to-Agent Communication** — Agents can message each other directly, enabling a "tech lead" agent to delegate sub-tasks or review another agent's work before marking a task done.
-- [ ] **Per-Agent Tool Restrictions** — Allow per-agent tool whitelists (e.g., a "QA Engineer" agent gets `run_bash` for test execution but not `write_file`, while a "Technical Writer" gets only `read_file` and `write_file`).
+- [x] **Agent-to-Agent Communication** — Agents can message each other directly, enabling a "tech lead" agent to delegate sub-tasks or review another agent's work before marking a task done.
+- [x] **Per-Agent Tool Restrictions** — Allow per-agent tool whitelists (e.g., a "QA Engineer" agent gets `run_bash` for test execution but not `write_file`, while a "Technical Writer" gets only `read_file` and `write_file`).
 - [ ] **Retrieval-Augmented Generation (RAG) for Project Context** — Add vector-indexed embedding search across the project codebase so agents can retrieve relevant files on demand rather than relying on the static PROJECT.md summary.
 - [x] **Self-Improving Agent Prompts** — Track success/failure rates per agent and automatically tune the system prompt. If an agent consistently hits `request_help` or max iterations, flag the prompt/personality as needing adjustment and suggest changes to the user.
 - [x] **Agent Cloning / Templates** — Allow cloning an existing agent's configuration (personality, memory files, provider/model) to spin up a new agent with the same starting point. Also support agent templates ("Senior React Developer with Claude Opus" preset).
@@ -142,6 +142,6 @@
 ## 15. Mobile & Accessibility
 
 - [x] **Progressive Web App (PWA)** — Add manifest.json and service worker for installable mobile experience with push notifications.
-- [ ] **Touch-Friendly Kanban** — Proper touch drag-and-drop using dnd-kit's touch sensors.
+- [x] **Touch-Friendly Kanban** — Proper touch drag-and-drop using dnd-kit's touch sensors.
 - [x] **Accessible Color Contrast** — Audit and fix WCAG AA compliance across both themes.
 - [x] **Screen Reader Support** — ARIA labels on interactive elements and semantic HTML landmarks.

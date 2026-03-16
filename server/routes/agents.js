@@ -125,15 +125,15 @@ router.get('/:id', (req, res) => {
 router.post('/', async (req, res) => {
   const { name, avatar, role, auth_type, provider, model, personality,
           chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids,
-          daily_budget_usd } = req.body;
+          daily_budget_usd, allowed_tools } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   db.prepare(
     `INSERT INTO agents (id, name, avatar, role, auth_type, provider, model, status, personality,
-      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd, allowed_tools)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     name,
@@ -149,7 +149,8 @@ router.post('/', async (req, res) => {
     chat_token || '',
     chat_app_token || '',
     chat_allowed_ids || '',
-    daily_budget_usd || 0
+    daily_budget_usd || 0,
+    allowed_tools || ''
   );
 
   // Create memory directory with OpenClaw architecture
@@ -391,6 +392,58 @@ router.post('/:id/clone', (req, res) => {
   const io = req.app.get('io');
   if (io) io.emit('agent:created', agent);
   res.status(201).json(agent);
+});
+
+// Send a message to an agent from another agent
+router.post('/:id/message', (req, res) => {
+  const toAgent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  if (!toAgent) return res.status(404).json({ error: 'Recipient agent not found' });
+
+  const { from_agent_id, content } = req.body;
+  if (!from_agent_id) return res.status(400).json({ error: 'from_agent_id is required' });
+  if (!content) return res.status(400).json({ error: 'content is required' });
+
+  const fromAgent = db.prepare('SELECT * FROM agents WHERE id = ?').get(from_agent_id);
+  if (!fromAgent) return res.status(404).json({ error: 'Sender agent not found' });
+
+  const id = uuidv4();
+  db.prepare(
+    'INSERT INTO agent_messages (id, from_agent_id, to_agent_id, content) VALUES (?, ?, ?, ?)'
+  ).run(id, from_agent_id, req.params.id, content);
+
+  const message = db.prepare(
+    `SELECT m.*, fa.name as from_agent_name, fa.avatar as from_agent_avatar,
+            ta.name as to_agent_name, ta.avatar as to_agent_avatar
+     FROM agent_messages m
+     JOIN agents fa ON m.from_agent_id = fa.id
+     JOIN agents ta ON m.to_agent_id = ta.id
+     WHERE m.id = ?`
+  ).get(id);
+
+  logAudit('agent_message', 'agent', req.params.id, { from: fromAgent.name, to: toAgent.name });
+
+  const io = req.app.get('io');
+  if (io) io.emit('agent:message', message);
+
+  res.status(201).json(message);
+});
+
+// Get inbox messages for an agent
+router.get('/:id/inbox', (req, res) => {
+  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+  const messages = db.prepare(
+    `SELECT m.*, fa.name as from_agent_name, fa.avatar as from_agent_avatar,
+            ta.name as to_agent_name, ta.avatar as to_agent_avatar
+     FROM agent_messages m
+     JOIN agents fa ON m.from_agent_id = fa.id
+     JOIN agents ta ON m.to_agent_id = ta.id
+     WHERE m.to_agent_id = ?
+     ORDER BY m.created_at DESC`
+  ).all(req.params.id);
+
+  res.json(messages);
 });
 
 // Clear agent memory

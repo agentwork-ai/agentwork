@@ -203,6 +203,9 @@ if (!agentCols.includes('daily_budget_usd')) {
 if (!agentCols.includes('fallback_model')) {
   db.exec("ALTER TABLE agents ADD COLUMN fallback_model TEXT DEFAULT ''");
 }
+if (!agentCols.includes('allowed_tools')) {
+  db.exec("ALTER TABLE agents ADD COLUMN allowed_tools TEXT DEFAULT ''");
+}
 
 // Seed default settings if not present
 const defaultSettings = {
@@ -296,6 +299,39 @@ db.exec(`
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
   )
+`);
+
+// Agent-to-agent messages table (inter-agent communication)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS agent_messages (
+    id TEXT PRIMARY KEY,
+    from_agent_id TEXT NOT NULL,
+    to_agent_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (from_agent_id) REFERENCES agents(id) ON DELETE CASCADE,
+    FOREIGN KEY (to_agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  )
+`);
+
+// Group chat rooms tables
+db.exec(`
+  CREATE TABLE IF NOT EXISTS chat_rooms (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    agent_ids TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+  CREATE TABLE IF NOT EXISTS room_messages (
+    id TEXT PRIMARY KEY,
+    room_id TEXT NOT NULL,
+    sender_type TEXT NOT NULL,
+    sender_id TEXT,
+    sender_name TEXT,
+    content TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (room_id) REFERENCES chat_rooms(id) ON DELETE CASCADE
+  );
 `);
 
 function logAudit(action, resourceType, resourceId, details) {

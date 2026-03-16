@@ -75,6 +75,9 @@ export const api = {
   getAgentMetrics: (id) => request(`/api/agents/${id}/metrics`),
   suggestAgent: (title, description, projectId) =>
     request(`/api/agents/suggest?title=${encodeURIComponent(title || '')}&description=${encodeURIComponent(description || '')}${projectId ? `&project_id=${projectId}` : ''}`),
+  sendAgentMessage: (agentId, fromAgentId, content) =>
+    request(`/api/agents/${agentId}/message`, { method: 'POST', body: JSON.stringify({ from_agent_id: fromAgentId, content }) }),
+  getAgentInbox: (agentId) => request(`/api/agents/${agentId}/inbox`),
 
   // Chat
   getMessages: (agentId, limit) => request(`/api/chat/${agentId}?limit=${limit || 100}`),

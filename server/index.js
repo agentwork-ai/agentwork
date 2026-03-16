@@ -126,6 +126,7 @@ app.prepare().then(() => {
   server.use('/api/chat', require('./routes/chat'));
   server.use('/api/files', require('./routes/files'));
   server.use('/api/templates', require('./routes/templates'));
+  server.use('/api/rooms', require('./routes/rooms'));
 
   // Webhook endpoint for external triggers
   server.post('/api/webhooks/trigger', (req, res) => {
@@ -201,6 +202,8 @@ app.prepare().then(() => {
         { method: 'DELETE', path: '/api/agents/:id', description: 'Fire agent' },
         { method: 'GET', path: '/api/agents/:id/metrics', description: 'Agent performance metrics' },
         { method: 'POST', path: '/api/agents/:id/clone', description: 'Clone agent' },
+        { method: 'POST', path: '/api/agents/:id/message', description: 'Send inter-agent message', body: '{ from_agent_id, content }' },
+        { method: 'GET', path: '/api/agents/:id/inbox', description: 'Get agent inbox (messages from other agents)' },
         { method: 'PUT', path: '/api/agents/:id/memory/:filename', description: 'Update memory file' },
         { method: 'POST', path: '/api/agents/:id/clear-memory', description: 'Clear agent memory' },
         { method: 'GET', path: '/api/chat/:agentId', description: 'Get messages' },
@@ -222,6 +225,11 @@ app.prepare().then(() => {
         { method: 'POST', path: '/api/webhooks/trigger', description: 'Create and execute task via webhook', body: '{ title, description, agent_id, project_id }' },
         { method: 'GET', path: '/api/files/read', description: 'Read file content', query: 'path' },
         { method: 'POST', path: '/api/files/write', description: 'Write file content', body: '{ path, content }' },
+        { method: 'GET', path: '/api/rooms', description: 'List group chat rooms' },
+        { method: 'POST', path: '/api/rooms', description: 'Create group chat room', body: '{ name, agent_ids }' },
+        { method: 'GET', path: '/api/rooms/:id/messages', description: 'Get room messages', query: 'limit, offset' },
+        { method: 'POST', path: '/api/rooms/:id/messages', description: 'Send message to room (triggers agent responses)', body: '{ content }' },
+        { method: 'DELETE', path: '/api/rooms/:id', description: 'Delete group chat room' },
       ],
     });
   });
