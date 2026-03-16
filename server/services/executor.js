@@ -360,8 +360,9 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
       }
     }
 
-    moveTask(taskId, 'done', 'Completed via CLI agent.');
-    sendMessage(agentId, 'agent', `I've completed the task: ${task.title}`, taskId);
+    const cliCompletionMsg = `I've completed the task: ${task.title}`;
+    moveTask(taskId, 'done', cliCompletionMsg);
+    sendMessage(agentId, 'agent', cliCompletionMsg, taskId);
     reflectAfterTask(agent, agentDir, task.title, 'Completed via CLI agent.', project);
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -659,8 +660,9 @@ Use tools to complete your task — do NOT write explanations without acting:
 
       if (taskDone) {
         addLog(taskId, 'success', 'Task completed!');
-        moveTask(taskId, 'done', summary);
-        sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${summary}`, taskId);
+        const completionMsg = `I've completed the task: ${task.title}\n\n${summary}`;
+        moveTask(taskId, 'done', completionMsg);
+        sendMessage(agentId, 'agent', completionMsg, taskId);
         reflectAfterTask(agent, agentDir, task.title, summary, project);
         break;
       }
@@ -691,8 +693,9 @@ Use tools to complete your task — do NOT write explanations without acting:
       if (response.content?.includes('[TASK_COMPLETE]')) {
         addLog(taskId, 'success', 'Task completed (text signal)!');
         const textSummary = extractSummary(response.content);
-        moveTask(taskId, 'done', textSummary);
-        sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${textSummary}`, taskId);
+        const textCompletionMsg = `I've completed the task: ${task.title}\n\n${textSummary}`;
+        moveTask(taskId, 'done', textCompletionMsg);
+        sendMessage(agentId, 'agent', textCompletionMsg, taskId);
         reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);
         break;
       }
