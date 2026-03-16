@@ -23,7 +23,7 @@
 - [x] **Sub-Tasks** — Allow tasks to have nested sub-tasks (parent_id foreign key). The parent task auto-completes when all sub-tasks are done.
 - [x] **Priority Queue per Agent** — Add a priority queue per agent so when one task finishes, the next highest-priority "To Do" task auto-starts.
 - [x] **Task Templates / Recurring Blueprints** — Allow saving a task as a "template" with pre-filled title, description, agent, and project. One-click to create a new task from the template.
-- [ ] **Time Estimates & SLA Tracking** — Add estimated duration per task and track actual execution time. Surface SLA violations (tasks taking 3x longer than estimated) in the dashboard.
+- [x] **Time Estimates & SLA Tracking** — Add estimated duration per task and track actual execution time. Surface SLA violations (tasks taking 3x longer than estimated) in the dashboard.
 - [x] **Task Labels / Tags** — Add a free-form tagging system (e.g., "bug", "feature", "refactor", "urgent") for filtering and grouping tasks on the Kanban board.
 - [x] **Bulk Task Operations** — Add multi-select on the Kanban board for bulk status changes, bulk agent assignment, or bulk deletion.
 - [x] **Retry with Modified Prompt** — When a task lands in "Blocked," allow the user to edit the task description and retry execution with one click.

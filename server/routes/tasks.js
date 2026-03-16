@@ -252,6 +252,7 @@ router.put('/:id', (req, res) => {
   }
 
   const completedAt = newStatus === 'done' && existing.status !== 'done' ? new Date().toISOString() : existing.completed_at;
+  const startedAt = newStatus === 'doing' && existing.status !== 'doing' ? new Date().toISOString() : (existing.started_at || null);
 
   db.prepare(
     `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, agent_id = ?, project_id = ?,

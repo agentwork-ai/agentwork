@@ -167,6 +167,12 @@ if (!taskCols.includes('depends_on')) {
 if (!taskCols.includes('parent_id')) {
   db.exec("ALTER TABLE tasks ADD COLUMN parent_id TEXT DEFAULT NULL");
 }
+if (!taskCols.includes('estimated_minutes')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN estimated_minutes INTEGER DEFAULT 0");
+}
+if (!taskCols.includes('started_at')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN started_at DATETIME DEFAULT NULL");
+}
 
 // Migrate projects table: add default_agent_id if missing
 const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);
@@ -221,6 +227,7 @@ const defaultSettings = {
   notify_task_blocked: 'true',
   notify_budget_threshold: 'true',
   notify_agent_messages: 'true',
+  onboarding_complete: 'false',
 };
 
 // Allow env var overrides: AGENTWORK_SETTING_<KEY> (e.g., AGENTWORK_SETTING_ANTHROPIC_API_KEY)
