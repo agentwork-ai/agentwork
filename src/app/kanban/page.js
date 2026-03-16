@@ -1092,7 +1092,13 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
                     background: form.task_type === t.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
                     border: `1px solid ${form.task_type === t.id ? 'var(--accent)' : 'var(--border)'}`,
                   }}
-                  onClick={() => setForm({ ...form, task_type: t.id })}
+                  onClick={() => {
+                    const next = { ...form, task_type: t.id };
+                    if (t.id === 'flow' && next.flow_items.length === 0) {
+                      next.flow_items = [{ id: String(Date.now()), title: '', agent_id: '', status: 'pending', output: '' }];
+                    }
+                    setForm(next);
+                  }}
                 >
                   <div className="flex items-center gap-1.5 mb-0.5" style={{ color: form.task_type === t.id ? 'var(--accent)' : 'var(--text-secondary)' }}>
                     {t.icon}
