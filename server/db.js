@@ -127,6 +127,9 @@ if (!taskCols.includes('flow_items')) {
 if (!taskCols.includes('tags')) {
   db.exec("ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT ''");
 }
+if (!taskCols.includes('depends_on')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN depends_on TEXT DEFAULT '[]'");
+}
 
 // Migrate projects table: add default_agent_id if missing
 const projectCols = db.prepare("PRAGMA table_info(projects)").all().map((c) => c.name);

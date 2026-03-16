@@ -38,6 +38,7 @@ router.get('/', (req, res) => {
     t.execution_logs = JSON.parse(t.execution_logs || '[]');
     t.attachments = JSON.parse(t.attachments || '[]');
     t.flow_items = JSON.parse(t.flow_items || '[]');
+    t.depends_on = JSON.parse(t.depends_on || '[]');
   });
 
   res.json(tasks);
@@ -54,6 +55,7 @@ router.get('/:id', (req, res) => {
   task.execution_logs = JSON.parse(task.execution_logs || '[]');
   task.attachments = JSON.parse(task.attachments || '[]');
   task.flow_items = JSON.parse(task.flow_items || '[]');
+  task.depends_on = JSON.parse(task.depends_on || '[]');
 
   res.json(task);
 });
@@ -61,15 +63,15 @@ router.get('/:id', (req, res) => {
 // Create task
 router.post('/', (req, res) => {
   const { title, description, status, priority, agent_id, project_id,
-          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on } = req.body;
 
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
   const id = uuidv4();
   db.prepare(
     `INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id,
-      trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, title, description || '',
     status || 'backlog', priority || 'medium',
@@ -79,7 +81,8 @@ router.post('/', (req, res) => {
     trigger_cron || '',
     task_type || 'single',
     flow_items ? JSON.stringify(flow_items) : '[]',
-    tags || ''
+    tags || '',
+    depends_on ? JSON.stringify(depends_on) : '[]'
   );
 
   const task = db.prepare(
@@ -89,6 +92,7 @@ router.post('/', (req, res) => {
   task.execution_logs = JSON.parse(task.execution_logs || '[]');
   task.attachments = JSON.parse(task.attachments || '[]');
   task.flow_items = JSON.parse(task.flow_items || '[]');
+  task.depends_on = JSON.parse(task.depends_on || '[]');
 
   logAudit('create', 'task', id, { title });
   const io = req.app.get('io');
@@ -109,7 +113,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Task not found' });
 
   const { title, description, status, priority, agent_id, project_id, execution_logs, attachments,
-          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on } = req.body;
 
   const newStatus = status || existing.status;
   const newAgentId = agent_id !== undefined ? agent_id : existing.agent_id;
@@ -124,13 +128,27 @@ router.put('/:id', (req, res) => {
     }
   }
 
+  // Check dependencies when moving to 'doing'
+  if (newStatus === 'doing' && existing.status !== 'doing') {
+    const depIds = JSON.parse(depends_on !== undefined ? JSON.stringify(depends_on) : (existing.depends_on || '[]'));
+    if (Array.isArray(depIds) && depIds.length > 0) {
+      const placeholders = depIds.map(() => '?').join(',');
+      const depTasks = db.prepare(`SELECT id, title, status FROM tasks WHERE id IN (${placeholders})`).all(...depIds);
+      const unmet = depTasks.filter((d) => d.status !== 'done');
+      if (unmet.length > 0) {
+        const names = unmet.map((d) => d.title).join(', ');
+        return res.status(400).json({ error: `Dependencies not met: ${names}` });
+      }
+    }
+  }
+
   const completedAt = newStatus === 'done' && existing.status !== 'done' ? new Date().toISOString() : existing.completed_at;
 
   db.prepare(
     `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, agent_id = ?, project_id = ?,
      execution_logs = ?, attachments = ?, completed_at = ?,
      trigger_type = ?, trigger_at = ?, trigger_cron = ?,
-     task_type = ?, flow_items = ?, tags = ?,
+     task_type = ?, flow_items = ?, tags = ?, depends_on = ?,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     title || existing.title,
@@ -148,6 +166,7 @@ router.put('/:id', (req, res) => {
     task_type !== undefined ? task_type : (existing.task_type || 'single'),
     flow_items ? JSON.stringify(flow_items) : existing.flow_items,
     tags !== undefined ? tags : (existing.tags || ''),
+    depends_on !== undefined ? JSON.stringify(depends_on) : (existing.depends_on || '[]'),
     req.params.id
   );
 
@@ -158,6 +177,7 @@ router.put('/:id', (req, res) => {
   task.execution_logs = JSON.parse(task.execution_logs || '[]');
   task.attachments = JSON.parse(task.attachments || '[]');
   task.flow_items = JSON.parse(task.flow_items || '[]');
+  task.depends_on = JSON.parse(task.depends_on || '[]');
 
   const io = req.app.get('io');
   if (io) {

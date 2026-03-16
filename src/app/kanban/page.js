@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
-  Layers, ChevronRight, Clock, RefreshCw, Play,
+  Layers, ChevronRight, Clock, RefreshCw, Play, Lock,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -52,6 +52,7 @@ export default function KanbanPage() {
       execution_logs: Array.isArray(task.execution_logs) ? task.execution_logs : JSON.parse(task.execution_logs || '[]'),
       attachments: Array.isArray(task.attachments) ? task.attachments : JSON.parse(task.attachments || '[]'),
       flow_items: Array.isArray(task.flow_items) ? task.flow_items : JSON.parse(task.flow_items || '[]'),
+      depends_on: Array.isArray(task.depends_on) ? task.depends_on : JSON.parse(task.depends_on || '[]'),
     });
     const onTaskUpdated = (task) => {
       const parsed = parseTaskFields(task);
@@ -94,6 +95,17 @@ export default function KanbanPage() {
         if (!isFlowTask || !flowHasAgents) {
           toast.error('Assign an agent before moving this task.');
           return;
+        }
+      }
+      // Client-side dependency check
+      if (newStatus === 'doing' && task) {
+        const depIds = task.depends_on || [];
+        if (depIds.length > 0) {
+          const unmet = tasks.filter((t) => depIds.includes(t.id) && t.status !== 'done');
+          if (unmet.length > 0) {
+            toast.error(`Dependencies not met: ${unmet.map((t) => t.title).join(', ')}`);
+            return;
+          }
         }
       }
     }
@@ -380,6 +392,7 @@ export default function KanbanPage() {
                         task={task}
                         agents={agents}
                         projects={projects}
+                        allTasks={tasks}
                         showProject={!selectedProjectId}
                         onDragStart={(e) => handleDragStart(e, task)}
                         onClick={() => setViewTask(task)}
@@ -402,6 +415,7 @@ export default function KanbanPage() {
           task={editTask}
           agents={agents}
           projects={projects}
+          allTasks={tasks}
           defaultProjectId={selectedProjectId}
           onClose={() => { setShowForm(false); setEditTask(null); }}
           onSaved={() => { setShowForm(false); setEditTask(null); loadData(); }}
@@ -413,6 +427,7 @@ export default function KanbanPage() {
           task={viewTask}
           agents={agents}
           projects={projects}
+          allTasks={tasks}
           onClose={() => setViewTask(null)}
           onUpdate={(updated) => {
             setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -428,10 +443,16 @@ export default function KanbanPage() {
 const PRIORITIES = ['low', 'medium', 'high', 'critical'];
 const PRIORITY_COLORS = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
 
-function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange }) {
+function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange }) {
   const isDoing = task.status === 'doing';
   const [openDropdown, setOpenDropdown] = useState(null); // 'priority' | 'project' | 'agent' | null
   const cardRef = useRef(null);
+
+  // Check for unmet dependencies
+  const depIds = task.depends_on || [];
+  const unmetDeps = depIds.length > 0
+    ? (allTasks || []).filter((t) => depIds.includes(t.id) && t.status !== 'done')
+    : [];
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -489,6 +510,13 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
       )}
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
+        {unmetDeps.length > 0 && (
+          <span title={`Blocked by: ${unmetDeps.map((d) => d.title).join(', ')}`}
+            className="shrink-0 mt-0.5"
+            style={{ color: '#fa5252' }}>
+            <Lock size={13} />
+          </span>
+        )}
       </div>
       {task.description && (
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
@@ -652,12 +680,13 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
   );
 }
 
-function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }) {
+function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, onDelete }) {
   const logsEndRef = useRef(null);
   const isEditable = task.status !== 'doing';
   const isDoing = task.status === 'doing';
   const isFlow = (task.task_type || 'single') === 'flow';
   const [editing, setEditing] = useState(false);
+  const [depSearch, setDepSearch] = useState('');
   const [form, setForm] = useState({
     title: task.title,
     description: task.description,
@@ -666,6 +695,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
     project_id: task.project_id || '',
     tags: task.tags || '',
     flow_items: task.flow_items || [],
+    depends_on: task.depends_on || [],
   });
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
@@ -683,6 +713,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
       project_id: task.project_id || '',
       tags: task.tags || '',
       flow_items: task.flow_items || [],
+      depends_on: task.depends_on || [],
     });
   }, [task]);
 
@@ -706,6 +737,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
         agent_id: form.agent_id || null,
         project_id: form.project_id || null,
         flow_items: isFlow ? form.flow_items : undefined,
+        depends_on: form.depends_on || [],
       };
       delete data._retryAfterSave;
       if (retryAfterSave) data.status = 'doing';
