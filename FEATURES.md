@@ -95,7 +95,7 @@
 
 ## 9. Data & Analytics
 
-- [ ] **Analytics Dashboard Page** — Dedicated `/analytics` page with completion trends, agent utilization, cost charts, model comparison, and peak usage hours.
+- [x] **Analytics Dashboard Page** — Dedicated `/analytics` page with completion trends, agent utilization, cost charts, model comparison, and peak usage hours.
 - [x] **Data Export** — CSV/JSON export for tasks, execution logs, budget history, and agent performance data.
 - [x] **Usage Report Generation** — Auto-generated weekly/monthly summaries: total spend, tasks per agent, top models by cost-efficiency, blocked task root causes.
 - [x] **Project Health Score** — Composite score per project based on task completion rates, average completion time, recent activity, and code change velocity.
@@ -124,7 +124,7 @@
 
 ## 13. Configuration & Customization
 
-- [ ] **Custom Agent Tools** — User-defined tools with name, description, parameters, and a bash command template, added to specific agents.
+- [x] **Custom Agent Tools** — User-defined tools with name, description, parameters, and a bash command template, added to specific agents.
 - [x] **Configurable Max Iterations** — Per-task or global iteration limit instead of the hardcoded 30.
 - [x] **Custom Accent Colors** — Theme customization with preset color schemes (purple, green, orange) beyond dark/light.
 - [x] **Granular Notification Preferences** — Per-event-type controls: task complete, task blocked, budget threshold, quiet hours.
