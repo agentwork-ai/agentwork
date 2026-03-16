@@ -161,6 +161,71 @@ app.prepare().then(() => {
     res.status(201).json(task);
   });
 
+  // API documentation endpoint
+  server.get('/api/docs', (req, res) => {
+    res.json({
+      name: 'AgentWork API',
+      version: '1.0.0',
+      endpoints: [
+        { method: 'GET', path: '/api/status', description: 'System status (agents, tasks, spend)' },
+        { method: 'GET', path: '/api/health', description: 'Health check (DB, memory, uptime)' },
+        { method: 'GET', path: '/api/docs', description: 'This API documentation' },
+        { method: 'POST', path: '/api/auth/login', description: 'Login with password', body: '{ password }' },
+        { method: 'GET', path: '/api/auth/check', description: 'Check auth status' },
+        { method: 'GET', path: '/api/projects', description: 'List all projects' },
+        { method: 'POST', path: '/api/projects', description: 'Create project', body: '{ name, path, description, ignore_patterns }' },
+        { method: 'GET', path: '/api/projects/:id', description: 'Get project' },
+        { method: 'PUT', path: '/api/projects/:id', description: 'Update project' },
+        { method: 'DELETE', path: '/api/projects/:id', description: 'Delete project' },
+        { method: 'GET', path: '/api/projects/:id/files', description: 'Get file tree' },
+        { method: 'GET', path: '/api/projects/:id/search', description: 'Search files', query: 'q, content' },
+        { method: 'GET', path: '/api/projects/:id/health', description: 'Project health score' },
+        { method: 'GET', path: '/api/projects/:id/git-status', description: 'Git status' },
+        { method: 'GET', path: '/api/projects/:id/diff', description: 'Git diff', query: 'ref' },
+        { method: 'POST', path: '/api/projects/:id/regenerate-doc', description: 'Regenerate PROJECT.md' },
+        { method: 'GET', path: '/api/tasks', description: 'List tasks', query: 'project_id, status, agent_id' },
+        { method: 'POST', path: '/api/tasks', description: 'Create task' },
+        { method: 'POST', path: '/api/tasks/bulk', description: 'Bulk operations', body: '{ action, task_ids, data }' },
+        { method: 'GET', path: '/api/tasks/:id', description: 'Get task' },
+        { method: 'PUT', path: '/api/tasks/:id', description: 'Update task' },
+        { method: 'DELETE', path: '/api/tasks/:id', description: 'Delete task' },
+        { method: 'GET', path: '/api/tasks/:id/subtasks', description: 'Get subtasks' },
+        { method: 'POST', path: '/api/tasks/:id/subtasks', description: 'Create subtask' },
+        { method: 'GET', path: '/api/tasks/:id/comments', description: 'Get comments' },
+        { method: 'POST', path: '/api/tasks/:id/comments', description: 'Add comment' },
+        { method: 'GET', path: '/api/agents', description: 'List agents' },
+        { method: 'GET', path: '/api/agents/suggest', description: 'Suggest agent for task', query: 'title, description, project_id' },
+        { method: 'POST', path: '/api/agents', description: 'Hire agent' },
+        { method: 'GET', path: '/api/agents/:id', description: 'Get agent with memory files' },
+        { method: 'PUT', path: '/api/agents/:id', description: 'Update agent' },
+        { method: 'DELETE', path: '/api/agents/:id', description: 'Fire agent' },
+        { method: 'GET', path: '/api/agents/:id/metrics', description: 'Agent performance metrics' },
+        { method: 'POST', path: '/api/agents/:id/clone', description: 'Clone agent' },
+        { method: 'PUT', path: '/api/agents/:id/memory/:filename', description: 'Update memory file' },
+        { method: 'POST', path: '/api/agents/:id/clear-memory', description: 'Clear agent memory' },
+        { method: 'GET', path: '/api/chat/:agentId', description: 'Get messages' },
+        { method: 'GET', path: '/api/chat/:agentId/search', description: 'Search messages', query: 'q' },
+        { method: 'GET', path: '/api/chat/:agentId/export', description: 'Export chat as Markdown' },
+        { method: 'GET', path: '/api/settings', description: 'Get all settings' },
+        { method: 'PUT', path: '/api/settings', description: 'Update settings' },
+        { method: 'GET', path: '/api/settings/budget', description: 'Budget summary' },
+        { method: 'GET', path: '/api/settings/budget/history', description: 'Budget history', query: 'days' },
+        { method: 'GET', path: '/api/settings/budget/by-agent', description: 'Cost by agent', query: 'days' },
+        { method: 'GET', path: '/api/settings/budget/by-model', description: 'Cost by model', query: 'days' },
+        { method: 'GET', path: '/api/settings/report', description: 'Usage report', query: 'days' },
+        { method: 'GET', path: '/api/settings/export', description: 'Export data as JSON', query: 'type' },
+        { method: 'GET', path: '/api/settings/audit-logs', description: 'Audit logs', query: 'limit, offset' },
+        { method: 'GET', path: '/api/templates', description: 'List templates' },
+        { method: 'POST', path: '/api/templates', description: 'Create template' },
+        { method: 'POST', path: '/api/templates/:id/use', description: 'Create task from template' },
+        { method: 'DELETE', path: '/api/templates/:id', description: 'Delete template' },
+        { method: 'POST', path: '/api/webhooks/trigger', description: 'Create and execute task via webhook', body: '{ title, description, agent_id, project_id }' },
+        { method: 'GET', path: '/api/files/read', description: 'Read file content', query: 'path' },
+        { method: 'POST', path: '/api/files/write', description: 'Write file content', body: '{ path, content }' },
+      ],
+    });
+  });
+
   // Status endpoint
   const { getSystemStatus } = require('./socket');
   server.get('/api/status', (req, res) => {
