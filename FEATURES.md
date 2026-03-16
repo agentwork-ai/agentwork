@@ -87,7 +87,7 @@
 ## 8. Performance & Reliability
 
 - [ ] **Proper Database Migrations** — Versioned migration files instead of ad-hoc ALTER TABLE statements on startup.
-- [ ] **Execution Queue with Concurrency Limits** — Configurable max concurrent agent executions (e.g., 3) to prevent resource exhaustion and API rate limits.
+- [x] **Execution Queue with Concurrency Limits** — Configurable max concurrent agent executions (e.g., 3) to prevent resource exhaustion and API rate limits.
 - [x] **Graceful Task Recovery on Restart** — On startup, detect orphaned "doing" tasks and move them back to "todo" or "blocked."
 - [x] **Log Rotation & Size Limits** — Cap stored execution logs per task, archive older entries to files.
 - [x] **AI API Rate Limiting** — Configurable per-provider request throttling when multiple agents work simultaneously.

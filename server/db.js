@@ -181,6 +181,8 @@ const defaultSettings = {
   max_iterations: '30',
   task_timeout_minutes: '0',
   rate_limit_ms: '0',
+  max_concurrent_executions: '3',
+  dashboard_password: '',
 };
 
 // Allow env var overrides: AGENTWORK_SETTING_<KEY> (e.g., AGENTWORK_SETTING_ANTHROPIC_API_KEY)

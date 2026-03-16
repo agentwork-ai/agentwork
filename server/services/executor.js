@@ -173,9 +173,47 @@ async function handleApiChat(agent, userMessage, platformChatId) {
   }
 }
 
-// ─── Task Execution ───
+// ─── Execution Queue with Concurrency Limits ───
+
+const executionQueue = [];
+let runningCount = 0;
+
+function getMaxConcurrent() {
+  return parseInt(db.prepare("SELECT value FROM settings WHERE key = 'max_concurrent_executions'").get()?.value || '3', 10);
+}
+
+function processQueue() {
+  const max = getMaxConcurrent();
+  while (executionQueue.length > 0 && runningCount < max) {
+    const next = executionQueue.shift();
+    runningCount++;
+    _executeTask(next.taskId, next.agentId).finally(() => {
+      runningCount--;
+      processQueue();
+    });
+  }
+}
 
 async function executeTask(taskId, agentId) {
+  if (activeExecutions.has(taskId)) return;
+  const max = getMaxConcurrent();
+  if (runningCount >= max) {
+    console.log(`[Executor] Queue full (${runningCount}/${max}), queuing task ${taskId}`);
+    executionQueue.push({ taskId, agentId });
+    return;
+  }
+  runningCount++;
+  try {
+    await _executeTask(taskId, agentId);
+  } finally {
+    runningCount--;
+    processQueue();
+  }
+}
+
+// ─── Task Execution ───
+
+async function _executeTask(taskId, agentId) {
   const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);
   if (!task) return;
 
@@ -825,6 +863,46 @@ const AGENT_TOOLS = [
   },
 ];
 
+// ─── Command Sandboxing Helpers ───
+
+const BLOCKED_COMMAND_PATTERNS = [
+  /rm\s+-rf\s+\/(?!\S)/,           // rm -rf /
+  /rm\s+-rf\s+~/,                   // rm -rf ~
+  /DROP\s+TABLE/i,                  // DROP TABLE
+  /DROP\s+DATABASE/i,               // DROP DATABASE
+  /\bmkfs\b/,                       // mkfs (format filesystem)
+  /\bdd\s+if=/,                     // dd if= (raw disk write)
+  /:\(\)\{\s*:\|:&\s*\};:/,        // fork bomb :(){ :|:& };:
+  />\s*\/dev\/sda/,                 // > /dev/sda
+  /chmod\s+-R\s+777\s+\//,         // chmod -R 777 /
+];
+
+/**
+ * Check whether a command matches any blocked dangerous pattern.
+ * Returns the matched pattern string if blocked, or null if safe.
+ */
+function isCommandBlocked(command) {
+  for (const pattern of BLOCKED_COMMAND_PATTERNS) {
+    if (pattern.test(command)) {
+      return pattern.toString();
+    }
+  }
+  return null;
+}
+
+/**
+ * Check whether a resolved target path is safely within the working directory.
+ * Returns true if the path is inside workDir, false otherwise.
+ */
+function isPathSafe(targetPath, workDir) {
+  const resolved = path.resolve(targetPath);
+  const resolvedWorkDir = path.resolve(workDir);
+  return resolved === resolvedWorkDir || resolved.startsWith(resolvedWorkDir + path.sep);
+}
+
+// Destructive command keywords that require confirmation when the setting is enabled
+const DESTRUCTIVE_KEYWORDS = ['rm', 'drop', 'delete', 'truncate', 'destroy'];
+
 function executeTool(name, input, workDir, taskId, agentId) {
   switch (name) {
     case 'read_file': {
@@ -839,6 +917,10 @@ function executeTool(name, input, workDir, taskId, agentId) {
     }
     case 'write_file': {
       const fullPath = path.resolve(workDir, input.path);
+      if (!isPathSafe(fullPath, workDir)) {
+        addLog(taskId, 'error', `Sandbox violation: write_file blocked — path "${input.path}" resolves outside working directory.`);
+        return `Error: Cannot write to path outside working directory. Resolved path "${fullPath}" is not within "${workDir}".`;
+      }
       try {
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, input.content);
@@ -851,6 +933,10 @@ function executeTool(name, input, workDir, taskId, agentId) {
     }
     case 'delete_path': {
       const fullPath = path.resolve(workDir, input.path);
+      if (!isPathSafe(fullPath, workDir)) {
+        addLog(taskId, 'error', `Sandbox violation: delete_path blocked — path "${input.path}" resolves outside working directory.`);
+        return `Error: Cannot delete path outside working directory. Resolved path "${fullPath}" is not within "${workDir}".`;
+      }
       try {
         if (!fs.existsSync(fullPath)) return `Path does not exist: ${input.path}`;
         const stat = fs.statSync(fullPath);
@@ -863,6 +949,38 @@ function executeTool(name, input, workDir, taskId, agentId) {
       }
     }
     case 'run_bash': {
+      // --- Sandbox: blocked command patterns ---
+      const blockedPattern = isCommandBlocked(input.command);
+      if (blockedPattern) {
+        addLog(taskId, 'error', `Sandbox violation: command blocked by pattern ${blockedPattern} — "${input.command}"`);
+        return `Error: Command rejected — matches dangerous pattern ${blockedPattern}. This command is not allowed.`;
+      }
+
+      // --- Sandbox: working directory jail (detect cd escapes) ---
+      const cdEscapePattern = /\bcd\s+\/(?![\.\w])/;
+      if (cdEscapePattern.test(input.command)) {
+        // Check if the cd target is outside workDir
+        const cdMatch = input.command.match(/\bcd\s+(\/[^\s;&|]*)/);
+        if (cdMatch) {
+          const cdTarget = cdMatch[1];
+          if (!isPathSafe(cdTarget, workDir)) {
+            addLog(taskId, 'error', `Sandbox violation: command attempts to escape working directory with "cd ${cdTarget}".`);
+            return `Error: Command rejected — "cd ${cdTarget}" would escape the working directory "${workDir}". Stay within the project directory.`;
+          }
+        }
+      }
+
+      // --- Sandbox: destructive command confirmation ---
+      const requireConfirmation = db.prepare("SELECT value FROM settings WHERE key = 'require_confirmation_destructive'").get()?.value === 'true';
+      if (requireConfirmation) {
+        const cmdLower = input.command.toLowerCase();
+        const matchedKeyword = DESTRUCTIVE_KEYWORDS.find(kw => cmdLower.includes(kw));
+        if (matchedKeyword) {
+          addLog(taskId, 'warning', `Destructive command blocked (require_confirmation_destructive=true): "${input.command}" contains "${matchedKeyword}".`);
+          return `Error: Destructive command rejected — the command contains "${matchedKeyword}" and the system requires confirmation for destructive operations. This command was not executed. Please use a safer alternative or ask the user for confirmation.`;
+        }
+      }
+
       addLog(taskId, 'command', `$ ${input.command}`);
       io.emit('agent:status_changed', { agentId, status: 'executing' });
       try {
