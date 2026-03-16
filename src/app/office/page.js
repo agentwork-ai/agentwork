@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
-import { X, Terminal, Cpu, BookOpen, Keyboard, Moon as SleepIcon, Cog } from 'lucide-react';
+import { X, Terminal, Cpu, BookOpen, Keyboard, Moon as SleepIcon, Cog, Clock } from 'lucide-react';
 
 const STATUS_CONFIG = {
   offline: { icon: SleepIcon, label: 'Sleeping', color: '#868e96', anim: '' },
@@ -160,7 +160,7 @@ export default function OfficePage() {
           {selectedAgent && (
             <div
               className="absolute right-0 top-0 bottom-0 w-80 border-l flex flex-col animate-slide-in"
-              style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}
+              style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)', zIndex: 20 }}
             >
               <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
                 <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Agent Details</span>
@@ -203,8 +203,227 @@ export default function OfficePage() {
               </div>
             </div>
           )}
+
+          {/* Execution Timeline / Gantt Chart */}
+          {agents.length > 0 && (
+            <ExecutionTimeline tasks={tasks} agents={agents} />
+          )}
         </main>
         <BottomBar />
+      </div>
+    </div>
+  );
+}
+
+/* ── Execution Timeline / Gantt Chart ──────────────────── */
+
+const TIMELINE_COLORS = ['#4c6ef5', '#40c057', '#fab005', '#f06595', '#20c997', '#7950f2', '#fd7e14', '#fa5252'];
+
+function ExecutionTimeline({ tasks, agents }) {
+  // Filter tasks from the last 24 hours that have both started_at and completed_at
+  const now = new Date();
+  const oneDayAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+  const timelineTasks = tasks.filter((t) => {
+    if (!t.started_at || !t.completed_at) return false;
+    const start = new Date(t.started_at);
+    const end = new Date(t.completed_at);
+    // Task must overlap with the last 24 hour window
+    return end > oneDayAgo && start < now && end > start;
+  });
+
+  if (timelineTasks.length === 0) {
+    return (
+      <div className="mx-8 mb-8">
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Clock size={16} style={{ color: 'var(--accent)' }} />
+            <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+              Execution Timeline
+            </h2>
+            <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>(Last 24 hours)</span>
+          </div>
+          <p className="text-xs py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
+            No completed tasks with timing data in the last 24 hours.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Determine time bounds (clamp to the 24h window)
+  const allStarts = timelineTasks.map((t) => Math.max(new Date(t.started_at).getTime(), oneDayAgo.getTime()));
+  const allEnds = timelineTasks.map((t) => Math.min(new Date(t.completed_at).getTime(), now.getTime()));
+  const timeMin = Math.min(...allStarts);
+  const timeMax = Math.max(...allEnds);
+  const timeRange = timeMax - timeMin || 1;
+
+  // Group tasks by agent (swimlanes)
+  const agentMap = {};
+  agents.forEach((a) => { agentMap[a.id] = a; });
+
+  const swimlanes = {};
+  timelineTasks.forEach((t) => {
+    const agentId = t.agent_id || '__unassigned__';
+    if (!swimlanes[agentId]) swimlanes[agentId] = [];
+    swimlanes[agentId].push(t);
+  });
+
+  const laneIds = Object.keys(swimlanes);
+
+  // Assign colors to agents
+  const agentColorMap = {};
+  laneIds.forEach((id, i) => {
+    agentColorMap[id] = TIMELINE_COLORS[i % TIMELINE_COLORS.length];
+  });
+
+  // Generate time axis ticks
+  const ticks = [];
+  const tickCount = Math.min(8, Math.max(3, Math.floor(timeRange / (60 * 60 * 1000)) + 1));
+  for (let i = 0; i <= tickCount; i++) {
+    const t = new Date(timeMin + (timeRange * i) / tickCount);
+    const label = timeRange > 12 * 60 * 60 * 1000
+      ? t.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    ticks.push({ pct: (i / tickCount) * 100, label });
+  }
+
+  const LANE_HEIGHT = 36;
+  const BAR_HEIGHT = 22;
+  const LABEL_WIDTH = 120;
+
+  return (
+    <div className="mx-8 mb-8">
+      <div className="card p-5">
+        <div className="flex items-center gap-2 mb-4">
+          <Clock size={16} style={{ color: 'var(--accent)' }} />
+          <h2 className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>
+            Execution Timeline
+          </h2>
+          <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            (Last 24 hours &middot; {timelineTasks.length} task{timelineTasks.length !== 1 ? 's' : ''})
+          </span>
+        </div>
+
+        <div className="overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
+          <div style={{ minWidth: '600px' }}>
+            {/* Time axis */}
+            <div className="flex" style={{ marginLeft: `${LABEL_WIDTH}px` }}>
+              <div className="relative w-full" style={{ height: '20px' }}>
+                {ticks.map((tick, i) => (
+                  <span
+                    key={i}
+                    className="absolute text-[9px] whitespace-nowrap"
+                    style={{
+                      left: `${tick.pct}%`,
+                      transform: 'translateX(-50%)',
+                      color: 'var(--text-tertiary)',
+                    }}
+                  >
+                    {tick.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* Tick lines + swimlanes */}
+            <div className="relative" style={{ marginLeft: `${LABEL_WIDTH}px` }}>
+              {/* Vertical grid lines */}
+              {ticks.map((tick, i) => (
+                <div
+                  key={i}
+                  className="absolute top-0 bottom-0"
+                  style={{
+                    left: `${tick.pct}%`,
+                    width: '1px',
+                    background: 'var(--border)',
+                    opacity: 0.4,
+                    height: `${laneIds.length * LANE_HEIGHT}px`,
+                  }}
+                />
+              ))}
+            </div>
+
+            {/* Swimlanes */}
+            {laneIds.map((agentId, laneIdx) => {
+              const agent = agentMap[agentId];
+              const laneTasks = swimlanes[agentId];
+              const color = agentColorMap[agentId];
+
+              return (
+                <div
+                  key={agentId}
+                  className="flex items-center"
+                  style={{
+                    height: `${LANE_HEIGHT}px`,
+                    borderBottom: '1px solid var(--border)',
+                    borderBottomStyle: laneIdx < laneIds.length - 1 ? 'solid' : 'none',
+                  }}
+                >
+                  {/* Agent label */}
+                  <div
+                    className="flex items-center gap-1.5 shrink-0 pr-2"
+                    style={{ width: `${LABEL_WIDTH}px` }}
+                  >
+                    <span className="text-sm">{agent?.avatar || ''}</span>
+                    <span
+                      className="text-[11px] font-medium truncate"
+                      style={{ color: 'var(--text-secondary)' }}
+                    >
+                      {agent?.name || 'Unassigned'}
+                    </span>
+                  </div>
+
+                  {/* Task bars area */}
+                  <div className="flex-1 relative" style={{ height: `${LANE_HEIGHT}px` }}>
+                    {laneTasks.map((task) => {
+                      const tStart = Math.max(new Date(task.started_at).getTime(), timeMin);
+                      const tEnd = Math.min(new Date(task.completed_at).getTime(), timeMax);
+                      const leftPct = ((tStart - timeMin) / timeRange) * 100;
+                      const widthPct = Math.max(((tEnd - tStart) / timeRange) * 100, 0.5);
+
+                      const durationMs = new Date(task.completed_at).getTime() - new Date(task.started_at).getTime();
+                      const durationMin = Math.round(durationMs / 60000);
+                      const durationLabel = durationMin >= 60
+                        ? `${Math.floor(durationMin / 60)}h ${durationMin % 60}m`
+                        : `${durationMin}m`;
+
+                      return (
+                        <div
+                          key={task.id}
+                          className="absolute rounded"
+                          style={{
+                            left: `${leftPct}%`,
+                            width: `${widthPct}%`,
+                            height: `${BAR_HEIGHT}px`,
+                            top: `${(LANE_HEIGHT - BAR_HEIGHT) / 2}px`,
+                            background: color,
+                            opacity: 0.85,
+                            minWidth: '4px',
+                            cursor: 'default',
+                          }}
+                          title={`${task.title}\nDuration: ${durationLabel}\nStarted: ${new Date(task.started_at).toLocaleTimeString()}\nCompleted: ${new Date(task.completed_at).toLocaleTimeString()}`}
+                        >
+                          {/* Show title inside bar if wide enough */}
+                          <span
+                            className="absolute inset-0 flex items-center px-1.5 text-[9px] font-medium truncate"
+                            style={{
+                              color: 'white',
+                              textShadow: '0 1px 2px rgba(0,0,0,0.3)',
+                              lineHeight: `${BAR_HEIGHT}px`,
+                            }}
+                          >
+                            {widthPct > 8 ? task.title : ''}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );

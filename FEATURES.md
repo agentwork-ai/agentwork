@@ -46,13 +46,13 @@
 ## 4. Monitoring, Observability & Debugging
 
 - [x] **Cost Breakdown by Agent / Model / Task** — Add spend breakdowns by agent, by model, and by task so users can see which is most expensive.
-- [ ] **Cost Charts & Sparklines** — Interactive charts for daily spend over time, per-agent distribution, and token usage trends.
+- [x] **Cost Charts & Sparklines** — Interactive charts for daily spend over time, per-agent distribution, and token usage trends.
 - [x] **Execution Replay** — Store full execution traces with timestamps and allow replaying them step-by-step to debug agent decisions.
 - [x] **Agent Performance Metrics** — Track per-agent stats: average task completion time, success rate, average tokens per task, number of iterations, and times blocked.
 - [x] **Error Alerting & Escalation** — Send push notifications via Telegram/Slack to the user when tasks fail. Add webhook support for external alerting (PagerDuty, Discord, email).
 - [x] **Health Check Endpoint** — Add `/api/health` that verifies database connectivity, disk space, memory usage, and active bot connections.
 - [x] **Full AI Request/Response Logging** — Optional verbose logging that captures the full prompt and response for each AI API call, for debugging and prompt optimization.
-- [ ] **Execution Timeline / Gantt Chart** — Show a timeline of when each agent was active, what tasks they worked on, and for how long in The Office view.
+- [x] **Execution Timeline / Gantt Chart** — Show a timeline of when each agent was active, what tasks they worked on, and for how long in The Office view.
 
 ## 5. Security & Access Control
 

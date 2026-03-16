@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useTheme, useAuth } from '@/app/providers';
 import {
   Key, Globe, DollarSign, Shield, Palette, Bell,
-  FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut,
+  FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut, BarChart3,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -16,13 +16,22 @@ export default function SettingsPage() {
   const { logout } = useAuth();
   const [settings, setSettings] = useState({});
   const [budget, setBudget] = useState(null);
+  const [budgetHistory, setBudgetHistory] = useState([]);
+  const [budgetByAgent, setBudgetByAgent] = useState([]);
   const [showKeys, setShowKeys] = useState({});
   const [saving, setSaving] = useState(false);
 
   const load = useCallback(async () => {
-    const [s, b] = await Promise.all([api.getSettings(), api.getBudget()]);
+    const [s, b, history, byAgent] = await Promise.all([
+      api.getSettings(),
+      api.getBudget(),
+      api.getBudgetHistory(30).catch(() => []),
+      api.getBudgetByAgent(30).catch(() => []),
+    ]);
     setSettings(s);
     setBudget(b);
+    setBudgetHistory(history);
+    setBudgetByAgent(byAgent);
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -208,6 +217,11 @@ export default function SettingsPage() {
               )}
             </Section>
 
+            {/* Budget Analytics */}
+            <Section icon={<BarChart3 size={18} />} title="Budget Analytics">
+              <BudgetAnalytics history={budgetHistory} byAgent={budgetByAgent} />
+            </Section>
+
             {/* Execution */}
             <Section icon={<TrendingUp size={18} />} title="Execution">
               <div className="grid grid-cols-2 gap-4">
@@ -358,4 +372,144 @@ function formatTokens(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
   return String(n);
+}
+
+const AGENT_COLORS = ['#4c6ef5', '#40c057', '#fab005', '#f06595', '#20c997', '#7950f2', '#fd7e14', '#fa5252'];
+
+function BudgetAnalytics({ history, byAgent }) {
+  const hasHistory = history && history.length > 0;
+  const hasAgentData = byAgent && byAgent.length > 0;
+
+  if (!hasHistory && !hasAgentData) {
+    return (
+      <p className="text-sm py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
+        No spend data yet. Cost data will appear here once agents start running tasks.
+      </p>
+    );
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Sparkline: daily spend over last 30 days */}
+      {hasHistory && (
+        <div>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+            Daily Spend (Last 30 Days)
+          </p>
+          <SpendSparkline data={history} />
+        </div>
+      )}
+
+      {/* Mini bar chart: top 5 agents by spend */}
+      {hasAgentData && (
+        <div>
+          <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
+            Top Agents by Spend
+          </p>
+          <AgentSpendBars data={byAgent.slice(0, 5)} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SpendSparkline({ data }) {
+  // Sort chronologically (API returns DESC)
+  const sorted = [...data].sort((a, b) => (a.date > b.date ? 1 : -1));
+  const costs = sorted.map((d) => d.cost || 0);
+  const maxCost = Math.max(...costs, 0.001);
+  const totalSpend = costs.reduce((s, c) => s + c, 0);
+
+  const W = 200;
+  const H = 40;
+  const padY = 2;
+
+  // Build polyline points
+  const points = costs.map((c, i) => {
+    const x = costs.length === 1 ? W / 2 : (i / (costs.length - 1)) * W;
+    const y = H - padY - ((c / maxCost) * (H - padY * 2));
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ');
+
+  // Build gradient fill polygon (area under the line)
+  const fillPoints = `0,${H} ${costs.map((c, i) => {
+    const x = costs.length === 1 ? W / 2 : (i / (costs.length - 1)) * W;
+    const y = H - padY - ((c / maxCost) * (H - padY * 2));
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  }).join(' ')} ${W},${H}`;
+
+  return (
+    <div className="flex items-center gap-3">
+      <svg
+        width={W}
+        height={H}
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ background: 'var(--bg-secondary)', borderRadius: '6px' }}
+      >
+        <defs>
+          <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+          </linearGradient>
+        </defs>
+        <polygon points={fillPoints} fill="url(#sparkFill)" />
+        <polyline
+          points={points}
+          fill="none"
+          stroke="var(--accent)"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+        {/* Dot on the last point */}
+        {costs.length > 0 && (() => {
+          const lastIdx = costs.length - 1;
+          const cx = costs.length === 1 ? W / 2 : (lastIdx / (costs.length - 1)) * W;
+          const cy = H - padY - ((costs[lastIdx] / maxCost) * (H - padY * 2));
+          return <circle cx={cx} cy={cy} r="2.5" fill="var(--accent)" />;
+        })()}
+      </svg>
+      <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
+          ${totalSpend.toFixed(2)}
+        </div>
+        <div>30-day total</div>
+      </div>
+    </div>
+  );
+}
+
+function AgentSpendBars({ data }) {
+  const maxCost = Math.max(...data.map((d) => d.total_cost || 0), 0.001);
+
+  return (
+    <div className="space-y-2">
+      {data.map((agent, i) => {
+        const pct = Math.max(((agent.total_cost || 0) / maxCost) * 100, 2);
+        const color = AGENT_COLORS[i % AGENT_COLORS.length];
+        return (
+          <div key={agent.agent_id || i}>
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-xs flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
+                <span>{agent.avatar || ''}</span>
+                <span className="truncate">{agent.agent_name || 'Unknown'}</span>
+              </span>
+              <span className="text-xs font-medium shrink-0 ml-2" style={{ color: 'var(--text-tertiary)' }}>
+                ${(agent.total_cost || 0).toFixed(4)}
+              </span>
+            </div>
+            <div
+              className="h-2 rounded-full overflow-hidden"
+              style={{ background: 'var(--bg-tertiary)' }}
+            >
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{ width: `${pct}%`, background: color }}
+              />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
