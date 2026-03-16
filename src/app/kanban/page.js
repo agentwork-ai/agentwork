@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback, useRef } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
+import MarkdownContent from '@/components/MarkdownContent';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
@@ -1354,14 +1355,14 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
               <div className="space-y-4">
                 {task.description
                   ? <div><p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Description</p>
-                      <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{task.description}</p></div>
+                      <div className="text-sm" style={{ color: 'var(--text-secondary)' }}><MarkdownContent content={task.description} /></div></div>
                   : <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No description.</p>
                 }
                 {task.completion_output && (
                   <div>
                     <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Completion Output</p>
-                    <div className="p-3 rounded-lg text-sm whitespace-pre-wrap" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', borderLeft: '3px solid #40c057' }}>
-                      {task.completion_output}
+                    <div className="p-3 rounded-lg text-sm" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', borderLeft: '3px solid #40c057' }}>
+                      <MarkdownContent content={task.completion_output} />
                     </div>
                   </div>
                 )}
