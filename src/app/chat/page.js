@@ -5,7 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
 import { useSocket, useUnread } from '@/app/providers';
-import { Send, Bot, User, Key, Terminal } from 'lucide-react';
+import { Send, Bot, User, Key, Terminal, Search, X } from 'lucide-react';
 
 export default function ChatPage() {
   const socket = useSocket();
@@ -15,6 +15,8 @@ export default function ChatPage() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState(null);
   const messagesEndRef = useRef(null);
 
   const loadAgents = useCallback(async () => {
@@ -183,18 +185,43 @@ export default function ChatPage() {
                       {statusLabels[selectedAgent.status] || 'Online'}
                     </p>
                   </div>
-                  <span className="ml-auto text-[10px] px-2 py-1 rounded" style={{
-                    background: selectedAgent.auth_type === 'cli' ? '#20c99715' : 'var(--accent-light)',
-                    color: selectedAgent.auth_type === 'cli' ? '#20c997' : 'var(--accent)',
-                  }}>
-                    {selectedAgent.auth_type === 'cli' ? 'CLI Mode' : 'API Mode'}
-                    {selectedAgent.model ? ` · ${selectedAgent.model}` : ''}
-                  </span>
+                  <div className="ml-auto flex items-center gap-2">
+                    {searchResults !== null ? (
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{searchResults.length} results</span>
+                        <button onClick={() => { setSearchResults(null); setSearchQuery(''); }} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}><X size={12} /></button>
+                      </div>
+                    ) : null}
+                    <div className="flex items-center gap-1 px-2 py-1 rounded" style={{ background: 'var(--bg-secondary)' }}>
+                      <Search size={12} style={{ color: 'var(--text-tertiary)' }} />
+                      <input className="bg-transparent text-[11px] w-24 focus:w-40 transition-all outline-none"
+                        style={{ color: 'var(--text-primary)' }}
+                        placeholder="Search..."
+                        value={searchQuery}
+                        onChange={(e) => setSearchQuery(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === 'Enter' && searchQuery.trim()) {
+                            try {
+                              const results = await api.searchMessages(selectedAgent.id, searchQuery.trim());
+                              setSearchResults(results);
+                            } catch {}
+                          }
+                        }}
+                      />
+                    </div>
+                    <span className="text-[10px] px-2 py-1 rounded" style={{
+                      background: selectedAgent.auth_type === 'cli' ? '#20c99715' : 'var(--accent-light)',
+                      color: selectedAgent.auth_type === 'cli' ? '#20c997' : 'var(--accent)',
+                    }}>
+                      {selectedAgent.auth_type === 'cli' ? 'CLI Mode' : 'API Mode'}
+                      {selectedAgent.model ? ` · ${selectedAgent.model}` : ''}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Messages */}
                 <div className="flex-1 overflow-auto p-5 space-y-4">
-                  {messages.length === 0 && !isTyping ? (
+                  {(searchResults !== null ? searchResults : messages).length === 0 && !isTyping ? (
                     <div className="flex items-center justify-center h-full">
                       <div className="text-center">
                         <span className="text-4xl mb-3 block">{selectedAgent.avatar}</span>
@@ -210,7 +237,7 @@ export default function ChatPage() {
                     </div>
                   ) : (
                     <>
-                      {messages.map((msg) => (
+                      {(searchResults !== null ? searchResults : messages).map((msg) => (
                         <div
                           key={msg.id}
                           className={`flex gap-3 animate-fade-in ${msg.sender === 'user' ? 'flex-row-reverse' : ''}`}

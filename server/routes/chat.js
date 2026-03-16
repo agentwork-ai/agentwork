@@ -14,6 +14,16 @@ router.get('/:agentId', (req, res) => {
   res.json(messages);
 });
 
+// Search messages
+router.get('/:agentId/search', (req, res) => {
+  const query = req.query.q;
+  if (!query) return res.json([]);
+  const messages = db.prepare(
+    "SELECT * FROM messages WHERE agent_id = ? AND content LIKE ? ORDER BY created_at DESC LIMIT 50"
+  ).all(req.params.agentId, `%${query}%`);
+  res.json(messages);
+});
+
 // Get unread notification count
 router.get('/notifications/count', (req, res) => {
   // Messages from agents that haven't been responded to

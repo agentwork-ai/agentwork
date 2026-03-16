@@ -47,6 +47,7 @@ export const api = {
 
   // Chat
   getMessages: (agentId, limit) => request(`/api/chat/${agentId}?limit=${limit || 100}`),
+  searchMessages: (agentId, query) => request(`/api/chat/${agentId}/search?q=${encodeURIComponent(query)}`),
 
   // Settings
   getSettings: () => request('/api/settings'),
