@@ -20,22 +20,22 @@ router.get('/:id', (req, res) => {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  // Load memory files
+  // Load all .md memory files from agent directory
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
   agent.memory = {};
-  for (const file of ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md']) {
-    const filePath = path.join(agentDir, file);
-    if (fs.existsSync(filePath)) {
-      agent.memory[file] = fs.readFileSync(filePath, 'utf8');
+  if (fs.existsSync(agentDir)) {
+    const files = fs.readdirSync(agentDir).filter((f) => f.endsWith('.md'));
+    for (const file of files) {
+      agent.memory[file] = fs.readFileSync(path.join(agentDir, file), 'utf8');
     }
+  }
+  // Ensure standard files exist in response
+  for (const std of ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md']) {
+    if (!agent.memory[std]) agent.memory[std] = '';
   }
   // Load shared TEAM.md
   const teamPath = path.join(DATA_DIR, 'TEAM.md');
-  if (fs.existsSync(teamPath)) {
-    agent.memory['TEAM.md'] = fs.readFileSync(teamPath, 'utf8');
-  } else {
-    agent.memory['TEAM.md'] = '';
-  }
+  agent.memory['TEAM.md'] = fs.existsSync(teamPath) ? fs.readFileSync(teamPath, 'utf8') : '';
 
   res.json(agent);
 });
@@ -192,9 +192,10 @@ router.put('/:id/memory/:filename', (req, res) => {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const allowedFiles = ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md', 'TEAM.md'];
-  if (!allowedFiles.includes(req.params.filename)) {
-    return res.status(400).json({ error: 'Invalid memory file' });
+  const filename = req.params.filename;
+  // Allow standard files + any custom .md file (no path traversal)
+  if (!filename.endsWith('.md') || filename.includes('/') || filename.includes('..')) {
+    return res.status(400).json({ error: 'Invalid memory file. Must be a .md file with no path separators.' });
   }
 
   // TEAM.md is shared — stored at DATA_DIR level, not per-agent
