@@ -82,6 +82,45 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Get project health score
+router.get('/:id/health', (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  const pid = req.params.id;
+  const total = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE project_id = ?").get(pid).c;
+  const done = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE project_id = ? AND status = 'done'").get(pid).c;
+  const blocked = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE project_id = ? AND status = 'blocked'").get(pid).c;
+  const doing = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE project_id = ? AND status = 'doing'").get(pid).c;
+
+  // Completion rate (0-40 points)
+  const completionRate = total > 0 ? done / total : 0;
+  const completionScore = Math.round(completionRate * 40);
+
+  // Blocked ratio penalty (0-20 points, inverted)
+  const blockedRate = total > 0 ? blocked / total : 0;
+  const blockedScore = Math.round((1 - blockedRate) * 20);
+
+  // Recent activity (0-20 points)
+  const recentTasks = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE project_id = ? AND updated_at >= date('now', '-7 days')").get(pid).c;
+  const activityScore = Math.min(20, recentTasks * 4);
+
+  // Has agents assigned (0-10 points)
+  const agentCount = db.prepare("SELECT COUNT(DISTINCT agent_id) as c FROM tasks WHERE project_id = ? AND agent_id IS NOT NULL").get(pid).c;
+  const agentScore = Math.min(10, agentCount * 5);
+
+  // Has PROJECT.md (0-10 points)
+  const hasDoc = fs.existsSync(path.join(project.path, 'PROJECT.md')) ? 10 : 0;
+
+  const score = Math.min(100, completionScore + blockedScore + activityScore + agentScore + hasDoc);
+  const grade = score >= 80 ? 'A' : score >= 60 ? 'B' : score >= 40 ? 'C' : score >= 20 ? 'D' : 'F';
+
+  res.json({
+    score, grade, total, done, blocked, doing,
+    breakdown: { completionScore, blockedScore, activityScore, agentScore, docScore: hasDoc },
+  });
+});
+
 // Regenerate PROJECT.md
 router.post('/:id/regenerate-doc', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
