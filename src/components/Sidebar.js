@@ -184,7 +184,7 @@ export default function Sidebar() {
       {/* Sidebar - desktop: static in flex layout; mobile: fixed overlay */}
       <aside
         className={`
-          flex flex-col border-r transition-all duration-200
+          flex flex-col border-r transition-all duration-200 shrink-0
           max-md:fixed max-md:inset-y-0 max-md:left-0 max-md:z-50 max-md:w-[260px]
           ${mobileOpen ? 'max-md:translate-x-0' : 'max-md:-translate-x-full'}
           ${collapsed ? 'md:w-[68px]' : 'md:w-[220px]'}
@@ -192,6 +192,8 @@ export default function Sidebar() {
         style={{
           background: 'var(--bg-secondary)',
           borderColor: 'var(--border)',
+          zIndex: 30,
+          position: 'relative',
         }}
       >
         {sidebarContent}
