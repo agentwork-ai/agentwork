@@ -8,6 +8,7 @@ import { useTheme, useAuth } from '@/app/providers';
 import {
   Key, Globe, DollarSign, Shield, Palette, Bell,
   FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut, BarChart3,
+  FileText, Trash2, Copy,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -20,6 +21,7 @@ export default function SettingsPage() {
   const [budgetByAgent, setBudgetByAgent] = useState([]);
   const [showKeys, setShowKeys] = useState({});
   const [saving, setSaving] = useState(false);
+  const [templates, setTemplates] = useState([]);
 
   const load = useCallback(async () => {
     const [s, b, history, byAgent] = await Promise.all([
@@ -32,6 +34,7 @@ export default function SettingsPage() {
     setBudget(b);
     setBudgetHistory(history);
     setBudgetByAgent(byAgent);
+    api.getTemplates().then(setTemplates).catch(() => {});
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -300,6 +303,46 @@ export default function SettingsPage() {
                   />
                 </div>
               </div>
+            </Section>
+
+            {/* Task Templates */}
+            <Section icon={<Copy size={18} />} title="Task Templates">
+              {templates.length === 0 ? (
+                <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                  No templates yet. Save a task as a template from the Kanban board task detail view.
+                </p>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                    {templates.length} template{templates.length !== 1 ? 's' : ''}. Use "From Template" when creating new tasks on the Kanban board.
+                  </p>
+                  {templates.map((t) => (
+                    <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                      <FileText size={16} style={{ color: 'var(--accent)' }} className="shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</p>
+                        <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+                          {t.priority} priority{t.task_type === 'flow' ? ' · Flow' : ''}{t.tags ? ` · ${t.tags}` : ''}
+                        </p>
+                      </div>
+                      <button
+                        className="btn btn-ghost text-xs shrink-0"
+                        style={{ color: 'var(--danger)' }}
+                        onClick={async () => {
+                          if (!confirm(`Delete template "${t.name}"?`)) return;
+                          try {
+                            await api.deleteTemplate(t.id);
+                            setTemplates((prev) => prev.filter((x) => x.id !== t.id));
+                            toast.success('Template deleted');
+                          } catch (err) { toast.error(err.message); }
+                        }}
+                      >
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
             </Section>
 
             {/* Preferences */}

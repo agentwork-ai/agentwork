@@ -29,7 +29,7 @@ const navItems = [
   { href: '/kanban', label: 'Tasks', icon: Columns3 },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
   { href: '/office', label: 'Office', icon: Building2 },
-  { href: '/pipelines', label: 'Pipelines', icon: GitBranch },
+  // { href: '/pipelines', label: 'Pipelines', icon: GitBranch }, // temporarily hidden — canvas z-index issue
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
   { href: '/agents', label: 'Agents', icon: Users },
   { href: '/settings', label: 'Settings', icon: Settings },
