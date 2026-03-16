@@ -48,21 +48,32 @@ async function callAnthropic(apiKey, model, messages, options, customBaseUrl) {
   const systemMessage = messages.find((m) => m.role === 'system');
   const chatMessages = messages.filter((m) => m.role !== 'system');
 
-  const response = await client.messages.create({
+  const requestParams = {
     model: model || 'claude-sonnet-4-20250514',
-    max_tokens: options.maxTokens || 4096,
+    max_tokens: options.maxTokens || 8096,
     system: systemMessage?.content || '',
-    messages: chatMessages.map((m) => ({
-      role: m.role,
-      content: m.content,
-    })),
-  });
+    messages: chatMessages,
+  };
+
+  if (options.tools && options.tools.length > 0) {
+    requestParams.tools = options.tools.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.parameters,
+    }));
+  }
+
+  const response = await client.messages.create(requestParams);
 
   const inputTokens = response.usage?.input_tokens || 0;
   const outputTokens = response.usage?.output_tokens || 0;
-  const content = response.content.map((c) => c.text).join('');
+  const content = response.content.filter((c) => c.type === 'text').map((c) => c.text).join('');
+  const toolCalls = response.content
+    .filter((c) => c.type === 'tool_use')
+    .map((c) => ({ id: c.id, name: c.name, input: c.input }));
+  const rawAssistantMsg = toolCalls.length > 0 ? { role: 'assistant', content: response.content } : null;
 
-  return { content, inputTokens, outputTokens, model: response.model, stopReason: response.stop_reason };
+  return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: response.stop_reason };
 }
 
 async function callOpenAI(apiKey, model, messages, options, customBaseUrl) {
@@ -72,17 +83,35 @@ async function callOpenAI(apiKey, model, messages, options, customBaseUrl) {
     ...(customBaseUrl ? { baseURL: customBaseUrl } : {}),
   });
 
-  const response = await client.chat.completions.create({
+  const requestParams = {
     model: model || 'gpt-4o',
-    max_tokens: options.maxTokens || 4096,
+    max_tokens: options.maxTokens || 8096,
     messages,
-  });
+  };
+
+  if (options.tools && options.tools.length > 0) {
+    requestParams.tools = options.tools.map((t) => ({
+      type: 'function',
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+  }
+
+  const response = await client.chat.completions.create(requestParams);
 
   const choice = response.choices[0];
   const inputTokens = response.usage?.prompt_tokens || 0;
   const outputTokens = response.usage?.completion_tokens || 0;
+  const content = choice.message.content || '';
+  const toolCalls = (choice.message.tool_calls || []).map((tc) => ({
+    id: tc.id,
+    name: tc.function.name,
+    input: JSON.parse(tc.function.arguments || '{}'),
+  }));
+  const rawAssistantMsg = toolCalls.length > 0
+    ? { role: 'assistant', content: choice.message.content, tool_calls: choice.message.tool_calls }
+    : null;
 
-  return { content: choice.message.content, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
+  return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
 }
 
 async function callOpenRouter(apiKey, model, messages, options) {
@@ -96,17 +125,35 @@ async function callOpenRouter(apiKey, model, messages, options) {
     },
   });
 
-  const response = await client.chat.completions.create({
+  const requestParams = {
     model: model || 'anthropic/claude-sonnet-4',
-    max_tokens: options.maxTokens || 4096,
+    max_tokens: options.maxTokens || 8096,
     messages,
-  });
+  };
+
+  if (options.tools && options.tools.length > 0) {
+    requestParams.tools = options.tools.map((t) => ({
+      type: 'function',
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+  }
+
+  const response = await client.chat.completions.create(requestParams);
 
   const choice = response.choices[0];
   const inputTokens = response.usage?.prompt_tokens || 0;
   const outputTokens = response.usage?.completion_tokens || 0;
+  const content = choice.message.content || '';
+  const toolCalls = (choice.message.tool_calls || []).map((tc) => ({
+    id: tc.id,
+    name: tc.function.name,
+    input: JSON.parse(tc.function.arguments || '{}'),
+  }));
+  const rawAssistantMsg = toolCalls.length > 0
+    ? { role: 'assistant', content: choice.message.content, tool_calls: choice.message.tool_calls }
+    : null;
 
-  return { content: choice.message.content, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
+  return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
 }
 
 // ─── CLI-based execution (no API key needed) ───

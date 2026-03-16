@@ -4,12 +4,23 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
 const DATA_DIR = process.env.AGENTHUB_DATA || path.join(require('os').homedir(), '.agenthub');
+const DB_DIR = path.join(DATA_DIR, 'db');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
+// Ensure directories exist
+fs.mkdirSync(DB_DIR, { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'agents'), { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
+
+// Migrate DB from old location if needed
+const OLD_DB = path.join(DATA_DIR, 'agenthub.db');
+const DB_PATH = path.join(DB_DIR, 'agenthub.db');
+if (fs.existsSync(OLD_DB) && !fs.existsSync(DB_PATH)) {
+  fs.renameSync(OLD_DB, DB_PATH);
+  for (const ext of ['-shm', '-wal']) {
+    const old = OLD_DB + ext;
+    if (fs.existsSync(old)) fs.renameSync(old, DB_PATH + ext);
+  }
 }
-
-const DB_PATH = path.join(DATA_DIR, 'agenthub.db');
 const db = new Database(DB_PATH);
 
 // Enable WAL mode for better concurrent access

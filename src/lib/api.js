@@ -54,6 +54,7 @@ export const api = {
 
   // Files
   readFile: (path) => request(`/api/files/read?path=${encodeURIComponent(path)}`),
+  browseFolder: () => request('/api/files/browse-folder'),
 
   // Status
   getStatus: () => request('/api/status'),

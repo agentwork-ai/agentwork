@@ -6,8 +6,8 @@ import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
-  Plus, X, Clock, User, FolderOpen, Edit2, Trash2,
-  AlertTriangle, CheckCircle2, Play, Eye, Save,
+  Plus, X, FolderOpen, Edit2, Trash2, Save,
+  Layers, ChevronRight,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -24,6 +24,7 @@ export default function KanbanPage() {
   const [tasks, setTasks] = useState([]);
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
+  const [selectedProjectId, setSelectedProjectId] = useState(null); // null = All
   const [showForm, setShowForm] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [viewTask, setViewTask] = useState(null);
@@ -60,7 +61,6 @@ export default function KanbanPage() {
         return { ...prev, execution_logs: [...(prev.execution_logs || []), log] };
       });
     };
-
     socket.on('task:updated', onTaskUpdated);
     socket.on('task:created', onTaskCreated);
     socket.on('task:deleted', onTaskDeleted);
@@ -99,27 +99,108 @@ export default function KanbanPage() {
 
   const handleDrop = (e, columnId) => {
     e.preventDefault();
-    if (dragTask && dragTask.status !== columnId) {
-      moveTask(dragTask.id, columnId);
-    }
+    if (dragTask && dragTask.status !== columnId) moveTask(dragTask.id, columnId);
     setDragTask(null);
   };
+
+  // Filter tasks by selected project
+  const visibleTasks = selectedProjectId
+    ? tasks.filter((t) => t.project_id === selectedProjectId)
+    : tasks;
+
+  const selectedProject = projects.find((p) => p.id === selectedProjectId) || null;
+
+  // Task counts per project for the panel
+  const countByProject = (pid) => tasks.filter((t) => t.project_id === pid).length;
 
   return (
     <div className="flex h-screen">
       <Sidebar />
+
+      {/* Project panel */}
+      <div className="w-52 shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+        <div className="px-3 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
+          <p className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Boards</p>
+        </div>
+        <div className="flex-1 overflow-auto py-1">
+          {/* All tasks */}
+          <button
+            onClick={() => setSelectedProjectId(null)}
+            className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors"
+            style={{
+              background: selectedProjectId === null ? 'var(--accent-light)' : 'transparent',
+              color: selectedProjectId === null ? 'var(--accent)' : 'var(--text-secondary)',
+            }}
+          >
+            <Layers size={14} className="shrink-0" />
+            <span className="flex-1 text-left truncate font-medium">All Tasks</span>
+            <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+              {tasks.length}
+            </span>
+          </button>
+
+          {/* Divider */}
+          {projects.length > 0 && (
+            <div className="mx-3 my-1 border-t" style={{ borderColor: 'var(--border)' }} />
+          )}
+
+          {/* Project list */}
+          {projects.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => setSelectedProjectId(p.id)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors group"
+              style={{
+                background: selectedProjectId === p.id ? 'var(--accent-light)' : 'transparent',
+                color: selectedProjectId === p.id ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <FolderOpen size={14} className="shrink-0" style={{ opacity: selectedProjectId === p.id ? 1 : 0.6 }} />
+              <span className="flex-1 text-left truncate">{p.name}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                {countByProject(p.id)}
+              </span>
+            </button>
+          ))}
+
+          {projects.length === 0 && (
+            <p className="text-xs px-3 py-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
+              No projects yet
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Main board area */}
       <div className="flex flex-col flex-1 min-w-0">
-        <div className="flex items-center justify-between px-6 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-          <h1 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>Task Board</h1>
-          <button className="btn btn-primary text-sm" onClick={() => { setShowForm(true); setEditTask(null); }}>
-            <Plus size={16} /> New Task
+        {/* Board header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b shrink-0" style={{ borderColor: 'var(--border)' }}>
+          <div className="flex items-center gap-2">
+            {selectedProject ? (
+              <>
+                <FolderOpen size={16} style={{ color: 'var(--accent)' }} />
+                <h1 className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>{selectedProject.name}</h1>
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{selectedProject.path}</span>
+              </>
+            ) : (
+              <>
+                <Layers size={16} style={{ color: 'var(--accent)' }} />
+                <h1 className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>All Tasks</h1>
+              </>
+            )}
+          </div>
+          <button
+            className="btn btn-primary text-sm"
+            onClick={() => { setShowForm(true); setEditTask(null); }}
+          >
+            <Plus size={15} /> New Task
           </button>
         </div>
 
         <main className="flex-1 overflow-x-auto overflow-y-hidden p-4" style={{ background: 'var(--bg-primary)' }}>
           <div className="flex gap-4 h-full min-w-max">
             {COLUMNS.map((col) => {
-              const colTasks = tasks.filter((t) => t.status === col.id);
+              const colTasks = visibleTasks.filter((t) => t.status === col.id);
               return (
                 <div
                   key={col.id}
@@ -140,6 +221,8 @@ export default function KanbanPage() {
                       <TaskCard
                         key={task.id}
                         task={task}
+                        projects={projects}
+                        showProject={!selectedProjectId}
                         onDragStart={(e) => handleDragStart(e, task)}
                         onClick={() => setViewTask(task)}
                       />
@@ -158,6 +241,7 @@ export default function KanbanPage() {
           task={editTask}
           agents={agents}
           projects={projects}
+          defaultProjectId={selectedProjectId}
           onClose={() => { setShowForm(false); setEditTask(null); }}
           onSaved={() => { setShowForm(false); setEditTask(null); loadData(); }}
         />
@@ -180,45 +264,47 @@ export default function KanbanPage() {
   );
 }
 
-function TaskCard({ task, onDragStart, onClick }) {
+function TaskCard({ task, projects, showProject, onDragStart, onClick }) {
   const priorityColors = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
   const isDoing = task.status === 'doing';
+  const projectName = showProject && task.project_id
+    ? projects.find((p) => p.id === task.project_id)?.name
+    : null;
 
   return (
     <div
       draggable
       onDragStart={onDragStart}
       onClick={onClick}
-      className={`card p-3 cursor-pointer active:cursor-grabbing animate-fade-in group transition-all hover:scale-[1.01] ${isDoing ? 'doing-card' : ''}`}
-      style={{
-        borderLeft: isDoing ? '3px solid #fab005' : undefined,
-      }}
+      className={`card p-3 cursor-pointer active:cursor-grabbing animate-fade-in transition-all hover:scale-[1.01] ${isDoing ? 'doing-card' : ''}`}
+      style={{ borderLeft: isDoing ? '3px solid #fab005' : undefined }}
     >
-      {/* Pulsing indicator for doing status */}
       {isDoing && (
         <div className="flex items-center gap-1.5 mb-2">
           <div className="w-2 h-2 rounded-full bg-yellow-400 animate-pulse-slow" />
           <span className="text-[10px] font-semibold" style={{ color: '#fab005' }}>Working...</span>
         </div>
       )}
-
       <div className="flex items-start justify-between gap-2">
         <p className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
       </div>
       {task.description && (
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
       )}
-      <div className="flex items-center gap-2 mt-2.5">
-        <div className="w-1.5 h-1.5 rounded-full" style={{ background: priorityColors[task.priority] || priorityColors.medium }} />
+      <div className="flex items-center gap-2 mt-2.5 flex-wrap">
+        <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: priorityColors[task.priority] || priorityColors.medium }} />
         <span className="text-[10px] uppercase font-semibold" style={{ color: 'var(--text-tertiary)' }}>{task.priority}</span>
+        {projectName && (
+          <span className="text-[10px] flex items-center gap-0.5 px-1.5 py-0.5 rounded" style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+            <FolderOpen size={10} /> {projectName}
+          </span>
+        )}
         {task.agent_name && (
           <span className="text-[10px] ml-auto flex items-center gap-1" style={{ color: 'var(--text-tertiary)' }}>
             <span>{task.agent_avatar}</span> {task.agent_name}
           </span>
         )}
       </div>
-
-      {/* Mini log preview for doing tasks */}
       {isDoing && task.execution_logs?.length > 0 && (
         <div className="mt-2 pt-2 border-t" style={{ borderColor: 'var(--border-light)' }}>
           <p className="text-[10px] font-mono truncate" style={{ color: 'var(--text-tertiary)' }}>
@@ -245,22 +331,12 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
 
-  // Auto-scroll logs
   useEffect(() => {
-    if (activeTab === 'logs') {
-      logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
+    if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [task.execution_logs?.length, activeTab]);
 
-  // Update form when task changes
   useEffect(() => {
-    setForm({
-      title: task.title,
-      description: task.description,
-      priority: task.priority,
-      agent_id: task.agent_id || '',
-      project_id: task.project_id || '',
-    });
+    setForm({ title: task.title, description: task.description, priority: task.priority, agent_id: task.agent_id || '', project_id: task.project_id || '' });
   }, [task]);
 
   const saveChanges = async () => {
@@ -284,7 +360,6 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="card w-full max-w-3xl max-h-[85vh] flex flex-col animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
-        {/* Header */}
         <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-3">
             {isDoing && <div className="w-2.5 h-2.5 rounded-full bg-yellow-400 animate-pulse-slow" />}
@@ -295,20 +370,13 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
           </div>
           <div className="flex items-center gap-2">
             {isEditable && !editing && (
-              <button className="btn btn-ghost text-xs" onClick={() => setEditing(true)}>
-                <Edit2 size={13} /> Edit
-              </button>
+              <button className="btn btn-ghost text-xs" onClick={() => setEditing(true)}><Edit2 size={13} /> Edit</button>
             )}
-            <button className="btn btn-ghost text-xs" style={{ color: 'var(--danger)' }} onClick={onDelete}>
-              <Trash2 size={13} />
-            </button>
-            <button onClick={onClose} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}>
-              <X size={18} />
-            </button>
+            <button className="btn btn-ghost text-xs" style={{ color: 'var(--danger)' }} onClick={onDelete}><Trash2 size={13} /></button>
+            <button onClick={onClose} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}><X size={18} /></button>
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex border-b px-4" style={{ borderColor: 'var(--border)' }}>
           {['details', 'logs'].map((tab) => (
             <button key={tab}
@@ -319,15 +387,12 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
               }}
               onClick={() => setActiveTab(tab)}
             >
-              {tab === 'logs' && isDoing && (
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse-slow mr-1.5" />
-              )}
+              {tab === 'logs' && isDoing && <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse-slow mr-1.5" />}
               {tab === 'logs' ? `Execution Logs (${task.execution_logs?.length || 0})` : 'Details'}
             </button>
           ))}
         </div>
 
-        {/* Content */}
         <div className="flex-1 overflow-auto p-4">
           {activeTab === 'details' ? (
             editing ? (
@@ -344,10 +409,8 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                   <div>
                     <label className="label">Priority</label>
                     <select className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                      <option value="low">Low</option>
-                      <option value="medium">Medium</option>
-                      <option value="high">High</option>
-                      <option value="critical">Critical</option>
+                      <option value="low">Low</option><option value="medium">Medium</option>
+                      <option value="high">High</option><option value="critical">Critical</option>
                     </select>
                   </div>
                   <div>
@@ -374,21 +437,15 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
               </div>
             ) : (
               <div className="space-y-4">
-                {task.description ? (
-                  <div>
-                    <p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Description</p>
-                    <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{task.description}</p>
-                  </div>
-                ) : (
-                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No description.</p>
-                )}
-
+                {task.description
+                  ? <div><p className="text-xs font-medium mb-1" style={{ color: 'var(--text-tertiary)' }}>Description</p>
+                      <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-secondary)' }}>{task.description}</p></div>
+                  : <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No description.</p>
+                }
                 <div className="grid grid-cols-3 gap-4 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
                   <div>
                     <p className="text-[10px] font-semibold uppercase mb-0.5" style={{ color: 'var(--text-tertiary)' }}>Agent</p>
-                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                      {task.agent_avatar} {task.agent_name || 'Unassigned'}
-                    </p>
+                    <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{task.agent_avatar} {task.agent_name || 'Unassigned'}</p>
                   </div>
                   <div>
                     <p className="text-[10px] font-semibold uppercase mb-0.5" style={{ color: 'var(--text-tertiary)' }}>Project</p>
@@ -399,15 +456,13 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                     <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{task.priority}</p>
                   </div>
                 </div>
-
                 <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                   Created: {new Date(task.created_at).toLocaleString()}
-                  {task.completed_at && <> &middot; Completed: {new Date(task.completed_at).toLocaleString()}</>}
+                  {task.completed_at && <> · Completed: {new Date(task.completed_at).toLocaleString()}</>}
                 </div>
               </div>
             )
           ) : (
-            /* Execution Logs Tab */
             <div className="space-y-0.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
               {(!task.execution_logs || task.execution_logs.length === 0) ? (
                 <div className="text-center py-12">
@@ -424,32 +479,23 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
               ) : (
                 task.execution_logs.map((log, i) => (
                   <div key={i} className="py-1.5 px-2 rounded animate-fade-in flex gap-2"
-                    style={{
-                      background: i % 2 === 0 ? 'transparent' : 'var(--bg-secondary)',
-                    }}>
+                    style={{ background: i % 2 === 0 ? 'transparent' : 'var(--bg-secondary)' }}>
                     <span className="shrink-0 w-16 text-right" style={{ color: 'var(--text-tertiary)' }}>
                       {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false })}
                     </span>
                     <span className="shrink-0 w-3 text-center" style={{
-                      color: log.type === 'error' ? 'var(--danger)' :
-                        log.type === 'success' ? 'var(--success)' :
-                        log.type === 'command' ? '#20c997' :
-                        log.type === 'output' ? 'var(--text-tertiary)' :
-                        log.type === 'warning' ? 'var(--warning)' :
-                        log.type === 'thinking' ? 'var(--accent)' :
-                        'var(--text-secondary)',
+                      color: log.type === 'error' ? 'var(--danger)' : log.type === 'success' ? 'var(--success)' :
+                        log.type === 'command' ? '#20c997' : log.type === 'warning' ? 'var(--warning)' :
+                        log.type === 'thinking' ? 'var(--accent)' : 'var(--text-secondary)',
                     }}>
                       {log.type === 'error' ? '✗' : log.type === 'success' ? '✓' :
                        log.type === 'command' ? '$' : log.type === 'warning' ? '!' :
                        log.type === 'thinking' ? '◆' : '·'}
                     </span>
                     <span className="flex-1 whitespace-pre-wrap break-all" style={{
-                      color: log.type === 'error' ? 'var(--danger)' :
-                        log.type === 'success' ? 'var(--success)' :
-                        log.type === 'command' ? '#20c997' :
-                        log.type === 'warning' ? 'var(--warning)' :
-                        log.type === 'thinking' ? 'var(--accent)' :
-                        'var(--text-secondary)',
+                      color: log.type === 'error' ? 'var(--danger)' : log.type === 'success' ? 'var(--success)' :
+                        log.type === 'command' ? '#20c997' : log.type === 'warning' ? 'var(--warning)' :
+                        log.type === 'thinking' ? 'var(--accent)' : 'var(--text-secondary)',
                     }}>
                       {log.content}
                     </span>
@@ -457,8 +503,6 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                 ))
               )}
               <div ref={logsEndRef} />
-
-              {/* Live indicator */}
               {isDoing && task.execution_logs?.length > 0 && (
                 <div className="flex items-center gap-2 py-2 px-2" style={{ color: 'var(--text-tertiary)' }}>
                   <div className="flex gap-0.5">
@@ -478,14 +522,14 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
   );
 }
 
-function TaskFormModal({ task, agents, projects, onClose, onSaved }) {
+function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
     status: task?.status || 'backlog',
     priority: task?.priority || 'medium',
     agent_id: task?.agent_id || '',
-    project_id: task?.project_id || '',
+    project_id: task?.project_id || defaultProjectId || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -528,10 +572,8 @@ function TaskFormModal({ task, agents, projects, onClose, onSaved }) {
             <div>
               <label className="label">Priority</label>
               <select className="input" value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-                <option value="critical">Critical</option>
+                <option value="low">Low</option><option value="medium">Medium</option>
+                <option value="high">High</option><option value="critical">Critical</option>
               </select>
             </div>
             <div>

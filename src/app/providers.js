@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { Toaster, toast } from 'react-hot-toast';
+import { X } from 'lucide-react';
 
 // Socket context
 const SocketContext = createContext(null);
@@ -16,9 +17,14 @@ export const useTheme = () => useContext(ThemeContext);
 const StatusContext = createContext({});
 export const useStatus = () => useContext(StatusContext);
 
+// Unread messages context: { [agentId]: { count, lastMessage } }
+const UnreadContext = createContext({ unread: {}, clearUnread: () => {} });
+export const useUnread = () => useContext(UnreadContext);
+
 export default function Providers({ children }) {
   const [socket, setSocket] = useState(null);
   const [theme, setTheme] = useState('dark');
+  const [unread, setUnread] = useState({});
   const [systemStatus, setSystemStatus] = useState({
     connected: false,
     activeAgents: 0,
@@ -69,15 +75,50 @@ export default function Providers({ children }) {
     });
 
     s.on('notification', (data) => {
-      toast(data.message, {
-        icon: '🔔',
-        duration: 5000,
-        style: {
-          background: 'var(--bg-elevated)',
-          color: 'var(--text-primary)',
-          border: '1px solid var(--border)',
-        },
-      });
+      // Track unread per agent
+      if (data.agentId) {
+        setUnread((prev) => ({
+          ...prev,
+          [data.agentId]: {
+            count: (prev[data.agentId]?.count || 0) + 1,
+            lastMessage: data.message,
+          },
+        }));
+      }
+
+      // Show dismissable toast
+      toast(
+        (t) => (
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', width: '100%' }}>
+            <span style={{ fontSize: '16px', flexShrink: 0 }}>🔔</span>
+            <span style={{ flex: 1, fontSize: '13px', lineHeight: '1.4' }}>{data.message}</span>
+            <button
+              onClick={() => toast.dismiss(t.id)}
+              style={{
+                flexShrink: 0,
+                background: 'none',
+                border: 'none',
+                cursor: 'pointer',
+                padding: '0 2px',
+                color: 'var(--text-tertiary)',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              <X size={14} />
+            </button>
+          </div>
+        ),
+        {
+          duration: 6000,
+          style: {
+            background: 'var(--bg-elevated)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--border)',
+            padding: '10px 12px',
+          },
+        }
+      );
     });
 
     s.on('budget:update', () => {
@@ -89,10 +130,19 @@ export default function Providers({ children }) {
     return () => s.disconnect();
   }, []);
 
+  const clearUnread = useCallback((agentId) => {
+    setUnread((prev) => {
+      const next = { ...prev };
+      delete next[agentId];
+      return next;
+    });
+  }, []);
+
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
       <SocketContext.Provider value={socket}>
         <StatusContext.Provider value={systemStatus}>
+          <UnreadContext.Provider value={{ unread, clearUnread }}>
           {children}
           <Toaster
             position="top-right"
@@ -106,6 +156,7 @@ export default function Providers({ children }) {
               },
             }}
           />
+          </UnreadContext.Provider>
         </StatusContext.Provider>
       </SocketContext.Provider>
     </ThemeContext.Provider>

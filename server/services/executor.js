@@ -55,10 +55,12 @@ async function handleDirectChat(agentId, content) {
 
 async function handleCliChat(agent, userMessage) {
   const agentId = agent.id;
+  const agentDir = path.join(DATA_DIR, 'agents', agentId);
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
   try {
+    let responseContent = '';
     if (agent.provider === 'anthropic' || agent.provider === 'claude-cli') {
       let chatWithClaudeAgent;
       try {
@@ -69,7 +71,7 @@ async function handleCliChat(agent, userMessage) {
       const session = agentSessions.get(agentId) || {};
       const result = await chatWithClaudeAgent(userMessage, session.sessionId, process.cwd());
       agentSessions.set(agentId, { ...session, sessionId: result.sessionId });
-      sendMessage(agentId, 'agent', result.content || '(Agent returned an empty response)');
+      responseContent = result.content || '(Agent returned an empty response)';
     } else if (agent.provider === 'openai' || agent.provider === 'codex-cli') {
       let Codex, chatWithCodexAgent;
       try {
@@ -86,10 +88,12 @@ async function handleCliChat(agent, userMessage) {
         agentSessions.set(agentId, session);
       }
       const result = await chatWithCodexAgent(userMessage, session.thread);
-      sendMessage(agentId, 'agent', result.content || '(Agent returned an empty response)');
+      responseContent = result.content || '(Agent returned an empty response)';
     } else {
       throw new Error(`Unknown CLI provider: ${agent.provider}`);
     }
+    sendMessage(agentId, 'agent', responseContent);
+    reflectAfterChat(agent, agentDir, userMessage, responseContent);
   } catch (err) {
     console.error(`[Chat CLI] Error for agent ${agent.name}:`, err);
     sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`);
@@ -101,6 +105,7 @@ async function handleCliChat(agent, userMessage) {
 
 async function handleApiChat(agent, userMessage) {
   const agentId = agent.id;
+  const agentDir = path.join(DATA_DIR, 'agents', agentId);
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
@@ -113,9 +118,16 @@ async function handleApiChat(agent, userMessage) {
       throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${labels[agent.provider] || agent.provider} API key.`);
     }
 
+    const soul = readFile(path.join(agentDir, 'SOUL.md'));
+    const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+    const userPrefs = readFile(path.join(agentDir, 'USER.md'));
+
     const recentMsgs = db.prepare('SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20').all(agentId).reverse();
     const messages = [
-      { role: 'system', content: `You are ${agent.name}, a ${agent.role}. Be concise and friendly. ${agent.personality || ''}` },
+      {
+        role: 'system',
+        content: `You are ${agent.name}, a ${agent.role}. Be concise and friendly. ${agent.personality || ''}\n\n${soul ? `## Your Configuration\n${soul}` : ''}\n\n${userPrefs ? `## User Preferences\n${userPrefs}` : ''}\n\n${memory ? `## Your Memory\n${memory}` : ''}`.trim(),
+      },
       ...recentMsgs.map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
       { role: 'user', content: userMessage },
     ];
@@ -123,6 +135,9 @@ async function handleApiChat(agent, userMessage) {
     const response = await createCompletion(agent.provider, agent.model, messages);
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
     sendMessage(agentId, 'agent', response.content);
+
+    // Fire-and-forget memory reflection
+    reflectAfterChat(agent, agentDir, userMessage, response.content);
   } catch (err) {
     console.error(`[Chat API] Error for agent ${agent.name}:`, err);
     sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`);
@@ -347,7 +362,7 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
 
     moveTask(taskId, 'done');
     sendMessage(agentId, 'agent', `I've completed the task: ${task.title}`, taskId);
-    updateMemory(agentDir, agent.name, task.title, 'Completed via CLI agent.');
+    reflectAfterTask(agent, agentDir, task.title, 'Completed via CLI agent.', project);
   } catch (err) {
     if (err.name === 'AbortError') {
       addLog(taskId, 'warning', 'Task execution was aborted.');
@@ -356,6 +371,161 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
     }
     moveTask(taskId, 'blocked');
     sendMessage(agentId, 'agent', `I encountered an error: ${err.message}`, taskId);
+  }
+}
+
+// ─── Agent Tools (for API-mode task execution) ───
+
+const AGENT_TOOLS = [
+  {
+    name: 'read_file',
+    description: 'Read the content of a file. Returns the file content as text.',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'File path relative to the working directory' } },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'write_file',
+    description: 'Create or overwrite a file with the given content. Creates parent directories automatically.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path relative to the working directory' },
+        content: { type: 'string', description: 'Content to write to the file' },
+      },
+      required: ['path', 'content'],
+    },
+  },
+  {
+    name: 'delete_path',
+    description: 'Delete a file or directory (recursive for directories).',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'Path to delete, relative to the working directory' } },
+      required: ['path'],
+    },
+  },
+  {
+    name: 'run_bash',
+    description: 'Execute a bash command in the working directory. Use for: npm install, mkdir, git, running tests, etc. Avoid interactive commands.',
+    parameters: {
+      type: 'object',
+      properties: { command: { type: 'string', description: 'Bash command to execute' } },
+      required: ['command'],
+    },
+  },
+  {
+    name: 'list_directory',
+    description: 'List files and folders in a directory.',
+    parameters: {
+      type: 'object',
+      properties: { path: { type: 'string', description: 'Directory path (defaults to working directory if omitted)' } },
+      required: [],
+    },
+  },
+  {
+    name: 'task_complete',
+    description: 'Signal that the task is fully done. Call this when all work is finished.',
+    parameters: {
+      type: 'object',
+      properties: { summary: { type: 'string', description: 'Brief summary of what was accomplished' } },
+      required: ['summary'],
+    },
+  },
+  {
+    name: 'request_help',
+    description: 'Signal that you are blocked and need human help. Only use when truly impossible to proceed (e.g. missing API credentials, broken environment).',
+    parameters: {
+      type: 'object',
+      properties: { reason: { type: 'string', description: 'Why you are blocked and what you need' } },
+      required: ['reason'],
+    },
+  },
+];
+
+function executeTool(name, input, workDir, taskId, agentId) {
+  switch (name) {
+    case 'read_file': {
+      const fullPath = path.resolve(workDir, input.path);
+      try {
+        const content = fs.readFileSync(fullPath, 'utf8');
+        addLog(taskId, 'info', `read_file: ${input.path} (${content.length} chars)`);
+        return content.length > 10000 ? content.slice(0, 10000) + '\n...(truncated)' : content;
+      } catch (err) {
+        return `Error reading file: ${err.message}`;
+      }
+    }
+    case 'write_file': {
+      const fullPath = path.resolve(workDir, input.path);
+      try {
+        fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+        fs.writeFileSync(fullPath, input.content);
+        addLog(taskId, 'file_change', `write: ${input.path} (${input.content.length} bytes)`);
+        io.emit('agent:status_changed', { agentId, status: 'executing' });
+        return `File written: ${input.path}`;
+      } catch (err) {
+        return `Error writing file: ${err.message}`;
+      }
+    }
+    case 'delete_path': {
+      const fullPath = path.resolve(workDir, input.path);
+      try {
+        if (!fs.existsSync(fullPath)) return `Path does not exist: ${input.path}`;
+        const stat = fs.statSync(fullPath);
+        if (stat.isDirectory()) fs.rmSync(fullPath, { recursive: true });
+        else fs.unlinkSync(fullPath);
+        addLog(taskId, 'info', `deleted: ${input.path}`);
+        return `Deleted: ${input.path}`;
+      } catch (err) {
+        return `Error deleting: ${err.message}`;
+      }
+    }
+    case 'run_bash': {
+      addLog(taskId, 'command', `$ ${input.command}`);
+      io.emit('agent:status_changed', { agentId, status: 'executing' });
+      try {
+        const output = execSync(input.command, {
+          cwd: workDir,
+          timeout: 120000,
+          encoding: 'utf8',
+          maxBuffer: 2 * 1024 * 1024,
+          shell: true,
+        });
+        const result = output.toString().slice(0, 3000);
+        addLog(taskId, 'output', result || '(no output)');
+        return result || '(command completed with no output)';
+      } catch (err) {
+        const errMsg = ((err.stderr || '') + '\n' + (err.stdout || '') + '\n' + err.message).trim().slice(0, 2000);
+        addLog(taskId, 'error', errMsg);
+        return `Command failed (exit ${err.status || 'unknown'}): ${errMsg}`;
+      }
+    }
+    case 'list_directory': {
+      const dirPath = path.resolve(workDir, input.path || '.');
+      try {
+        const output = execSync(`ls -la "${dirPath}"`, { encoding: 'utf8', timeout: 5000, shell: true });
+        return output.slice(0, 2000);
+      } catch {
+        try { return fs.readdirSync(dirPath).join('\n'); } catch (err) { return `Error: ${err.message}`; }
+      }
+    }
+    default:
+      return `Unknown tool: ${name}`;
+  }
+}
+
+function appendToolResults(messages, toolResults, provider) {
+  if (provider === 'anthropic') {
+    messages.push({
+      role: 'user',
+      content: toolResults.map((tr) => ({ type: 'tool_result', tool_use_id: tr.id, content: tr.result })),
+    });
+  } else {
+    for (const tr of toolResults) {
+      messages.push({ role: 'tool', tool_call_id: tr.id, content: tr.result });
+    }
   }
 }
 
@@ -374,8 +544,6 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     if (fs.existsSync(projDocPath)) projectDoc = fs.readFileSync(projDocPath, 'utf8');
   }
 
-  const systemPrompt = buildSystemPrompt(agent, soul, userPrefs, rules, memory, projectDoc, project);
-
   if (!checkBudget()) {
     addLog(taskId, 'error', 'Budget limit exceeded.');
     moveTask(taskId, 'blocked');
@@ -386,23 +554,52 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
   addLog(taskId, 'info', `API mode: ${agent.provider} / ${agent.model}`);
   addLog(taskId, 'info', `Working directory: ${workDir}`);
 
-  // List existing files for context
   let dirListing = '';
   try {
-    dirListing = execSync('ls -la 2>/dev/null || dir', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1500);
+    dirListing = execSync('ls -la', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1000);
   } catch {}
 
-  let messages = [
+  const systemPrompt = `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
+
+${soul}
+
+## User Preferences
+${userPrefs}
+
+## Operational Rules
+${rules}
+
+## Your Memory
+${memory}
+
+${projectDoc ? `## Project Documentation\n${projectDoc}\n` : ''}
+## Available Tools
+Use tools to complete your task — do NOT write explanations without acting:
+- **read_file**: Read any file
+- **write_file**: Create or modify files (auto-creates directories)
+- **delete_path**: Remove files or directories
+- **run_bash**: Execute shell commands (npm, git, mkdir, etc.)
+- **list_directory**: Browse the file structure
+- **task_complete**: Call when ALL work is done (required to finish the task)
+- **request_help**: Only if truly blocked (missing credentials, broken env)
+
+## Rules
+1. ALWAYS proceed autonomously. Never ask for confirmation or clarification.
+2. Make your best judgment on ambiguous requirements.
+3. Use tools to read code, make changes, and verify your work.
+4. When finished, call task_complete with a summary.
+5. ${project ? `Working directory: ${project.path}` : 'Use the provided working directory.'}`;
+
+  const messages = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `Execute this task NOW. Do NOT ask for confirmation — just do it.\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWorking directory: ${workDir}\n\nCurrent directory listing:\n${dirListing}\n\nIMPORTANT: To create or edit files, use bash commands in \`\`\`bash code blocks. Examples:\n- Create file: \`\`\`bash\ncat > filename.js << 'FILEEOF'\ncontent here\nFILEEOF\n\`\`\`\n- Create directory: \`\`\`bash\nmkdir -p src/components\n\`\`\`\n- Read file: \`\`\`bash\ncat filename.js\n\`\`\`\n- Delete file: \`\`\`bash\nrm filename.js\n\`\`\`\n\nRULES:\n- Do NOT ask for confirmation or clarification. Proceed immediately.\n- Make your best judgment on any ambiguous requirements.\n- Start executing commands right away.\n- After all work is done, respond with [TASK_COMPLETE] and a brief summary.\n- Only use [NEED_HELP] if something is truly impossible (missing credentials, broken environment).`,
+      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWorking directory: ${workDir}\n\nCurrent files:\n${dirListing}\n\nStart immediately. Use the tools to explore, make changes, and complete the task.`,
     },
   ];
 
   let iterations = 0;
-  const maxIterations = 25;
-  let noProgressCount = 0;
+  const maxIterations = 30;
 
   while (iterations < maxIterations && !execState.aborted) {
     iterations++;
@@ -411,7 +608,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
 
     let response;
     try {
-      response = await createCompletion(agent.provider, agent.model, messages);
+      response = await createCompletion(agent.provider, agent.model, messages, { tools: AGENT_TOOLS });
     } catch (err) {
       addLog(taskId, 'error', `AI Error: ${err.message}`);
       moveTask(taskId, 'blocked');
@@ -421,107 +618,104 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
 
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
 
-    const content = response.content;
-    addLog(taskId, 'response', content);
-    messages.push({ role: 'assistant', content });
+    if (response.content) addLog(taskId, 'response', response.content);
 
-    // Check for completion
-    if (content.includes('[TASK_COMPLETE]')) {
-      addLog(taskId, 'success', 'Task completed successfully!');
-      moveTask(taskId, 'done');
-      sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${extractSummary(content)}`, taskId);
-      updateMemory(agentDir, agent.name, task.title, extractSummary(content));
-      break;
-    }
+    const toolCalls = response.toolCalls || [];
 
-    // Check if agent needs help
-    if (content.includes('[NEED_HELP]')) {
-      addLog(taskId, 'blocked', 'Agent is requesting help');
-      moveTask(taskId, 'blocked');
-      sendMessage(agentId, 'agent', content.replace('[NEED_HELP]', '').trim(), taskId);
-      execState.waitingForUser = true;
-      const reply = await waitForUserReply(execState, 300000);
-      if (reply) {
-        addLog(taskId, 'info', `User replied: ${reply}`);
-        messages.push({ role: 'user', content: `User's response: ${reply}` });
-        moveTask(taskId, 'doing');
-        noProgressCount = 0;
-        continue;
+    if (toolCalls.length > 0) {
+      // Append assistant message (with tool_use blocks) to history
+      if (response.rawAssistantMsg) {
+        messages.push(response.rawAssistantMsg);
       } else {
-        addLog(taskId, 'info', 'No user reply received.');
+        messages.push({ role: 'assistant', content: response.content || '' });
+      }
+
+      let taskDone = false;
+      let needHelp = false;
+      let helpReason = '';
+      let summary = '';
+      const toolResults = [];
+
+      for (const toolCall of toolCalls) {
+        addLog(taskId, 'info', `Tool: ${toolCall.name}(${JSON.stringify(toolCall.input).slice(0, 200)})`);
+
+        if (toolCall.name === 'task_complete') {
+          taskDone = true;
+          summary = toolCall.input.summary || 'Task completed.';
+          toolResults.push({ id: toolCall.id, result: 'Task marked as complete.' });
+          break;
+        }
+
+        if (toolCall.name === 'request_help') {
+          needHelp = true;
+          helpReason = toolCall.input.reason || 'Agent needs help.';
+          toolResults.push({ id: toolCall.id, result: 'Help request noted.' });
+          break;
+        }
+
+        const result = executeTool(toolCall.name, toolCall.input, workDir, taskId, agentId);
+        toolResults.push({ id: toolCall.id, result });
+      }
+
+      if (taskDone) {
+        addLog(taskId, 'success', 'Task completed!');
+        moveTask(taskId, 'done');
+        sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${summary}`, taskId);
+        reflectAfterTask(agent, agentDir, task.title, summary, project);
         break;
       }
-    }
 
-    // Extract commands from response
-    const commands = extractCommands(content);
-
-    // Also extract inline file writes: ```filename\ncontent\n```
-    const fileWrites = extractFileWrites(content, workDir);
-
-    if (commands.length > 0 || fileWrites.length > 0) {
-      noProgressCount = 0;
-      io.emit('agent:status_changed', { agentId, status: 'executing' });
-
-      let commandResults = '';
-
-      // Execute file writes first
-      for (const fw of fileWrites) {
-        addLog(taskId, 'command', `[write] ${fw.path}`);
-        try {
-          const dir = path.dirname(fw.fullPath);
-          if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-          fs.writeFileSync(fw.fullPath, fw.content);
-          addLog(taskId, 'output', `Created: ${fw.path} (${fw.content.length} bytes)`);
-          commandResults += `\nCreated file ${fw.path} successfully.\n`;
-        } catch (err) {
-          addLog(taskId, 'error', `Failed to write ${fw.path}: ${err.message}`);
-          commandResults += `\nFailed to write ${fw.path}: ${err.message}\n`;
-        }
-      }
-
-      // Execute bash commands
-      for (const cmd of commands) {
-        addLog(taskId, 'command', `$ ${cmd}`);
-        try {
-          const result = execSync(cmd, {
-            cwd: workDir,
-            timeout: 120000,
-            encoding: 'utf8',
-            maxBuffer: 2 * 1024 * 1024,
-            shell: true,
-          });
-          const output = result.toString().slice(0, 3000);
-          addLog(taskId, 'output', output || '(no output)');
-          commandResults += `\n$ ${cmd}\n${output}\n`;
-        } catch (err) {
-          const stderr = (err.stderr || '').slice(0, 1000);
-          const stdout = (err.stdout || '').slice(0, 500);
-          const errMsg = stderr || err.message || 'Command failed';
-          addLog(taskId, 'error', `Command failed: ${errMsg}`);
-          commandResults += `\n$ ${cmd}\nSTDOUT: ${stdout}\nSTDERR: ${errMsg}\nExit code: ${err.status || 'unknown'}\n`;
-        }
-      }
-
-      messages.push({
-        role: 'user',
-        content: `Command results:\n${commandResults}\n\nContinue working. If all work is done, respond with [TASK_COMPLETE] and a summary of what you did.`,
-      });
-    } else {
-      // No commands extracted
-      noProgressCount++;
-      addLog(taskId, 'warning', `No commands found in response (attempt ${noProgressCount}/3)`);
-
-      if (noProgressCount >= 3) {
-        addLog(taskId, 'warning', 'Agent stuck — no commands after 3 attempts. Moving to blocked.');
+      if (needHelp) {
+        addLog(taskId, 'blocked', `Agent needs help: ${helpReason}`);
         moveTask(taskId, 'blocked');
-        sendMessage(agentId, 'agent', `I seem to be stuck on this task. I couldn't produce executable commands. Please review my progress.`, taskId);
+        sendMessage(agentId, 'agent', helpReason, taskId);
+        execState.waitingForUser = true;
+        appendToolResults(messages, toolResults, agent.provider);
+        const reply = await waitForUserReply(execState, 300000);
+        if (reply) {
+          addLog(taskId, 'info', `User replied: ${reply}`);
+          messages.push({ role: 'user', content: `User's response: ${reply}` });
+          moveTask(taskId, 'doing');
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      appendToolResults(messages, toolResults, agent.provider);
+    } else {
+      // No tool calls — text-only response
+      messages.push({ role: 'assistant', content: response.content || '' });
+
+      // Legacy text signals (fallback)
+      if (response.content?.includes('[TASK_COMPLETE]')) {
+        addLog(taskId, 'success', 'Task completed (text signal)!');
+        moveTask(taskId, 'done');
+        sendMessage(agentId, 'agent', `I've completed the task: ${task.title}\n\n${extractSummary(response.content)}`, taskId);
+        reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);
         break;
       }
 
+      if (response.content?.includes('[NEED_HELP]')) {
+        addLog(taskId, 'blocked', 'Agent requesting help (text signal)');
+        moveTask(taskId, 'blocked');
+        sendMessage(agentId, 'agent', response.content.replace('[NEED_HELP]', '').trim(), taskId);
+        execState.waitingForUser = true;
+        const reply = await waitForUserReply(execState, 300000);
+        if (reply) {
+          messages.push({ role: 'user', content: `User's response: ${reply}` });
+          moveTask(taskId, 'doing');
+          continue;
+        } else {
+          break;
+        }
+      }
+
+      // Prompt agent to use tools
+      addLog(taskId, 'warning', 'No tool calls — prompting agent to use tools');
       messages.push({
         role: 'user',
-        content: `You need to execute actual commands to make changes. Use \`\`\`bash code blocks to run shell commands.\n\nTo create a file:\n\`\`\`bash\ncat > path/to/file.js << 'FILEEOF'\nyour code here\nFILEEOF\n\`\`\`\n\nTo create a directory:\n\`\`\`bash\nmkdir -p path/to/dir\n\`\`\`\n\nTo list files:\n\`\`\`bash\nls -la\n\`\`\`\n\nPlease produce commands now to complete the task. If already done, respond with [TASK_COMPLETE] and a summary.`,
+        content: 'You must use the provided tools to complete this task. Use write_file to create/edit files, run_bash for commands, read_file to inspect code. When done, call task_complete.',
       });
     }
 
@@ -541,115 +735,6 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
 }
 
 // ─── Helpers ───
-
-function buildSystemPrompt(agent, soul, userPrefs, rules, memory, projectDoc, project) {
-  return `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
-
-${soul}
-
-## User Preferences
-${userPrefs}
-
-## Operational Rules
-${rules}
-
-## Your Memory
-${memory}
-
-${projectDoc ? `## Project Documentation\n${projectDoc}` : ''}
-
-## How to Execute Commands
-You MUST use \`\`\`bash code blocks to execute shell commands. This is the ONLY way to make changes.
-
-### Create a file:
-\`\`\`bash
-mkdir -p path/to/dir
-cat > path/to/file.ext << 'FILEEOF'
-file content here
-FILEEOF
-\`\`\`
-
-### Read a file:
-\`\`\`bash
-cat path/to/file.ext
-\`\`\`
-
-### Create a directory:
-\`\`\`bash
-mkdir -p path/to/new/dir
-\`\`\`
-
-### Delete a file:
-\`\`\`bash
-rm path/to/file.ext
-\`\`\`
-
-### Run any command:
-\`\`\`bash
-npm install express
-\`\`\`
-
-## Important Rules
-1. ALWAYS use \`\`\`bash blocks to execute commands — this is the only way to make changes.
-2. Work step by step. Execute one or two commands at a time, then review the results.
-3. Use \`cat > file << 'FILEEOF'...FILEEOF\` to create files with content.
-4. When done, respond with [TASK_COMPLETE] followed by a brief summary.
-5. Do NOT invent or guess command outputs — wait for real results.
-6. ${project ? `Working directory: ${project.path}` : 'Use the current working directory.'}
-
-## CRITICAL: Full Autonomy
-- NEVER ask the user for permission, confirmation, or clarification.
-- NEVER use [NEED_HELP] unless something is truly impossible (e.g. missing API credentials).
-- If requirements are ambiguous, make your best judgment and proceed.
-- If multiple approaches exist, pick the most reasonable one and execute it.
-- Start producing \`\`\`bash commands IMMEDIATELY in your first response.
-`;
-}
-
-function extractCommands(content) {
-  const commands = [];
-  // Match ```bash, ```sh, ```shell, ```zsh blocks
-  const bashBlocks = content.match(/```(?:bash|sh|shell|zsh)\n([\s\S]*?)```/g);
-  if (bashBlocks) {
-    for (const block of bashBlocks) {
-      const cmd = block.replace(/```(?:bash|sh|shell|zsh)\n/, '').replace(/```$/, '').trim();
-      if (cmd) commands.push(cmd);
-    }
-  }
-  return commands;
-}
-
-/**
- * Extract inline file write patterns like:
- * ```path/to/file.js
- * content
- * ```
- * Only matches if the language tag looks like a file path.
- */
-function extractFileWrites(content, workDir) {
-  const writes = [];
-  const pattern = /```([\w./\\-]+\.\w+)\n([\s\S]*?)```/g;
-  let match;
-  while ((match = pattern.exec(content)) !== null) {
-    const filePath = match[1];
-    const fileContent = match[2];
-    // Only if it looks like a file path (has extension, not a known language)
-    const knownLangs = ['bash', 'sh', 'shell', 'zsh', 'javascript', 'typescript', 'python', 'java', 'go', 'rust', 'c', 'cpp', 'json', 'yaml', 'yml', 'xml', 'html', 'css', 'sql', 'markdown', 'md', 'txt', 'plaintext', 'diff', 'log'];
-    if (!knownLangs.includes(filePath.toLowerCase()) && filePath.includes('.')) {
-      writes.push({
-        path: filePath,
-        fullPath: path.resolve(workDir, filePath),
-        content: fileContent,
-      });
-    }
-  }
-  return writes;
-}
-
-function isDestructive(cmd) {
-  const patterns = [/\brm\s/, /\brmdir\s/, /\bdrop\s/i, /\bdelete\s/i, /--force/, /-rf/, /\btruncate\s/i];
-  return patterns.some((p) => p.test(cmd));
-}
 
 function readFile(filePath) {
   try {
@@ -709,17 +794,171 @@ function checkBudget() {
   return monthly.total < monthlyLimit;
 }
 
-function updateMemory(agentDir, agentName, taskTitle, summary) {
-  const memoryPath = path.join(agentDir, 'MEMORY.md');
-  let existing = fs.existsSync(memoryPath) ? fs.readFileSync(memoryPath, 'utf8') : '';
-  const updated = existing + `\n## ${new Date().toISOString().split('T')[0]} - ${taskTitle}\n${summary}\n`;
+// ─── Memory Reflection ───
+
+// Cheapest available model per provider for background reflection
+const REFLECTION_MODELS = {
+  anthropic: 'claude-haiku-4-5-20251001',
+  openai: 'gpt-4o-mini',
+  openrouter: 'openai/gpt-4o-mini',
+  deepseek: 'deepseek-chat',
+  mistral: 'mistral-small-latest',
+};
+
+function parseJsonResponse(content) {
+  try {
+    let str = content.trim();
+    const blockMatch = str.match(/```(?:json)?\s*([\s\S]*?)```/);
+    if (blockMatch) str = blockMatch[1].trim();
+    const objMatch = str.match(/(\{[\s\S]*\})/);
+    if (objMatch) str = objMatch[1];
+    return JSON.parse(str);
+  } catch { return {}; }
+}
+
+function appendMemoryEntry(agentDir, title, content) {
+  const memPath = path.join(agentDir, 'MEMORY.md');
+  const existing = readFile(memPath) || '';
+  const today = new Date().toISOString().split('T')[0];
+  const updated = existing + `\n## ${today} - ${title}\n${content}\n`;
   if (updated.length > 8000) {
     const lines = updated.split('\n');
     const header = lines.slice(0, 3).join('\n');
     const entries = lines.slice(3);
-    fs.writeFileSync(memoryPath, header + '\n' + entries.slice(Math.floor(entries.length * 0.4)).join('\n'));
+    fs.writeFileSync(memPath, header + '\n' + entries.slice(Math.floor(entries.length * 0.4)).join('\n'));
   } else {
-    fs.writeFileSync(memoryPath, updated);
+    fs.writeFileSync(memPath, updated);
+  }
+}
+
+// Full AI-powered reflection after task completion — async, fire-and-forget
+async function reflectAfterTask(agent, agentDir, taskTitle, taskSummary, project) {
+  if (agent.auth_type !== 'api') {
+    appendMemoryEntry(agentDir, taskTitle, taskSummary);
+    return;
+  }
+  try {
+    const reflModel = REFLECTION_MODELS[agent.provider] || agent.model;
+    const today = new Date().toISOString().split('T')[0];
+
+    const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+    const userPrefs = readFile(path.join(agentDir, 'USER.md'));
+    const agentRules = readFile(path.join(agentDir, 'AGENTS.md'));
+    let projectDoc = '';
+    const projectDocPath = project?.path ? path.join(project.path, 'PROJECT.md') : null;
+    if (projectDocPath && fs.existsSync(projectDocPath)) {
+      projectDoc = fs.readFileSync(projectDocPath, 'utf8');
+    }
+
+    const response = await createCompletion(agent.provider, reflModel, [
+      {
+        role: 'system',
+        content: `You are the memory system for AI agent "${agent.name}". Update the agent's memory files based on completed work. Respond ONLY with valid JSON — no explanation, no markdown outside the JSON.`,
+      },
+      {
+        role: 'user',
+        content: `## Completed Task (${today})
+Title: "${taskTitle}"
+Summary: ${taskSummary}
+
+## Current Memory Files
+
+MEMORY.md:
+${memory || '(empty)'}
+
+USER.md:
+${userPrefs || '(empty)'}
+
+AGENTS.md:
+${agentRules || '(empty)'}
+
+${project ? `PROJECT.md (${project.path}/PROJECT.md):\n${projectDoc || '(empty - create it)'}` : ''}
+
+## Instructions
+Analyze the completed task and return a JSON object with only the files that need updating:
+{
+  "MEMORY.md": "full updated content",
+  "USER.md": "full updated content — only if new user preferences/patterns were observed",
+  "AGENTS.md": "full updated content — only if new project conventions/tools/rules were learned",
+  "PROJECT.md": "full updated content — only if project knowledge was gained (tech stack, structure, commands, etc.)"
+}
+
+Rules:
+- MEMORY.md: Always add a concise dated entry. Keep full history, trim oldest 40% if >8000 chars.
+- USER.md: Update if the task revealed user preferences, coding style, or communication patterns.
+- AGENTS.md: Update if you learned project conventions (e.g. "uses yarn", "tests with Jest", "deploy with Vercel").
+- PROJECT.md: Document what the project does, tech stack, directory structure, key commands, recent changes. Very valuable — be detailed if this is new info.
+- Omit a key if that file genuinely needs no changes.`,
+      },
+    ], { maxTokens: 3000 });
+
+    logBudget(agent.id, agent.provider, reflModel, response.inputTokens, response.outputTokens);
+    const updates = parseJsonResponse(response.content);
+
+    if (updates['MEMORY.md']) { fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), updates['MEMORY.md']); console.log(`[Reflect] MEMORY.md ← ${agent.name}`); }
+    if (updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name}`); }
+    if (updates['AGENTS.md']) { fs.writeFileSync(path.join(agentDir, 'AGENTS.md'), updates['AGENTS.md']); console.log(`[Reflect] AGENTS.md ← ${agent.name}`); }
+    if (updates['PROJECT.md'] && project?.path) { fs.writeFileSync(path.join(project.path, 'PROJECT.md'), updates['PROJECT.md']); console.log(`[Reflect] PROJECT.md ← ${project.path}`); }
+  } catch (err) {
+    console.error(`[Reflect] Task reflection failed for ${agent.name}:`, err.message);
+    appendMemoryEntry(agentDir, taskTitle, taskSummary);
+  }
+}
+
+// Lightweight AI reflection after a chat exchange — async, fire-and-forget
+async function reflectAfterChat(agent, agentDir, userMessage, agentResponse) {
+  if (agent.auth_type !== 'api') {
+    const today = new Date().toISOString().split('T')[0];
+    appendMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 150)}\nAgent: ${agentResponse.slice(0, 150)}`);
+    return;
+  }
+  try {
+    const reflModel = REFLECTION_MODELS[agent.provider] || agent.model;
+    const today = new Date().toISOString().split('T')[0];
+
+    const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+    const userPrefs = readFile(path.join(agentDir, 'USER.md'));
+
+    const response = await createCompletion(agent.provider, reflModel, [
+      {
+        role: 'system',
+        content: `You are the memory system for AI agent "${agent.name}". Update memory files based on a chat exchange. Respond ONLY with valid JSON.`,
+      },
+      {
+        role: 'user',
+        content: `## Chat Exchange (${today})
+User: ${userMessage.slice(0, 600)}
+Agent: ${agentResponse.slice(0, 600)}
+
+## Current Files
+
+MEMORY.md:
+${memory || '(empty)'}
+
+USER.md:
+${userPrefs || '(empty)'}
+
+## Instructions
+Return JSON with only files that need updating:
+{
+  "MEMORY.md": "full updated content",
+  "USER.md": "full updated content — only if user preferences/patterns observed"
+}
+
+Rules:
+- MEMORY.md: Add a brief entry only if something meaningful was discussed (skip trivial/greeting exchanges).
+- USER.md: Update if the user expressed preferences, a working style, or communication patterns.
+- Return {} if nothing meaningful needs to be remembered.`,
+      },
+    ], { maxTokens: 1500 });
+
+    logBudget(agent.id, agent.provider, reflModel, response.inputTokens, response.outputTokens);
+    const updates = parseJsonResponse(response.content);
+
+    if (updates['MEMORY.md']) { fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), updates['MEMORY.md']); console.log(`[Reflect] MEMORY.md ← ${agent.name} (chat)`); }
+    if (updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name} (chat)`); }
+  } catch (err) {
+    console.error(`[Reflect] Chat reflection failed for ${agent.name}:`, err.message);
   }
 }
 

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useTheme } from '@/app/providers';
+import { useTheme, useUnread } from '@/app/providers';
 import {
   LayoutDashboard,
   FolderKanban,
@@ -32,8 +32,10 @@ const navItems = [
 export default function Sidebar() {
   const pathname = usePathname();
   const { theme, toggleTheme } = useTheme();
+  const { unread } = useUnread();
   const [collapsed, setCollapsed] = useState(false);
-  const [notifications, setNotifications] = useState(0);
+
+  const totalUnread = Object.values(unread).reduce((sum, v) => sum + (v.count || 0), 0);
 
   return (
     <aside
@@ -81,9 +83,9 @@ export default function Sidebar() {
             >
               <div className="relative">
                 <Icon size={20} />
-                {item.href === '/chat' && notifications > 0 && (
+                {item.href === '/chat' && totalUnread > 0 && (
                   <span className="absolute -top-1 -right-1 w-4 h-4 text-[10px] font-bold text-white bg-red-500 rounded-full flex items-center justify-center">
-                    {notifications}
+                    {totalUnread > 9 ? '9+' : totalUnread}
                   </span>
                 )}
               </div>

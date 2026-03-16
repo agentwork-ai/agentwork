@@ -226,6 +226,27 @@ function ProjectFormModal({ project, onClose, onSaved }) {
     ignore_patterns: project?.ignore_patterns || 'node_modules,.git,dist,build,.next',
   });
   const [saving, setSaving] = useState(false);
+  const [browsing, setBrowsing] = useState(false);
+
+  const handleBrowse = async () => {
+    setBrowsing(true);
+    try {
+      const result = await api.browseFolder();
+      if (result.path) {
+        const folderPath = result.path.replace(/\/$/, '');
+        const folderName = folderPath.split('/').pop();
+        setForm((f) => ({
+          ...f,
+          path: folderPath,
+          name: f.name || folderName,
+        }));
+      }
+    } catch (err) {
+      toast.error('Could not open folder picker: ' + err.message);
+    } finally {
+      setBrowsing(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -259,8 +280,15 @@ function ProjectFormModal({ project, onClose, onSaved }) {
           </div>
           <div>
             <label className="label">Local Path</label>
-            <input className="input font-mono text-sm" value={form.path}
-              onChange={(e) => setForm({ ...form, path: e.target.value })} placeholder="/Users/you/projects/myapp" required />
+            <div className="flex gap-2">
+              <input className="input font-mono text-sm flex-1" value={form.path}
+                onChange={(e) => setForm({ ...form, path: e.target.value })} placeholder="/Users/you/projects/myapp" required />
+              <button type="button" className="btn btn-secondary shrink-0 flex items-center gap-1.5"
+                onClick={handleBrowse} disabled={browsing}>
+                <FolderOpen size={14} />
+                {browsing ? '...' : 'Browse'}
+              </button>
+            </div>
           </div>
           <div>
             <label className="label">Description</label>

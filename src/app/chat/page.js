@@ -4,11 +4,12 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
-import { useSocket } from '@/app/providers';
+import { useSocket, useUnread } from '@/app/providers';
 import { Send, Bot, User, Key, Terminal } from 'lucide-react';
 
 export default function ChatPage() {
   const socket = useSocket();
+  const { unread, clearUnread } = useUnread();
   const [agents, setAgents] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -61,6 +62,7 @@ export default function ChatPage() {
   const selectAgent = async (agent) => {
     setSelectedAgent(agent);
     setIsTyping(false);
+    clearUnread(agent.id);
     try {
       const msgs = await api.getMessages(agent.id);
       setMessages(msgs);
@@ -118,7 +120,10 @@ export default function ChatPage() {
                   No agents hired yet.
                 </p>
               ) : (
-                agents.map((agent) => (
+                agents.map((agent) => {
+                  const agentUnread = unread[agent.id];
+                  const hasUnread = agentUnread && agentUnread.count > 0;
+                  return (
                   <button
                     key={agent.id}
                     className="flex items-center gap-3 p-3 rounded-lg w-full text-left transition-colors"
@@ -127,7 +132,7 @@ export default function ChatPage() {
                     }}
                     onClick={() => selectAgent(agent)}
                   >
-                    <div className="relative">
+                    <div className="relative shrink-0">
                       <span className="text-xl">{agent.avatar}</span>
                       <div
                         className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2"
@@ -138,10 +143,21 @@ export default function ChatPage() {
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{agent.name}</p>
                       <div className="flex items-center gap-1.5">
-                        <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>{agent.role}</p>
+                        <p className={`text-sm truncate ${hasUnread ? 'font-bold' : 'font-medium'}`}
+                          style={{ color: 'var(--text-primary)' }}>
+                          {agent.name}
+                        </p>
+                        {hasUnread && (
+                          <span className="shrink-0 w-4 h-4 text-[10px] font-bold text-white bg-red-500 rounded-full flex items-center justify-center">
+                            {agentUnread.count > 9 ? '9+' : agentUnread.count}
+                          </span>
+                        )}
                       </div>
+                      <p className={`text-xs truncate ${hasUnread ? 'font-medium' : ''}`}
+                        style={{ color: hasUnread ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>
+                        {hasUnread ? agentUnread.lastMessage : agent.role}
+                      </p>
                     </div>
                     <span className="text-[9px] shrink-0 px-1.5 py-0.5 rounded" style={{
                       background: agent.auth_type === 'cli' ? '#20c99715' : 'var(--accent-light)',
@@ -150,7 +166,8 @@ export default function ChatPage() {
                       {agent.auth_type === 'cli' ? <Terminal size={10} /> : <Key size={10} />}
                     </span>
                   </button>
-                ))
+                  );
+                })
               )}
             </div>
           </div>

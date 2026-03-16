@@ -12,11 +12,9 @@ const program = new Command();
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = process.env.AGENTHUB_DATA || path.join(os.homedir(), '.agenthub');
 const PID_FILE = path.join(DATA_DIR, 'agenthub.pid');
-const LOG_FILE = path.join(DATA_DIR, 'agenthub.log');
+const LOG_FILE = path.join(DATA_DIR, 'logs', 'agenthub.log');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
 
 function isRunning() {
   if (!fs.existsSync(PID_FILE)) return false;
