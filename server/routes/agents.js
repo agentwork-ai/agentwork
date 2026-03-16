@@ -36,15 +36,16 @@ router.get('/:id', (req, res) => {
 // Create (hire) agent
 router.post('/', async (req, res) => {
   const { name, avatar, role, auth_type, provider, model, personality,
-          chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids } = req.body;
+          chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids,
+          daily_budget_usd } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   db.prepare(
     `INSERT INTO agents (id, name, avatar, role, auth_type, provider, model, status, personality,
-      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     name,
@@ -59,7 +60,8 @@ router.post('/', async (req, res) => {
     chat_platform || '',
     chat_token || '',
     chat_app_token || '',
-    chat_allowed_ids || ''
+    chat_allowed_ids || '',
+    daily_budget_usd || 0
   );
 
   // Create memory directory with OpenClaw architecture
@@ -132,7 +134,8 @@ router.put('/:id', async (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Agent not found' });
 
   const { name, avatar, role, auth_type, provider, model, status, personality,
-          chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids } = req.body;
+          chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids,
+          daily_budget_usd } = req.body;
 
   const newChatEnabled = chat_enabled !== undefined ? (chat_enabled ? 1 : 0) : existing.chat_enabled;
 
@@ -140,6 +143,7 @@ router.put('/:id', async (req, res) => {
     `UPDATE agents SET name = ?, avatar = ?, role = ?, auth_type = ?, provider = ?, model = ?,
      status = ?, personality = ?,
      chat_enabled = ?, chat_platform = ?, chat_token = ?, chat_app_token = ?, chat_allowed_ids = ?,
+     daily_budget_usd = ?,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     name || existing.name,
@@ -155,6 +159,7 @@ router.put('/:id', async (req, res) => {
     chat_token !== undefined ? chat_token : existing.chat_token,
     chat_app_token !== undefined ? chat_app_token : existing.chat_app_token,
     chat_allowed_ids !== undefined ? chat_allowed_ids : existing.chat_allowed_ids,
+    daily_budget_usd !== undefined ? daily_budget_usd : (existing.daily_budget_usd || 0),
     req.params.id
   );
 

@@ -1150,7 +1150,7 @@ function logBudget(agentId, provider, model, inputTokens, outputTokens, directCo
   if (io) io.emit('budget:update', { cost, inputTokens, outputTokens });
 }
 
-function checkBudget() {
+function checkBudget(agentId) {
   const today = new Date().toISOString().split('T')[0];
   const daily = db.prepare("SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE date(created_at) = ?").get(today);
   const dailyLimit = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'daily_budget_usd'").get()?.value || '10');
@@ -1158,7 +1158,18 @@ function checkBudget() {
   const monthStart = new Date(); monthStart.setDate(1);
   const monthly = db.prepare("SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE created_at >= ?").get(monthStart.toISOString());
   const monthlyLimit = parseFloat(db.prepare("SELECT value FROM settings WHERE key = 'monthly_budget_usd'").get()?.value || '100');
-  return monthly.total < monthlyLimit;
+  if (monthly.total >= monthlyLimit) return false;
+
+  // Per-agent budget check
+  if (agentId) {
+    const agent = db.prepare('SELECT daily_budget_usd FROM agents WHERE id = ?').get(agentId);
+    if (agent && agent.daily_budget_usd > 0) {
+      const agentDaily = db.prepare("SELECT COALESCE(SUM(cost_usd), 0) as total FROM budget_logs WHERE agent_id = ? AND date(created_at) = ?").get(agentId, today);
+      if (agentDaily.total >= agent.daily_budget_usd) return false;
+    }
+  }
+
+  return true;
 }
 
 // ─── Memory Reflection ───

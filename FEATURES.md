@@ -60,7 +60,7 @@
 - [ ] **Dashboard Authentication** — Add optional password protection or local-only binding so the dashboard isn't open to anyone on the network.
 - [ ] **Command Sandboxing** — Configurable restrictions for agent commands: blocked patterns (rm -rf /, DROP TABLE), directory jail, optional Docker container isolation.
 - [x] **Audit Log** — Record all user actions (settings changes, agent creation/deletion, task modifications) in a separate audit log table with timestamps.
-- [ ] **Per-Agent Budget Limits** — Individual daily spend caps per agent (e.g., Opus agent at $5/day, Haiku agent at $20/day).
+- [x] **Per-Agent Budget Limits** — Individual daily spend caps per agent (e.g., Opus agent at $5/day, Haiku agent at $20/day).
 - [x] **Path Traversal Protection** — Restrict the file read API to registered project directories only, preventing access to sensitive system files.
 
 ## 6. Integrations

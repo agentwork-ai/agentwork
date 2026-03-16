@@ -296,6 +296,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     provider: agent?.provider || 'anthropic',
     model: agent?.model || '',
     personality: agent?.personality || '',
+    daily_budget_usd: agent?.daily_budget_usd || 0,
     chat_enabled: agent?.chat_enabled ? true : false,
     chat_platform: agent?.chat_platform || 'telegram',
     chat_token: agent?.chat_token || '',
@@ -518,6 +519,14 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             <label className="label">Personality / Instructions</label>
             <textarea className="input" value={form.personality} onChange={(e) => setForm({ ...form, personality: e.target.value })}
               placeholder="e.g., Methodical, always writes tests, prefers functional patterns..." rows={3} />
+          </div>
+
+          {/* Per-Agent Budget */}
+          <div>
+            <label className="label">Daily Budget Limit (USD)</label>
+            <input className="input" type="number" step="0.01" min="0" value={form.daily_budget_usd}
+              onChange={(e) => setForm({ ...form, daily_budget_usd: parseFloat(e.target.value) || 0 })} />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>0 = no per-agent limit (global budget still applies)</p>
           </div>
 
           {/* Chat Platform Integration */}

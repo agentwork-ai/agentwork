@@ -151,6 +151,9 @@ if (!agentCols.includes('chat_app_token')) {
 if (!agentCols.includes('chat_allowed_ids')) {
   db.exec("ALTER TABLE agents ADD COLUMN chat_allowed_ids TEXT DEFAULT ''");
 }
+if (!agentCols.includes('daily_budget_usd')) {
+  db.exec("ALTER TABLE agents ADD COLUMN daily_budget_usd REAL DEFAULT 0");
+}
 
 // Seed default settings if not present
 const defaultSettings = {
