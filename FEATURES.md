@@ -49,7 +49,7 @@
 - [ ] **Cost Charts & Sparklines** — Interactive charts for daily spend over time, per-agent distribution, and token usage trends.
 - [ ] **Execution Replay** — Store full execution traces with timestamps and allow replaying them step-by-step to debug agent decisions.
 - [x] **Agent Performance Metrics** — Track per-agent stats: average task completion time, success rate, average tokens per task, number of iterations, and times blocked.
-- [ ] **Error Alerting & Escalation** — Send push notifications via Telegram/Slack to the user when tasks fail. Add webhook support for external alerting (PagerDuty, Discord, email).
+- [x] **Error Alerting & Escalation** — Send push notifications via Telegram/Slack to the user when tasks fail. Add webhook support for external alerting (PagerDuty, Discord, email).
 - [x] **Health Check Endpoint** — Add `/api/health` that verifies database connectivity, disk space, memory usage, and active bot connections.
 - [ ] **Full AI Request/Response Logging** — Optional verbose logging that captures the full prompt and response for each AI API call, for debugging and prompt optimization.
 - [ ] **Execution Timeline / Gantt Chart** — Show a timeline of when each agent was active, what tasks they worked on, and for how long in The Office view.
@@ -106,14 +106,14 @@
 - [x] **Agent Assignment Suggestions** — AI-powered agent recommendation for new tasks based on description, role, past performance, and workload.
 - [x] **Shared Agent Memory** — TEAM.md shared across agents on the same project so knowledge discovered by one agent is available to all.
 - [x] **Task Comments / Activity Log** — Discussion thread on each task, separate from execution logs, for user notes and instructions.
-- [ ] **@-Mention Agents in Task Descriptions** — Reference agents by name to notify them or add them as collaborators.
+- [x] **@-Mention Agents in Task Descriptions** — Reference agents by name to notify them or add them as collaborators.
 
 ## 11. Automation & CI/CD
 
-- [ ] **Git Hook Integration** — Trigger agent tasks on git push/merge events (e.g., auto-run QA agent on every push).
+- [x] **Git Hook Integration** — Trigger agent tasks on git push/merge events (e.g., auto-run QA agent on every push).
 - [ ] **Visual Pipeline Builder** — Drag-and-drop DAG editor with conditional branches, parallel steps, and merge gates.
-- [ ] **Auto-PR Creation** — After task completion, auto-create a git branch, commit agent changes, and open a PR on GitHub/GitLab.
-- [ ] **Scheduled Reports** — Cron-triggered tasks that generate and send reports (test results, code quality, dependency audit) to platforms.
+- [x] **Auto-PR Creation** — After task completion, auto-create a git branch, commit agent changes, and open a PR on GitHub/GitLab.
+- [x] **Scheduled Reports** — Cron-triggered tasks that generate and send reports (test results, code quality, dependency audit) to platforms.
 
 ## 12. File & Code Management
 
@@ -135,9 +135,9 @@
 
 - [ ] **Group Chat** — Multi-agent chat rooms for brainstorming sessions where the user discusses a topic and agents respond by expertise.
 - [x] **Chat History Search** — Full-text search across all conversation history with any agent.
-- [ ] **Rich Messages** — Support images, files, and code snippets in chat messages (user-to-agent and agent-to-user).
+- [x] **Rich Messages** — Support images, files, and code snippets in chat messages (user-to-agent and agent-to-user).
 - [x] **Chat Export** — Export conversation history as Markdown or PDF.
-- [ ] **Proactive Agent Notifications** — Agents initiate alerts based on scheduled scans (e.g., "test suite is failing" or "dependency has a CVE").
+- [x] **Proactive Agent Notifications** — Agents initiate alerts based on scheduled scans (e.g., "test suite is failing" or "dependency has a CVE").
 
 ## 15. Mobile & Accessibility
 
