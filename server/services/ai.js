@@ -5,6 +5,47 @@ function getSetting(key) {
   return row ? row.value : '';
 }
 
+// Cache of OpenRouter model pricing: { modelId: { input, output } } in $/M tokens
+let openRouterPricingCache = null;
+let openRouterPricingFetchedAt = 0;
+const PRICING_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+async function fetchOpenRouterPricing() {
+  const now = Date.now();
+  if (openRouterPricingCache && now - openRouterPricingFetchedAt < PRICING_CACHE_TTL_MS) {
+    return openRouterPricingCache;
+  }
+
+  try {
+    const apiKey = getSetting('openrouter_api_key');
+    const headers = { 'Content-Type': 'application/json' };
+    if (apiKey) headers['Authorization'] = `Bearer ${apiKey}`;
+
+    const res = await fetch('https://openrouter.ai/api/v1/models', { headers });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { data } = await res.json();
+
+    const cache = {};
+    for (const m of data) {
+      const p = m.pricing;
+      if (!p) continue;
+      const input = parseFloat(p.prompt) * 1_000_000;   // convert per-token → per-million
+      const output = parseFloat(p.completion) * 1_000_000;
+      if (!isNaN(input) && !isNaN(output)) {
+        cache[m.id] = { input, output };
+      }
+    }
+
+    openRouterPricingCache = cache;
+    openRouterPricingFetchedAt = now;
+    console.log(`[AI] Cached OpenRouter pricing for ${Object.keys(cache).length} models`);
+    return cache;
+  } catch (err) {
+    console.warn(`[AI] Failed to fetch OpenRouter pricing: ${err.message}`);
+    return openRouterPricingCache || {};
+  }
+}
+
 // API-based completion (requires API key)
 async function createCompletion(provider, model, messages, options = {}) {
   let apiKey;
@@ -28,6 +69,8 @@ async function createCompletion(provider, model, messages, options = {}) {
   if (provider === 'anthropic') {
     return callAnthropic(apiKey, model, messages, options, customBaseUrl);
   } else if (provider === 'openrouter') {
+    // Warm pricing cache in background so cost logging is accurate
+    if (!openRouterPricingCache) fetchOpenRouterPricing().catch(() => {});
     return callOpenRouter(apiKey, model, messages, options);
   } else if (provider === 'deepseek') {
     return callOpenAI(apiKey, model, messages, options, 'https://api.deepseek.com');
@@ -333,60 +376,58 @@ async function chatWithCodexAgent(prompt, thread) {
   return { content: responseText };
 }
 
-// Calculate cost based on model
-function estimateCost(provider, model, inputTokens, outputTokens) {
-  const pricing = {
-    // Anthropic
-    'claude-opus-4-6': { input: 15, output: 75 },
-    'claude-sonnet-4-6': { input: 3, output: 15 },
-    'claude-opus-4-5': { input: 15, output: 75 },
-    'claude-sonnet-4-5': { input: 3, output: 15 },
-    'claude-haiku-4-5': { input: 0.8, output: 4 },
-    'claude-sonnet-4-20250514': { input: 3, output: 15 },
-    'claude-opus-4-20250514': { input: 15, output: 75 },
-    'claude-haiku-4-5-20251001': { input: 0.8, output: 4 },
-    // OpenAI
-    'gpt-5.4': { input: 5, output: 15 },
-    'gpt-5.4-pro': { input: 10, output: 30 },
-    'gpt-5.1': { input: 5, output: 15 },
-    'gpt-5-mini': { input: 1.5, output: 6 },
-    'gpt-5-nano': { input: 0.5, output: 2 },
-    'gpt-4.1': { input: 2, output: 8 },
-    'gpt-4.1-mini': { input: 0.4, output: 1.6 },
-    'gpt-4.1-nano': { input: 0.1, output: 0.4 },
-    'gpt-4o': { input: 2.5, output: 10 },
-    'gpt-4o-mini': { input: 0.15, output: 0.6 },
-    'o3': { input: 10, output: 40 },
-    'o3-mini': { input: 1.1, output: 4.4 },
-    'o4-mini': { input: 1.1, output: 4.4 },
-    // Google
-    'gemini-2.5-pro': { input: 1.25, output: 10 },
-    'gemini-2.5-flash': { input: 0.15, output: 0.6 },
-    // DeepSeek
-    'deepseek-chat': { input: 0.27, output: 1.1 },
-    'deepseek-reasoner': { input: 0.55, output: 2.19 },
-    // OpenRouter (uses provider/model format — pricing varies, use approximate)
-    'anthropic/claude-opus-4': { input: 15, output: 75 },
-    'anthropic/claude-sonnet-4': { input: 3, output: 15 },
-    'anthropic/claude-haiku-4': { input: 0.8, output: 4 },
-    'openai/gpt-4o': { input: 2.5, output: 10 },
-    'openai/gpt-4o-mini': { input: 0.15, output: 0.6 },
-    'google/gemini-2.5-pro': { input: 1.25, output: 10 },
-    'google/gemini-2.5-flash': { input: 0.15, output: 0.6 },
-    'deepseek/deepseek-chat-v3': { input: 0.27, output: 1.1 },
-    'meta-llama/llama-4-maverick': { input: 0.2, output: 0.6 },
-    'meta-llama/llama-4-scout': { input: 0.1, output: 0.3 },
-    'mistralai/mistral-large': { input: 2, output: 6 },
-    'qwen/qwen3-235b': { input: 0.5, output: 2 },
-  };
+// Static pricing table ($/M tokens)
+const STATIC_PRICING = {
+  // Anthropic
+  'claude-opus-4-6': { input: 15, output: 75 },
+  'claude-sonnet-4-6': { input: 3, output: 15 },
+  'claude-opus-4-5': { input: 15, output: 75 },
+  'claude-sonnet-4-5': { input: 3, output: 15 },
+  'claude-haiku-4-5': { input: 0.8, output: 4 },
+  'claude-sonnet-4-20250514': { input: 3, output: 15 },
+  'claude-opus-4-20250514': { input: 15, output: 75 },
+  'claude-haiku-4-5-20251001': { input: 0.8, output: 4 },
+  // OpenAI
+  'gpt-5.4': { input: 5, output: 15 },
+  'gpt-5.4-pro': { input: 10, output: 30 },
+  'gpt-5.1': { input: 5, output: 15 },
+  'gpt-5-mini': { input: 1.5, output: 6 },
+  'gpt-5-nano': { input: 0.5, output: 2 },
+  'gpt-4.1': { input: 2, output: 8 },
+  'gpt-4.1-mini': { input: 0.4, output: 1.6 },
+  'gpt-4.1-nano': { input: 0.1, output: 0.4 },
+  'gpt-4o': { input: 2.5, output: 10 },
+  'gpt-4o-mini': { input: 0.15, output: 0.6 },
+  'o3': { input: 10, output: 40 },
+  'o3-mini': { input: 1.1, output: 4.4 },
+  'o4-mini': { input: 1.1, output: 4.4 },
+  // Google
+  'gemini-2.5-pro': { input: 1.25, output: 10 },
+  'gemini-2.5-flash': { input: 0.15, output: 0.6 },
+  // DeepSeek
+  'deepseek-chat': { input: 0.27, output: 1.1 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19 },
+};
 
-  const rates = pricing[model] || { input: 3, output: 15 };
+// Calculate cost based on model. For OpenRouter models not in static table,
+// falls back to the live-fetched cache (populated by fetchOpenRouterPricing).
+function estimateCost(provider, model, inputTokens, outputTokens) {
+  let rates = STATIC_PRICING[model];
+
+  if (!rates && provider === 'openrouter' && openRouterPricingCache) {
+    rates = openRouterPricingCache[model];
+  }
+
+  // Final fallback: Claude Sonnet rates
+  if (!rates) rates = { input: 3, output: 15 };
+
   return (inputTokens * rates.input + outputTokens * rates.output) / 1_000_000;
 }
 
 module.exports = {
   createCompletion,
   estimateCost,
+  fetchOpenRouterPricing,
   runClaudeAgent,
   runCodexAgent,
   chatWithClaudeAgent,

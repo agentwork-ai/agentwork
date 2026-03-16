@@ -54,6 +54,14 @@ app.prepare().then(() => {
   const { initPlatforms } = require('./services/platforms');
   initPlatforms().catch((err) => console.error('[Platforms] init error:', err.message));
 
+  // Pre-warm OpenRouter pricing cache if key is configured
+  const { db: dbInit } = require('./db');
+  const orKey = dbInit.prepare("SELECT value FROM settings WHERE key = 'openrouter_api_key'").get()?.value;
+  if (orKey) {
+    const { fetchOpenRouterPricing } = require('./services/ai');
+    fetchOpenRouterPricing().catch(() => {});
+  }
+
   // Next.js handler for everything else
   server.all('*', (req, res) => handle(req, res));
 
