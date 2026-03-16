@@ -210,6 +210,12 @@ async function executeTask(taskId, agentId) {
       io.emit('agent:status_changed', { agentId, status: 'idle' });
     }
     io.emit('system:status_update');
+
+    // Auto-queue next task for this agent
+    const finalTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId);
+    if (finalTask?.status === 'done' && agentId) {
+      autoQueueNextTask(agentId);
+    }
   }
 }
 
@@ -1368,6 +1374,29 @@ function waitForUserReply(execState, timeout) {
       }
     }, 1000);
   });
+}
+
+// Auto-queue: after an agent completes a task, start the next 'todo' task for the same agent
+function autoQueueNextTask(agentId) {
+  const priorityOrder = { critical: 0, high: 1, medium: 2, low: 3 };
+  const nextTask = db.prepare(
+    "SELECT * FROM tasks WHERE agent_id = ? AND status = 'todo' AND trigger_type = 'manual' ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2 ELSE 3 END, created_at ASC LIMIT 1"
+  ).get(agentId);
+
+  if (nextTask && !activeExecutions.has(nextTask.id)) {
+    console.log(`[AutoQueue] Starting next task for agent ${agentId}: ${nextTask.title}`);
+    db.prepare("UPDATE tasks SET status = 'doing', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(nextTask.id);
+    const task = db.prepare(
+      'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+    ).get(nextTask.id);
+    if (task) {
+      task.execution_logs = JSON.parse(task.execution_logs || '[]');
+      task.attachments = JSON.parse(task.attachments || '[]');
+      if (io) io.emit('task:updated', task);
+    }
+    // Delay briefly to let previous execution fully clean up
+    setTimeout(() => executeTask(nextTask.id, agentId).catch(() => {}), 1000);
+  }
 }
 
 function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
