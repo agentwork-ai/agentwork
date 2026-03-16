@@ -105,7 +105,7 @@
 - [ ] **Multi-User Support** — User accounts with admin/operator/viewer roles for shared AgentWork instances.
 - [ ] **Agent Assignment Suggestions** — AI-powered agent recommendation for new tasks based on description, role, past performance, and workload.
 - [x] **Shared Agent Memory** — TEAM.md shared across agents on the same project so knowledge discovered by one agent is available to all.
-- [ ] **Task Comments / Activity Log** — Discussion thread on each task, separate from execution logs, for user notes and instructions.
+- [x] **Task Comments / Activity Log** — Discussion thread on each task, separate from execution logs, for user notes and instructions.
 - [ ] **@-Mention Agents in Task Descriptions** — Reference agents by name to notify them or add them as collaborators.
 
 ## 11. Automation & CI/CD
