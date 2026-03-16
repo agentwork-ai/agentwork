@@ -36,6 +36,40 @@ app.prepare().then(() => {
   server.use('/api/chat', require('./routes/chat'));
   server.use('/api/files', require('./routes/files'));
 
+  // Webhook endpoint for external triggers
+  server.post('/api/webhooks/trigger', (req, res) => {
+    const { db: dbHook, uuidv4: uuidHook, logAudit: logAuditHook } = require('./db');
+    const { title, description, agent_id, project_id, priority, status } = req.body;
+    if (!title) return res.status(400).json({ error: 'title is required' });
+
+    const id = uuidHook();
+    const targetStatus = status || 'doing';
+
+    dbHook.prepare(
+      `INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)`
+    ).run(id, title, description || '', targetStatus, priority || 'medium', agent_id || null, project_id || null);
+
+    const task = dbHook.prepare(
+      'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+    ).get(id);
+    task.execution_logs = JSON.parse(task.execution_logs || '[]');
+    task.attachments = JSON.parse(task.attachments || '[]');
+    task.flow_items = JSON.parse(task.flow_items || '[]');
+    task.depends_on = JSON.parse(task.depends_on || '[]');
+
+    logAuditHook('webhook_trigger', 'task', id, { title });
+    const ioRef = server.get('io');
+    if (ioRef) ioRef.emit('task:created', task);
+
+    // Auto-execute if moved to doing with an agent
+    if (targetStatus === 'doing' && agent_id) {
+      const { executeTask } = require('./services/executor');
+      executeTask(id, agent_id).catch((err) => console.error(`[Webhook] Execute error:`, err));
+    }
+
+    res.status(201).json(task);
+  });
+
   // Status endpoint
   const { getSystemStatus } = require('./socket');
   server.get('/api/status', (req, res) => {
