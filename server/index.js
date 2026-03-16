@@ -50,6 +50,10 @@ app.prepare().then(() => {
   const { initExecutor } = require('./services/executor');
   initExecutor(io);
 
+  // Initialize chat platform bots (Telegram/Slack)
+  const { initPlatforms } = require('./services/platforms');
+  initPlatforms().catch((err) => console.error('[Platforms] init error:', err.message));
+
   // Next.js handler for everything else
   server.all('*', (req, res) => handle(req, res));
 
@@ -62,6 +66,15 @@ app.prepare().then(() => {
   const shutdown = () => {
     console.log('\n[AgentHub] Shutting down...');
     const { db } = require('./db');
+    // Stop platform bots
+    try {
+      const { activeBots } = require('./services/platforms');
+      if (activeBots) {
+        for (const [, entry] of activeBots) {
+          try { entry.stop(); } catch {}
+        }
+      }
+    } catch {}
     // Set all agents to offline
     db.prepare("UPDATE agents SET status = 'offline'").run();
     httpServer.close(() => {

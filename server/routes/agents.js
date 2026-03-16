@@ -4,6 +4,11 @@ const { db, uuidv4, DATA_DIR } = require('../db');
 const fs = require('fs');
 const path = require('path');
 
+// Lazy-load platforms to avoid circular deps
+function getPlatforms() {
+  try { return require('../services/platforms'); } catch { return null; }
+}
+
 // Get all agents
 router.get('/', (req, res) => {
   const agents = db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all();
@@ -29,14 +34,17 @@ router.get('/:id', (req, res) => {
 });
 
 // Create (hire) agent
-router.post('/', (req, res) => {
-  const { name, avatar, role, auth_type, provider, model, personality } = req.body;
+router.post('/', async (req, res) => {
+  const { name, avatar, role, auth_type, provider, model, personality,
+          chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   db.prepare(
-    'INSERT INTO agents (id, name, avatar, role, auth_type, provider, model, status, personality) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)'
+    `INSERT INTO agents (id, name, avatar, role, auth_type, provider, model, status, personality,
+      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     name,
@@ -46,7 +54,12 @@ router.post('/', (req, res) => {
     provider || 'anthropic',
     model || '',
     'idle',
-    personality || ''
+    personality || '',
+    chat_enabled ? 1 : 0,
+    chat_platform || '',
+    chat_token || '',
+    chat_app_token || '',
+    chat_allowed_ids || ''
   );
 
   // Create memory directory with OpenClaw architecture
@@ -103,19 +116,30 @@ No memories recorded yet.
   const io = req.app.get('io');
   if (io) io.emit('agent:created', agent);
 
+  // Start platform bot if enabled
+  if (chat_enabled) {
+    const platforms = getPlatforms();
+    if (platforms) platforms.startBotForAgent(agent).catch(() => {});
+  }
+
   res.status(201).json(agent);
 });
 
 // Update agent
-router.put('/:id', (req, res) => {
+router.put('/:id', async (req, res) => {
   const existing = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Agent not found' });
 
-  const { name, avatar, role, auth_type, provider, model, status, personality } = req.body;
+  const { name, avatar, role, auth_type, provider, model, status, personality,
+          chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids } = req.body;
+
+  const newChatEnabled = chat_enabled !== undefined ? (chat_enabled ? 1 : 0) : existing.chat_enabled;
 
   db.prepare(
     `UPDATE agents SET name = ?, avatar = ?, role = ?, auth_type = ?, provider = ?, model = ?,
-     status = ?, personality = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+     status = ?, personality = ?,
+     chat_enabled = ?, chat_platform = ?, chat_token = ?, chat_app_token = ?, chat_allowed_ids = ?,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     name || existing.name,
     avatar || existing.avatar,
@@ -125,12 +149,27 @@ router.put('/:id', (req, res) => {
     model !== undefined ? model : existing.model,
     status || existing.status,
     personality !== undefined ? personality : existing.personality,
+    newChatEnabled,
+    chat_platform !== undefined ? chat_platform : existing.chat_platform,
+    chat_token !== undefined ? chat_token : existing.chat_token,
+    chat_app_token !== undefined ? chat_app_token : existing.chat_app_token,
+    chat_allowed_ids !== undefined ? chat_allowed_ids : existing.chat_allowed_ids,
     req.params.id
   );
 
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
   const io = req.app.get('io');
   if (io) io.emit('agent:updated', agent);
+
+  // Restart platform bot with new config
+  const platforms = getPlatforms();
+  if (platforms) {
+    if (newChatEnabled) {
+      platforms.startBotForAgent(agent).catch(() => {});
+    } else {
+      platforms.stopBotForAgent(agent.id).catch(() => {});
+    }
+  }
 
   res.json(agent);
 });
@@ -162,6 +201,10 @@ router.delete('/:id', (req, res) => {
   if (fs.existsSync(agentDir)) {
     fs.rmSync(agentDir, { recursive: true });
   }
+
+  // Stop platform bot if running
+  const platforms = getPlatforms();
+  if (platforms) platforms.stopBotForAgent(req.params.id).catch(() => {});
 
   db.prepare('DELETE FROM agents WHERE id = ?').run(req.params.id);
 

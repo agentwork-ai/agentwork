@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
   Plus, Trash2, Edit2, Settings2, Brain, FileText,
-  User, Shield, BookOpen, X, RotateCcw, Key, Terminal,
+  User, Shield, BookOpen, X, RotateCcw, Key, Terminal, MessageCircle,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -228,6 +228,11 @@ export default function AgentsPage() {
                         <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                           {agent.provider}{agent.model ? ` / ${agent.model}` : ''}
                         </span>
+                        {agent.chat_enabled ? (
+                          <span className="badge text-[10px]" style={{ background: '#7950f220', color: '#7950f2' }}>
+                            {agent.chat_platform === 'telegram' ? '✈ Telegram' : '💬 Slack'}
+                          </span>
+                        ) : null}
                       </div>
                       <p className="text-[10px] mt-1" style={{ color: statusColors[agent.status] || statusColors.idle }}>
                         {statusLabels[agent.status] || 'Online'}
@@ -279,6 +284,11 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     provider: agent?.provider || 'anthropic',
     model: agent?.model || '',
     personality: agent?.personality || '',
+    chat_enabled: agent?.chat_enabled ? true : false,
+    chat_platform: agent?.chat_platform || 'telegram',
+    chat_token: agent?.chat_token || '',
+    chat_app_token: agent?.chat_app_token || '',
+    chat_allowed_ids: agent?.chat_allowed_ids || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -374,7 +384,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="card p-6 w-full max-w-md max-h-[85vh] overflow-auto animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
+      <div className="card p-6 w-full max-w-lg max-h-[85vh] overflow-auto animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>
             {agent ? 'Edit Agent' : 'Hire New Agent'}
@@ -496,6 +506,105 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             <label className="label">Personality / Instructions</label>
             <textarea className="input" value={form.personality} onChange={(e) => setForm({ ...form, personality: e.target.value })}
               placeholder="e.g., Methodical, always writes tests, prefers functional patterns..." rows={3} />
+          </div>
+
+          {/* Chat Platform Integration */}
+          <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <MessageCircle size={16} style={{ color: 'var(--text-secondary)' }} />
+                <label className="label mb-0" style={{ marginBottom: 0 }}>Chat Platform</label>
+              </div>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {form.chat_enabled ? 'Enabled' : 'Disabled'}
+                </span>
+                <div
+                  className="relative w-10 h-5 rounded-full transition-colors"
+                  style={{ background: form.chat_enabled ? 'var(--accent)' : 'var(--border)' }}
+                  onClick={() => setForm({ ...form, chat_enabled: !form.chat_enabled })}
+                >
+                  <div className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                    style={{ left: form.chat_enabled ? '22px' : '2px' }} />
+                </div>
+              </label>
+            </div>
+
+            {form.chat_enabled && (
+              <div className="space-y-3">
+                <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  Connect this agent to a messaging platform so users can chat directly via Telegram or Slack.
+                </p>
+
+                {/* Platform selector */}
+                <div className="grid grid-cols-2 gap-2">
+                  {[
+                    { id: 'telegram', label: '✈ Telegram', desc: 'Bot API' },
+                    { id: 'slack', label: '💬 Slack', desc: 'Socket Mode' },
+                  ].map((p) => (
+                    <button key={p.id} type="button"
+                      className="p-2.5 rounded-lg text-left text-xs transition-all"
+                      style={{
+                        background: form.chat_platform === p.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                        border: form.chat_platform === p.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                        color: form.chat_platform === p.id ? 'var(--accent)' : 'var(--text-secondary)',
+                      }}
+                      onClick={() => setForm({ ...form, chat_platform: p.id })}
+                    >
+                      <span className="font-medium">{p.label}</span>
+                      <span className="block opacity-60">{p.desc}</span>
+                    </button>
+                  ))}
+                </div>
+
+                {/* Bot Token */}
+                <div>
+                  <label className="label text-xs">
+                    {form.chat_platform === 'telegram' ? 'Bot Token' : 'Bot Token (xoxb-...)'}
+                  </label>
+                  <input className="input text-xs font-mono" type="password"
+                    value={form.chat_token}
+                    onChange={(e) => setForm({ ...form, chat_token: e.target.value })}
+                    placeholder={form.chat_platform === 'telegram'
+                      ? '1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw'
+                      : 'xoxb-your-bot-token'}
+                  />
+                  {form.chat_platform === 'telegram' && (
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                      Create a bot with @BotFather on Telegram to get this token.
+                    </p>
+                  )}
+                </div>
+
+                {/* App Token (Slack only) */}
+                {form.chat_platform === 'slack' && (
+                  <div>
+                    <label className="label text-xs">App Token (xapp-...)</label>
+                    <input className="input text-xs font-mono" type="password"
+                      value={form.chat_app_token}
+                      onChange={(e) => setForm({ ...form, chat_app_token: e.target.value })}
+                      placeholder="xapp-your-app-token"
+                    />
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                      Required for Socket Mode. Enable in your Slack App settings → Basic Information.
+                    </p>
+                  </div>
+                )}
+
+                {/* Allowed User IDs */}
+                <div>
+                  <label className="label text-xs">Allowed User IDs <span style={{ color: 'var(--text-tertiary)', fontWeight: 400 }}>(optional)</span></label>
+                  <input className="input text-xs"
+                    value={form.chat_allowed_ids}
+                    onChange={(e) => setForm({ ...form, chat_allowed_ids: e.target.value })}
+                    placeholder="123456789, 987654321"
+                  />
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Comma-separated user IDs. Leave empty to allow anyone with access to the bot.
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="flex justify-between pt-2">

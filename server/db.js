@@ -98,6 +98,24 @@ db.exec(`
   );
 `);
 
+// Migrate agents table: add platform columns if missing
+const agentCols = db.prepare("PRAGMA table_info(agents)").all().map((c) => c.name);
+if (!agentCols.includes('chat_enabled')) {
+  db.exec("ALTER TABLE agents ADD COLUMN chat_enabled INTEGER DEFAULT 0");
+}
+if (!agentCols.includes('chat_platform')) {
+  db.exec("ALTER TABLE agents ADD COLUMN chat_platform TEXT DEFAULT ''");
+}
+if (!agentCols.includes('chat_token')) {
+  db.exec("ALTER TABLE agents ADD COLUMN chat_token TEXT DEFAULT ''");
+}
+if (!agentCols.includes('chat_app_token')) {
+  db.exec("ALTER TABLE agents ADD COLUMN chat_app_token TEXT DEFAULT ''");
+}
+if (!agentCols.includes('chat_allowed_ids')) {
+  db.exec("ALTER TABLE agents ADD COLUMN chat_allowed_ids TEXT DEFAULT ''");
+}
+
 // Seed default settings if not present
 const defaultSettings = {
   anthropic_api_key: '',

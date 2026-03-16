@@ -28,10 +28,10 @@ function initExecutor(socketIo) {
   });
 }
 
-async function handleDirectChat(agentId, content) {
+async function handleDirectChat(agentId, content, platformChatId) {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
   if (!agent) {
-    sendMessage(agentId, 'agent', 'Error: Agent not found.');
+    sendMessage(agentId, 'agent', 'Error: Agent not found.', null, platformChatId);
     return;
   }
 
@@ -39,13 +39,13 @@ async function handleDirectChat(agentId, content) {
 
   try {
     if (agent.auth_type === 'cli') {
-      await handleCliChat(agent, content);
+      await handleCliChat(agent, content, platformChatId);
     } else {
-      await handleApiChat(agent, content);
+      await handleApiChat(agent, content, platformChatId);
     }
   } catch (err) {
     console.error(`[Chat] Unhandled error for agent ${agent.name}:`, err);
-    sendMessage(agentId, 'agent', `Error: ${err.message}`);
+    sendMessage(agentId, 'agent', `Error: ${err.message}`, null, platformChatId);
     db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'idle' });
   }
@@ -53,7 +53,7 @@ async function handleDirectChat(agentId, content) {
 
 // ─── Direct Chat Handlers ───
 
-async function handleCliChat(agent, userMessage) {
+async function handleCliChat(agent, userMessage, platformChatId) {
   const agentId = agent.id;
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
@@ -92,18 +92,18 @@ async function handleCliChat(agent, userMessage) {
     } else {
       throw new Error(`Unknown CLI provider: ${agent.provider}`);
     }
-    sendMessage(agentId, 'agent', responseContent);
+    sendMessage(agentId, 'agent', responseContent, null, platformChatId);
     reflectAfterChat(agent, agentDir, userMessage, responseContent);
   } catch (err) {
     console.error(`[Chat CLI] Error for agent ${agent.name}:`, err);
-    sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`);
+    sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`, null, platformChatId);
   } finally {
     db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'idle' });
   }
 }
 
-async function handleApiChat(agent, userMessage) {
+async function handleApiChat(agent, userMessage, platformChatId) {
   const agentId = agent.id;
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
@@ -134,13 +134,13 @@ async function handleApiChat(agent, userMessage) {
 
     const response = await createCompletion(agent.provider, agent.model, messages);
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
-    sendMessage(agentId, 'agent', response.content);
+    sendMessage(agentId, 'agent', response.content, null, platformChatId);
 
     // Fire-and-forget memory reflection
     reflectAfterChat(agent, agentDir, userMessage, response.content);
   } catch (err) {
     console.error(`[Chat API] Error for agent ${agent.name}:`, err);
-    sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`);
+    sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`, null, platformChatId);
   } finally {
     db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
     io.emit('agent:status_changed', { agentId, status: 'idle' });
@@ -766,13 +766,20 @@ function moveTask(taskId, status) {
   }
 }
 
-function sendMessage(agentId, sender, content, taskId) {
+function sendMessage(agentId, sender, content, taskId, platformChatId) {
   const id = uuidv4();
   db.prepare('INSERT INTO messages (id, agent_id, sender, content, task_id) VALUES (?, ?, ?, ?, ?)').run(id, agentId, sender, content, taskId || null);
   const message = { id, agent_id: agentId, sender, content, task_id: taskId || null, created_at: new Date().toISOString() };
   if (io) {
     io.emit('chat:message', message);
     if (sender === 'agent') io.emit('notification', { agentId, message: content.slice(0, 100) });
+  }
+  // Route agent response back to platform (Telegram/Slack)
+  if (sender === 'agent' && platformChatId) {
+    try {
+      const { agentBus } = require('./platforms');
+      agentBus.emit(`reply:${agentId}:${platformChatId}`, content);
+    } catch {}
   }
 }
 
