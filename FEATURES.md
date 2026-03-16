@@ -32,15 +32,15 @@
 
 ## 3. UI/UX Improvements
 
-- [ ] **Syntax-Highlighted Code Viewer** — Add syntax highlighting (Prism.js or highlight.js) to the project file viewer based on file extension.
+- [x] **Syntax-Highlighted Code Viewer** — Add syntax highlighting (Prism.js or highlight.js) to the project file viewer based on file extension.
 - [x] **Execution Log Filtering** — Add log-level filtering (show only errors, hide thinking steps), text search within logs, and timestamp-relative display.
-- [ ] **In-Line File Editor** — Add the ability to edit and save files directly from the dashboard Projects page.
+- [x] **In-Line File Editor** — Add the ability to edit and save files directly from the dashboard Projects page.
 - [x] **Markdown Rendering in Chat** — Render agent responses with proper markdown formatting (code blocks, lists, headers) instead of raw text.
 - [x] **Keyboard Shortcuts** — Cmd/Ctrl+K for quick task creation, Cmd+/ to toggle sidebar, Escape to close modals, arrow keys for Kanban navigation.
 - [x] **Kanban Board Swimlanes** — Add optional horizontal swimlanes by agent, project, or priority.
 - [x] **Live Activity Feed** — Replace the static "Recent Tasks" list on the home page with a real-time event stream showing task completions, agent status changes, budget alerts, and error notifications.
 - [x] **Responsive Mobile Layout** — Add a responsive hamburger menu and touch-friendly Kanban interactions for mobile screens.
-- [ ] **Diff Viewer for File Changes** — Show a side-by-side diff in the execution log when agents modify files.
+- [x] **Diff Viewer for File Changes** — Show a side-by-side diff in the execution log when agents modify files.
 - [x] **Onboarding Wizard** — A guided setup wizard for first-time users: add an API key, create a project, hire an agent, run a first task.
 
 ## 4. Monitoring, Observability & Debugging
@@ -119,7 +119,7 @@
 
 - [x] **Git Status in File Explorer** — Show modified/untracked/staged indicators on files in the project tree.
 - [x] **File Search in Projects** — Filename and full-text content search within a project.
-- [ ] **Multi-File Diff Review** — Consolidated PR-style diff view of all agent changes after task completion.
+- [x] **Multi-File Diff Review** — Consolidated PR-style diff view of all agent changes after task completion.
 - [x] **PROJECT.md Regeneration** — One-click button to refresh the auto-generated PROJECT.md for a project.
 
 ## 13. Configuration & Customization

@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
+import CodeViewer from '@/components/CodeViewer';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
   Plus, FolderOpen, Trash2, Edit2, ChevronRight, ChevronDown,
-  FileText, Folder, X, Search, RefreshCw,
+  FileText, Folder, X, Search, RefreshCw, Pencil, Save,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -24,6 +25,9 @@ export default function ProjectsPage() {
   const [searchResults, setSearchResults] = useState(null);
   const [searching, setSearching] = useState(false);
   const [searchContent, setSearchContent] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editContent, setEditContent] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const loadProjects = useCallback(async () => {
     try {
@@ -73,6 +77,8 @@ export default function ProjectsPage() {
     try {
       const data = await api.readFile(path);
       setFileContent({ path, ...data });
+      setEditMode(false);
+      setEditContent('');
     } catch (err) {
       toast.error(err.message);
     }
@@ -244,15 +250,81 @@ export default function ProjectsPage() {
                   {fileContent ? (
                     <>
                       <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
-                        <span className="text-xs font-mono" style={{ color: 'var(--text-secondary)' }}>{fileContent.path}</span>
-                        <button onClick={() => setFileContent(null)} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}>
-                          <X size={14} />
-                        </button>
+                        <span className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>{fileContent.path}</span>
+                        <div className="flex items-center gap-1 shrink-0">
+                          {editMode ? (
+                            <>
+                              <button
+                                onClick={async () => {
+                                  setSaving(true);
+                                  try {
+                                    await api.writeFile(fileContent.path, editContent);
+                                    setFileContent({ ...fileContent, content: editContent });
+                                    setEditMode(false);
+                                    toast.success('File saved');
+                                  } catch (err) {
+                                    toast.error('Save failed: ' + err.message);
+                                  } finally {
+                                    setSaving(false);
+                                  }
+                                }}
+                                disabled={saving}
+                                className="flex items-center gap-1 text-xs py-1 px-2.5 rounded font-medium transition-colors"
+                                style={{ background: 'var(--accent)', color: 'white', opacity: saving ? 0.6 : 1 }}
+                              >
+                                <Save size={12} />
+                                {saving ? 'Saving...' : 'Save'}
+                              </button>
+                              <button
+                                onClick={() => { setEditMode(false); setEditContent(''); }}
+                                className="flex items-center gap-1 text-xs py-1 px-2.5 rounded font-medium transition-colors"
+                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+                              >
+                                Cancel
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              onClick={() => { setEditMode(true); setEditContent(fileContent.content); }}
+                              className="flex items-center gap-1 text-xs py-1 px-2 rounded transition-colors"
+                              style={{ color: 'var(--text-tertiary)' }}
+                              title="Edit file"
+                            >
+                              <Pencil size={12} />
+                              Edit
+                            </button>
+                          )}
+                          <button onClick={() => { setFileContent(null); setEditMode(false); setEditContent(''); }} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}>
+                            <X size={14} />
+                          </button>
+                        </div>
                       </div>
-                      <pre className="flex-1 overflow-auto p-4 text-xs leading-relaxed font-mono"
-                        style={{ color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}>
-                        {fileContent.content}
-                      </pre>
+                      {editMode ? (
+                        <div className="flex-1 flex min-h-0" style={{ background: 'var(--bg-secondary)' }}>
+                          <div className="py-4 pl-3 pr-1 text-right select-none" style={{ color: 'var(--text-tertiary)', fontFamily: 'monospace', fontSize: '12px', lineHeight: '1.625' }}>
+                            {editContent.split('\n').map((_, i) => (
+                              <div key={i}>{i + 1}</div>
+                            ))}
+                          </div>
+                          <textarea
+                            className="flex-1 p-4 pl-2 text-xs leading-relaxed font-mono resize-none outline-none border-none min-h-0"
+                            style={{
+                              color: 'var(--text-primary)',
+                              background: 'var(--bg-secondary)',
+                              tabSize: 2,
+                              caretColor: 'var(--accent)',
+                            }}
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            spellCheck={false}
+                            autoFocus
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex-1 overflow-hidden">
+                          <CodeViewer content={fileContent.content} path={fileContent.path} />
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="flex-1 flex items-center justify-center">

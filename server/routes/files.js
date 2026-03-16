@@ -35,6 +35,25 @@ router.get('/read', (req, res) => {
   }
 });
 
+// Write/update a file's content
+router.post('/write', (req, res) => {
+  const { path: filePath, content } = req.body;
+  if (!filePath) return res.status(400).json({ error: 'Path is required' });
+  if (typeof content !== 'string') return res.status(400).json({ error: 'Content must be a string' });
+
+  if (!isPathAllowed(filePath)) {
+    return res.status(403).json({ error: 'Access denied: file is outside registered project directories' });
+  }
+
+  try {
+    fs.writeFileSync(filePath, content, 'utf8');
+    const stat = fs.statSync(filePath);
+    res.json({ success: true, size: stat.size });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Open native OS folder picker dialog
 router.get('/browse-folder', (req, res) => {
   const platform = process.platform;

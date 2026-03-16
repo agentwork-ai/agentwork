@@ -40,6 +40,8 @@ export const api = {
   regenerateProjectDoc: (id) => request(`/api/projects/${id}/regenerate-doc`, { method: 'POST' }),
   getProjectHealth: (id) => request(`/api/projects/${id}/health`),
   getProjectGitStatus: (id) => request(`/api/projects/${id}/git-status`),
+  getProjectDiff: (id, ref) =>
+    request(`/api/projects/${id}/diff${ref ? '?ref=' + encodeURIComponent(ref) : ''}`),
   searchProjectFiles: (id, query, searchContent) =>
     request(`/api/projects/${id}/search?q=${encodeURIComponent(query)}${searchContent ? '&content=true' : ''}`),
 
@@ -88,6 +90,7 @@ export const api = {
 
   // Files
   readFile: (path) => request(`/api/files/read?path=${encodeURIComponent(path)}`),
+  writeFile: (path, content) => request('/api/files/write', { method: 'POST', body: JSON.stringify({ path, content }) }),
   browseFolder: () => request('/api/files/browse-folder'),
 
   // Templates

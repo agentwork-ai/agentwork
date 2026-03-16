@@ -231,6 +231,70 @@ router.get('/:id/git-status', (req, res) => {
   }
 });
 
+// Get git diff for a project
+router.get('/:id/diff', (req, res) => {
+  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
+  if (!project) return res.status(404).json({ error: 'Project not found' });
+
+  try {
+    const { execSync } = require('child_process');
+    execSync('git rev-parse --is-inside-work-tree', { cwd: project.path, stdio: 'pipe' });
+
+    const ref = req.query.ref || null;
+    // Sanitize ref to prevent command injection — only allow safe git ref characters
+    if (ref && !/^[a-zA-Z0-9_.\/~^@{}\-]+$/.test(ref)) {
+      return res.status(400).json({ error: 'Invalid ref parameter' });
+    }
+    let diff;
+    if (ref) {
+      // Diff against a specific ref (e.g. HEAD~1, a commit SHA, a branch)
+      diff = execSync(`git diff ${ref}`, {
+        cwd: project.path,
+        encoding: 'utf8',
+        timeout: 15000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+    } else {
+      // Default: show working tree changes (staged + unstaged)
+      diff = execSync('git diff HEAD', {
+        cwd: project.path,
+        encoding: 'utf8',
+        timeout: 15000,
+        maxBuffer: 10 * 1024 * 1024,
+      });
+      // If no diff against HEAD (e.g. no commits yet or everything committed),
+      // fall back to just unstaged changes
+      if (!diff.trim()) {
+        diff = execSync('git diff', {
+          cwd: project.path,
+          encoding: 'utf8',
+          timeout: 15000,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+      }
+    }
+
+    res.json({ diff, ref: ref || 'HEAD' });
+  } catch (err) {
+    // If git diff HEAD fails (e.g. no commits), try just git diff
+    if (err.stderr && err.stderr.includes('unknown revision')) {
+      try {
+        const { execSync } = require('child_process');
+        const diff = execSync('git diff', {
+          cwd: project.path,
+          encoding: 'utf8',
+          timeout: 15000,
+          maxBuffer: 10 * 1024 * 1024,
+        });
+        return res.json({ diff, ref: 'working-tree' });
+      } catch {
+        // fall through
+      }
+    }
+    res.json({ diff: '', ref: req.query.ref || 'HEAD', error: 'Not a git repository or git diff failed' });
+  }
+});
+
 // Get project file tree
 router.get('/:id/files', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
