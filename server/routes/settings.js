@@ -100,6 +100,45 @@ router.get('/budget/by-model', (req, res) => {
   res.json(rows);
 });
 
+// Generate usage report
+router.get('/report', (req, res) => {
+  const days = parseInt(req.query.days || '30');
+
+  const totalTasks = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE created_at >= date('now', ?)").get(`-${days} days`).c;
+  const completedTasks = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'done' AND completed_at >= date('now', ?)").get(`-${days} days`).c;
+  const blockedTasks = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE status = 'blocked' AND updated_at >= date('now', ?)").get(`-${days} days`).c;
+
+  const spend = db.prepare("SELECT COALESCE(SUM(cost_usd), 0) as total, COALESCE(SUM(input_tokens + output_tokens), 0) as tokens FROM budget_logs WHERE created_at >= date('now', ?)").get(`-${days} days`);
+
+  const topAgents = db.prepare(
+    `SELECT a.name, a.avatar, COUNT(t.id) as tasks_done, COALESCE(SUM(b.cost_usd), 0) as cost
+     FROM agents a
+     LEFT JOIN tasks t ON t.agent_id = a.id AND t.status = 'done' AND t.completed_at >= date('now', ?)
+     LEFT JOIN budget_logs b ON b.agent_id = a.id AND b.created_at >= date('now', ?)
+     GROUP BY a.id ORDER BY tasks_done DESC LIMIT 5`
+  ).all(`-${days} days`, `-${days} days`);
+
+  const topModels = db.prepare(
+    `SELECT model, provider, SUM(cost_usd) as cost, SUM(input_tokens + output_tokens) as tokens, COUNT(*) as calls
+     FROM budget_logs WHERE created_at >= date('now', ?)
+     GROUP BY provider, model ORDER BY cost DESC LIMIT 5`
+  ).all(`-${days} days`);
+
+  const dailySpend = db.prepare(
+    `SELECT date(created_at) as date, SUM(cost_usd) as cost
+     FROM budget_logs WHERE created_at >= date('now', ?)
+     GROUP BY date(created_at) ORDER BY date ASC`
+  ).all(`-${days} days`);
+
+  res.json({
+    period: `Last ${days} days`,
+    tasks: { total: totalTasks, completed: completedTasks, blocked: blockedTasks },
+    spend: { total: spend.total, tokens: spend.tokens },
+    topAgents, topModels, dailySpend,
+    generatedAt: new Date().toISOString(),
+  });
+});
+
 // Export data as JSON
 router.get('/export', (req, res) => {
   const type = req.query.type || 'all';

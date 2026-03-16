@@ -96,6 +96,7 @@ export const api = {
   deleteTemplate: (id) => request(`/api/templates/${id}`, { method: 'DELETE' }),
 
   // Export
+  getUsageReport: (days) => request(`/api/settings/report?days=${days || 30}`),
   exportData: (type) => request(`/api/settings/export?type=${type || 'all'}`),
 
   // Status
