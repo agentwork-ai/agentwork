@@ -127,7 +127,7 @@
 - [ ] **Custom Agent Tools** — User-defined tools with name, description, parameters, and a bash command template, added to specific agents.
 - [x] **Configurable Max Iterations** — Per-task or global iteration limit instead of the hardcoded 30.
 - [ ] **Custom Accent Colors** — Theme customization with preset color schemes (purple, green, orange) beyond dark/light.
-- [ ] **Granular Notification Preferences** — Per-event-type controls: task complete, task blocked, budget threshold, quiet hours.
+- [x] **Granular Notification Preferences** — Per-event-type controls: task complete, task blocked, budget threshold, quiet hours.
 - [x] **Per-Project Default Agent** — Auto-assign a specific agent when creating new tasks for a project.
 - [x] **Custom Memory Files** — Add project-specific memory files beyond the standard 4 (SOUL, USER, AGENTS, MEMORY).
 

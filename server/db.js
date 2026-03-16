@@ -183,6 +183,10 @@ const defaultSettings = {
   rate_limit_ms: '0',
   max_concurrent_executions: '3',
   dashboard_password: '',
+  notify_task_complete: 'true',
+  notify_task_blocked: 'true',
+  notify_budget_threshold: 'true',
+  notify_agent_messages: 'true',
 };
 
 // Allow env var overrides: AGENTWORK_SETTING_<KEY> (e.g., AGENTWORK_SETTING_ANTHROPIC_API_KEY)
