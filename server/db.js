@@ -179,6 +179,15 @@ const defaultSettings = {
   task_timeout_minutes: '0',
 };
 
+// Allow env var overrides: AGENTWORK_SETTING_<KEY> (e.g., AGENTWORK_SETTING_ANTHROPIC_API_KEY)
+const envPrefix = 'AGENTWORK_SETTING_';
+for (const [envKey, envValue] of Object.entries(process.env)) {
+  if (envKey.startsWith(envPrefix) && envValue) {
+    const settingKey = envKey.slice(envPrefix.length).toLowerCase();
+    defaultSettings[settingKey] = envValue;
+  }
+}
+
 const insertSetting = db.prepare(
   'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)'
 );

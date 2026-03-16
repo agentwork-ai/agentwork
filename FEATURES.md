@@ -82,7 +82,7 @@
 - [ ] **TypeScript Migration** — Add TypeScript or JSDoc type annotations for better IDE support and fewer runtime errors.
 - [ ] **Test Suite** — Unit tests for AI service, executor logic, scheduler, and integration tests for API routes.
 - [ ] **Plugin System** — Allow third-party plugins that register new agent tools, platform integrations, or custom task types without modifying core code.
-- [ ] **Env Var Override for All Settings** — Allow all settings (API keys, budgets) to be set via environment variables for Docker/CI deployments.
+- [x] **Env Var Override for All Settings** — Allow all settings (API keys, budgets) to be set via environment variables for Docker/CI deployments.
 
 ## 8. Performance & Reliability
 
