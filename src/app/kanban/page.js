@@ -328,7 +328,7 @@ export default function KanbanPage() {
                             onChange={(e) => setQuickAddPriority(e.target.value)}
                           >
                             {PRIORITIES.map((p) => (
-                              <option key={p} value={p}>{p}</option>
+                              <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
                             ))}
                           </select>
 
