@@ -84,6 +84,7 @@ export default function OnboardingWizard({ onComplete }) {
   const [apiKeys, setApiKeys] = useState({
     anthropic_api_key: '',
     openai_api_key: '',
+    openrouter_api_key: '',
   });
 
   // Step 3: Project
@@ -91,11 +92,13 @@ export default function OnboardingWizard({ onComplete }) {
   const [browsing, setBrowsing] = useState(false);
 
   // Step 4: Agent
+  const [agentAuthType, setAgentAuthType] = useState('api'); // 'api' or 'cli'
   const [agent, setAgent] = useState({
     name: '',
     role: 'General Developer',
     provider: 'anthropic',
     model: 'claude-sonnet-4-6',
+    customModel: '',
   });
 
   const currentStep = STEPS[step];
@@ -137,6 +140,7 @@ export default function OnboardingWizard({ onComplete }) {
       const keysToSave = {};
       if (apiKeys.anthropic_api_key) keysToSave.anthropic_api_key = apiKeys.anthropic_api_key;
       if (apiKeys.openai_api_key) keysToSave.openai_api_key = apiKeys.openai_api_key;
+      if (apiKeys.openrouter_api_key) keysToSave.openrouter_api_key = apiKeys.openrouter_api_key;
       if (Object.keys(keysToSave).length > 0) {
         await api.updateSettings(keysToSave);
         toast.success('API keys saved');
@@ -175,12 +179,15 @@ export default function OnboardingWizard({ onComplete }) {
     }
     setSaving(true);
     try {
+      const modelId = agent.provider === 'openrouter' && agent.customModel
+        ? agent.customModel
+        : agent.model;
       await api.createAgent({
         name: agent.name,
         role: agent.role,
-        auth_type: 'api',
-        provider: agent.provider,
-        model: agent.model,
+        auth_type: agentAuthType,
+        provider: agentAuthType === 'cli' ? 'anthropic' : agent.provider,
+        model: agentAuthType === 'cli' ? '' : modelId,
       });
       toast.success('Agent hired!');
       handleFinish();
@@ -340,6 +347,35 @@ export default function OnboardingWizard({ onComplete }) {
                     </button>
                   </div>
                 </div>
+                <div>
+                  <label className="label">OpenRouter API Key <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(200+ models via one key)</span></label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.openrouter ? 'text' : 'password'}
+                      value={apiKeys.openrouter_api_key}
+                      onChange={(e) =>
+                        setApiKeys({ ...apiKeys, openrouter_api_key: e.target.value })
+                      }
+                      placeholder="sk-or-..."
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setShowKeys((p) => ({ ...p, openrouter: !p.openrouter }))}
+                    >
+                      {showKeys.openrouter ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Get a key at openrouter.ai — access Claude, GPT, Gemini, and more with one key
+                  </p>
+                </div>
+                <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                    Or skip API keys entirely — you can use <strong>Claude Code CLI</strong> or <strong>OpenAI Codex CLI</strong> in the next step (no API key needed).
+                  </p>
+                </div>
               </div>
             </div>
           )}
@@ -393,67 +429,133 @@ export default function OnboardingWizard({ onComplete }) {
               <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
                 Hire Your First Agent
               </h2>
-              <p className="text-sm mb-5" style={{ color: 'var(--text-tertiary)' }}>
+              <p className="text-sm mb-4" style={{ color: 'var(--text-tertiary)' }}>
                 Create an AI agent that will work on your tasks.
               </p>
-              <div className="space-y-4">
+              <div className="space-y-3">
+                {/* Auth Type Toggle */}
                 <div>
-                  <label className="label">Agent Name</label>
-                  <input
-                    className="input"
-                    value={agent.name}
-                    onChange={(e) => setAgent({ ...agent, name: e.target.value })}
-                    placeholder="e.g., Alex, CodeBot, Sam"
-                  />
+                  <label className="label">Authentication Mode</label>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className="p-2.5 rounded-lg border text-xs text-left transition-all"
+                      style={{
+                        borderColor: agentAuthType === 'api' ? 'var(--accent)' : 'var(--border)',
+                        background: agentAuthType === 'api' ? 'var(--accent-light)' : 'transparent',
+                        color: agentAuthType === 'api' ? 'var(--accent)' : 'var(--text-secondary)',
+                      }}
+                      onClick={() => setAgentAuthType('api')}
+                    >
+                      <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Key size={12} /> API Key</div>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses provider API keys from previous step</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="p-2.5 rounded-lg border text-xs text-left transition-all"
+                      style={{
+                        borderColor: agentAuthType === 'cli' ? 'var(--accent)' : 'var(--border)',
+                        background: agentAuthType === 'cli' ? 'var(--accent-light)' : 'transparent',
+                        color: agentAuthType === 'cli' ? 'var(--accent)' : 'var(--text-secondary)',
+                      }}
+                      onClick={() => setAgentAuthType('cli')}
+                    >
+                      <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Zap size={12} /> CLI Mode</div>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses local Claude Code or Codex CLI — no API key needed</span>
+                    </button>
+                  </div>
                 </div>
-                <div>
-                  <label className="label">Role</label>
-                  <select
-                    className="input"
-                    value={agent.role}
-                    onChange={(e) => setAgent({ ...agent, role: e.target.value })}
-                  >
-                    {ROLE_PRESETS.map((r) => (
-                      <option key={r} value={r}>
-                        {r}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="label">Provider</label>
-                    <select
+                    <label className="label">Agent Name</label>
+                    <input
                       className="input"
-                      value={agent.provider}
-                      onChange={(e) => {
-                        const p = e.target.value;
-                        const models = MODELS[p] || [];
-                        setAgent({ ...agent, provider: p, model: models[0]?.id || '' });
-                      }}
-                    >
-                      {PROVIDERS.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.label}
-                        </option>
-                      ))}
-                    </select>
+                      value={agent.name}
+                      onChange={(e) => setAgent({ ...agent, name: e.target.value })}
+                      placeholder="e.g., Alex, CodeBot"
+                    />
                   </div>
                   <div>
-                    <label className="label">Model</label>
+                    <label className="label">Role</label>
                     <select
                       className="input"
-                      value={agent.model}
-                      onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                      value={agent.role}
+                      onChange={(e) => setAgent({ ...agent, role: e.target.value })}
                     >
-                      {providerModels.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
+                      {ROLE_PRESETS.map((r) => (
+                        <option key={r} value={r}>{r}</option>
                       ))}
                     </select>
                   </div>
                 </div>
+
+                {agentAuthType === 'cli' ? (
+                  <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                    The agent will use your locally installed <strong>Claude Code</strong> or <strong>Codex</strong> CLI.
+                    Make sure you have it installed and authenticated (<code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>claude</code> or <code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>codex</code> command available).
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="label">Provider</label>
+                      <select
+                        className="input"
+                        value={agent.provider}
+                        onChange={(e) => {
+                          const p = e.target.value;
+                          const models = MODELS[p] || [];
+                          setAgent({ ...agent, provider: p, model: models[0]?.id || '', customModel: '' });
+                        }}
+                      >
+                        {PROVIDERS.map((p) => (
+                          <option key={p.id} value={p.id}>{p.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label">Model</label>
+                      {agent.provider === 'openrouter' ? (
+                        <div className="space-y-1.5">
+                          <select
+                            className="input"
+                            value={agent.customModel ? '__custom__' : agent.model}
+                            onChange={(e) => {
+                              if (e.target.value === '__custom__') {
+                                setAgent({ ...agent, model: '', customModel: '' });
+                              } else {
+                                setAgent({ ...agent, model: e.target.value, customModel: '' });
+                              }
+                            }}
+                          >
+                            {providerModels.map((m) => (
+                              <option key={m.id} value={m.id}>{m.label}</option>
+                            ))}
+                            <option value="__custom__">Custom model...</option>
+                          </select>
+                          {(agent.customModel !== undefined && (agent.customModel || (!agent.model && agent.customModel !== undefined))) && agent.model === '' && (
+                            <input
+                              className="input font-mono text-xs"
+                              value={agent.customModel}
+                              onChange={(e) => setAgent({ ...agent, customModel: e.target.value })}
+                              placeholder="e.g., meta-llama/llama-3.1-70b-instruct"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <select
+                          className="input"
+                          value={agent.model}
+                          onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                        >
+                          {providerModels.map((m) => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
             </div>
           )}
