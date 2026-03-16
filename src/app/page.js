@@ -1,10 +1,10 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
-import { useStatus } from '@/app/providers';
+import { useStatus, useSocket } from '@/app/providers';
 import {
   FolderKanban,
   Users,
@@ -14,12 +14,109 @@ import {
   TrendingUp,
   Zap,
   ArrowRight,
+  Activity,
+  Plus,
+  Trash2,
+  RefreshCw,
+  Bot,
+  DollarSign,
+  Bell,
+  XCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 
+const MAX_ACTIVITY_ITEMS = 30;
+
+const ACTIVITY_CONFIG = {
+  'task:created':    { icon: Plus,       color: '#4c6ef5', label: 'Task Created' },
+  'task:updated':    { icon: RefreshCw,  color: '#4c6ef5', label: 'Task Updated' },
+  'task:deleted':    { icon: Trash2,     color: '#4c6ef5', label: 'Task Deleted' },
+  'agent:status_changed': { icon: Bot,   color: '#40c057', label: 'Agent Status' },
+  'agent:created':   { icon: Plus,       color: '#40c057', label: 'Agent Created' },
+  'agent:deleted':   { icon: Trash2,     color: '#40c057', label: 'Agent Deleted' },
+  'notification':    { icon: Bell,       color: '#4c6ef5', label: 'Notification' },
+  'budget:update':   { icon: DollarSign, color: '#fab005', label: 'Budget Update' },
+  'error':           { icon: XCircle,    color: '#fa5252', label: 'Error' },
+};
+
+function buildDescription(event, data) {
+  switch (event) {
+    case 'task:created':
+      return `Task "${data?.title || data?.task?.title || 'Untitled'}" was created`;
+    case 'task:updated':
+      return `Task "${data?.title || data?.task?.title || 'Untitled'}" was updated${data?.status ? ` to ${data.status}` : ''}`;
+    case 'task:deleted':
+      return `Task "${data?.title || data?.task?.title || 'Untitled'}" was deleted`;
+    case 'agent:status_changed':
+      return `Agent "${data?.name || data?.agent?.name || 'Unknown'}" is now ${data?.status || data?.agent?.status || 'unknown'}`;
+    case 'agent:created':
+      return `Agent "${data?.name || data?.agent?.name || 'Unknown'}" was created`;
+    case 'agent:deleted':
+      return `Agent "${data?.name || data?.agent?.name || 'Unknown'}" was removed`;
+    case 'notification':
+      return data?.message || 'New notification';
+    case 'budget:update':
+      return data?.message || 'Budget was updated';
+    default:
+      return data?.message || 'Activity event';
+  }
+}
+
+function formatTime(ts) {
+  const d = new Date(ts);
+  const now = new Date();
+  const diffMs = now - d;
+  if (diffMs < 60000) return 'just now';
+  if (diffMs < 3600000) return `${Math.floor(diffMs / 60000)}m ago`;
+  if (diffMs < 86400000) return `${Math.floor(diffMs / 3600000)}h ago`;
+  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
 export default function DashboardPage() {
   const status = useStatus();
+  const socket = useSocket();
   const [stats, setStats] = useState({ projects: 0, agents: 0, tasks: [], recentTasks: [] });
+  const [activities, setActivities] = useState([]);
+  const [hasNew, setHasNew] = useState(false);
+  const newTimerRef = useRef(null);
+
+  const addActivity = useCallback((event, data) => {
+    const item = {
+      id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      event,
+      data,
+      description: buildDescription(event, data),
+      timestamp: Date.now(),
+    };
+    setActivities((prev) => [item, ...prev].slice(0, MAX_ACTIVITY_ITEMS));
+    setHasNew(true);
+    if (newTimerRef.current) clearTimeout(newTimerRef.current);
+    newTimerRef.current = setTimeout(() => setHasNew(false), 3000);
+  }, []);
+
+  // Socket event listeners for live activity feed
+  useEffect(() => {
+    if (!socket) return;
+    const events = [
+      'task:updated',
+      'task:created',
+      'task:deleted',
+      'agent:status_changed',
+      'agent:created',
+      'agent:deleted',
+      'notification',
+      'budget:update',
+    ];
+    const handlers = events.map((event) => {
+      const handler = (data) => addActivity(event, data);
+      socket.on(event, handler);
+      return { event, handler };
+    });
+    return () => {
+      handlers.forEach(({ event, handler }) => socket.off(event, handler));
+      if (newTimerRef.current) clearTimeout(newTimerRef.current);
+    };
+  }, [socket, addActivity]);
 
   useEffect(() => {
     Promise.all([api.getProjects(), api.getAgents(), api.getTasks()]).then(
@@ -116,43 +213,72 @@ export default function DashboardPage() {
               </div>
             </div>
 
-            {/* Recent Tasks */}
+            {/* Live Activity */}
             <div className="card p-5">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
-                  Recent Tasks
-                </h2>
-                <Link
-                  href="/kanban"
-                  className="text-xs font-medium flex items-center gap-1"
-                  style={{ color: 'var(--accent)' }}
-                >
-                  View All <ArrowRight size={12} />
-                </Link>
+                <div className="flex items-center gap-2">
+                  <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    Live Activity
+                  </h2>
+                  {hasNew && (
+                    <span
+                      className="inline-block w-2 h-2 rounded-full"
+                      style={{
+                        background: '#4c6ef5',
+                        animation: 'pulse-dot 1.5s ease-in-out infinite',
+                      }}
+                    />
+                  )}
+                </div>
+                <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  <Activity size={12} />
+                  <span>{activities.length} events</span>
+                </div>
               </div>
-              {stats.recentTasks.length === 0 ? (
-                <p className="text-sm py-8 text-center" style={{ color: 'var(--text-tertiary)' }}>
-                  No tasks yet. Create one in the Tasks board.
-                </p>
+              {activities.length === 0 ? (
+                <div className="text-sm py-8 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                  <Activity size={24} className="mx-auto mb-2 opacity-40" />
+                  <p>No activity yet. Events will appear here in real time.</p>
+                </div>
               ) : (
-                <div className="space-y-2">
-                  {stats.recentTasks.map((task) => (
-                    <div
-                      key={task.id}
-                      className="flex items-center justify-between p-3 rounded-lg"
-                      style={{ background: 'var(--bg-secondary)' }}
-                    >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
-                          {task.title}
-                        </p>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                          {task.agent_name || 'Unassigned'} {task.project_name ? `• ${task.project_name}` : ''}
-                        </p>
+                <div className="space-y-1 max-h-[320px] overflow-y-auto pr-1" style={{ scrollbarWidth: 'thin' }}>
+                  {activities.map((item) => {
+                    const config = ACTIVITY_CONFIG[item.event] || ACTIVITY_CONFIG['error'];
+                    const IconComponent = config.icon;
+                    return (
+                      <div
+                        key={item.id}
+                        className="flex items-start gap-3 p-2.5 rounded-lg transition-colors"
+                        style={{ background: 'var(--bg-secondary)' }}
+                      >
+                        <div
+                          className="flex items-center justify-center w-7 h-7 rounded-md shrink-0 mt-0.5"
+                          style={{ background: `${config.color}18`, color: config.color }}
+                        >
+                          <IconComponent size={14} />
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm leading-snug truncate" style={{ color: 'var(--text-primary)' }}>
+                            {item.description}
+                          </p>
+                          <div className="flex items-center gap-2 mt-1">
+                            <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                              {formatTime(item.timestamp)}
+                            </span>
+                            <span
+                              className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                              style={{
+                                background: `${config.color}18`,
+                                color: config.color,
+                              }}
+                            >
+                              {config.label}
+                            </span>
+                          </div>
+                        </div>
                       </div>
-                      <StatusBadge status={task.status} />
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

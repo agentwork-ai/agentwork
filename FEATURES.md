@@ -38,7 +38,7 @@
 - [x] **Markdown Rendering in Chat** — Render agent responses with proper markdown formatting (code blocks, lists, headers) instead of raw text.
 - [x] **Keyboard Shortcuts** — Cmd/Ctrl+K for quick task creation, Cmd+/ to toggle sidebar, Escape to close modals, arrow keys for Kanban navigation.
 - [ ] **Kanban Board Swimlanes** — Add optional horizontal swimlanes by agent, project, or priority.
-- [ ] **Live Activity Feed** — Replace the static "Recent Tasks" list on the home page with a real-time event stream showing task completions, agent status changes, budget alerts, and error notifications.
+- [x] **Live Activity Feed** — Replace the static "Recent Tasks" list on the home page with a real-time event stream showing task completions, agent status changes, budget alerts, and error notifications.
 - [ ] **Responsive Mobile Layout** — Add a responsive hamburger menu and touch-friendly Kanban interactions for mobile screens.
 - [ ] **Diff Viewer for File Changes** — Show a side-by-side diff in the execution log when agents modify files.
 - [ ] **Onboarding Wizard** — A guided setup wizard for first-time users: add an API key, create a project, hire an agent, run a first task.
