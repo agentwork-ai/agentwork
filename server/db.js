@@ -227,6 +227,7 @@ const defaultSettings = {
   max_concurrent_executions: '3',
   dashboard_password: '',
   accent_color: 'blue',
+  verbose_ai_logging: 'false',
   notify_task_complete: 'true',
   notify_task_blocked: 'true',
   notify_budget_threshold: 'true',
@@ -298,6 +299,17 @@ db.exec(`
     provider TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE CASCADE
+  )
+`);
+
+// Custom tools table (user-defined tools for agent executions)
+db.exec(`
+  CREATE TABLE IF NOT EXISTS custom_tools (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT NOT NULL,
+    command_template TEXT NOT NULL,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )
 `);
 

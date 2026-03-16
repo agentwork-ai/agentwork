@@ -81,6 +81,14 @@ async function createCompletion(provider, model, messages, options = {}) {
 
 async function _createCompletion(provider, model, messages, options = {}) {
   await enforceRateLimit(provider);
+
+  // Verbose AI logging
+  const verbose = getSetting('verbose_ai_logging') === 'true';
+  if (verbose) {
+    const promptLen = messages.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+    console.log(`[AI Verbose] Request: ${provider}/${model} | ${messages.length} messages | ~${promptLen} chars`);
+  }
+
   let apiKey;
   let customBaseUrl = getSetting('custom_base_url');
 

@@ -14,7 +14,7 @@
 - [x] **Multi-Model Fallback Chain** — If the primary model for an agent fails (rate limit, API down), automatically fall back to a secondary model. The agent configuration could have a `fallback_model` field.
 - [x] **Streaming Chat Responses** — Stream tokens to the UI in real time using Socket.io so the user sees the agent "typing" character by character, instead of waiting for the full completion.
 - [x] **Context Window Management** — Add automatic context window management that summarizes older messages when approaching the model's token limit, preventing truncation errors.
-- [ ] **Agent Warm-Up / Pre-Caching** — When an agent is assigned a task, pre-load its memory files and project context into a cached session object so that execution starts faster.
+- [x] **Agent Warm-Up / Pre-Caching** — When an agent is assigned a task, pre-load its memory files and project context into a cached session object so that execution starts faster.
 - [ ] **Vision / Image Understanding** — Allow agents to analyze screenshots, diagrams, or UI mockups attached to tasks. Pass image attachments as base64 content blocks in the messages array.
 
 ## 2. Task Management & Workflow
@@ -51,7 +51,7 @@
 - [x] **Agent Performance Metrics** — Track per-agent stats: average task completion time, success rate, average tokens per task, number of iterations, and times blocked.
 - [x] **Error Alerting & Escalation** — Send push notifications via Telegram/Slack to the user when tasks fail. Add webhook support for external alerting (PagerDuty, Discord, email).
 - [x] **Health Check Endpoint** — Add `/api/health` that verifies database connectivity, disk space, memory usage, and active bot connections.
-- [ ] **Full AI Request/Response Logging** — Optional verbose logging that captures the full prompt and response for each AI API call, for debugging and prompt optimization.
+- [x] **Full AI Request/Response Logging** — Optional verbose logging that captures the full prompt and response for each AI API call, for debugging and prompt optimization.
 - [ ] **Execution Timeline / Gantt Chart** — Show a timeline of when each agent was active, what tasks they worked on, and for how long in The Office view.
 
 ## 5. Security & Access Control

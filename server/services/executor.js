@@ -8,6 +8,29 @@ let io = null;
 const activeExecutions = new Map();
 const agentSessions = new Map(); // In-memory cache for Codex threads (non-serializable)
 
+// Agent context warm-up cache
+const agentContextCache = new Map();
+const CONTEXT_CACHE_TTL = 60000; // 1 minute
+
+function getAgentContext(agentId) {
+  const cached = agentContextCache.get(agentId);
+  if (cached && Date.now() - cached.timestamp < CONTEXT_CACHE_TTL) return cached;
+  const agentDir = path.join(DATA_DIR, 'agents', agentId);
+  const ctx = {
+    soul: readFileCached(path.join(agentDir, 'SOUL.md')),
+    userPrefs: readFileCached(path.join(agentDir, 'USER.md')),
+    rules: readFileCached(path.join(agentDir, 'AGENTS.md')),
+    memory: readFileCached(path.join(agentDir, 'MEMORY.md')),
+    timestamp: Date.now(),
+  };
+  agentContextCache.set(agentId, ctx);
+  return ctx;
+}
+
+function readFileCached(filePath) {
+  try { return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : ''; } catch { return ''; }
+}
+
 // DB-backed session persistence for Claude CLI sessions
 function getPersistedSession(agentId) {
   const row = db.prepare('SELECT session_id, provider FROM agent_sessions WHERE agent_id = ?').get(agentId);
@@ -876,14 +899,46 @@ const AGENT_TOOLS = [
 ];
 
 /**
+ * Load user-defined custom tools from the database and convert them into
+ * the same tool-definition format used by the built-in AGENT_TOOLS.
+ */
+function getCustomToolDefinitions() {
+  try {
+    const rows = db.prepare('SELECT * FROM custom_tools').all();
+    return rows.map((row) => ({
+      name: row.name,
+      description: row.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          input: { type: 'string', description: 'Input to pass to the tool (replaces {{input}} in the command template)' },
+        },
+        required: ['input'],
+      },
+      _custom: true,
+      _command_template: row.command_template,
+    }));
+  } catch (err) {
+    console.error('[Executor] Failed to load custom tools:', err.message);
+    return [];
+  }
+}
+
+/**
  * Filter AGENT_TOOLS based on agent.allowed_tools.
  * If allowed_tools is empty, all tools are returned.
  * Otherwise only tools whose name is in the comma-separated whitelist are
  * included — plus task_complete and request_help which are always required.
+ *
+ * Custom tools from the DB are always appended (subject to the same whitelist
+ * filtering when an allowed_tools whitelist is active).
  */
 function getToolsForAgent(agent) {
+  const customTools = getCustomToolDefinitions();
+  const allTools = [...AGENT_TOOLS, ...customTools];
+
   const raw = (agent && agent.allowed_tools) || '';
-  if (!raw.trim()) return AGENT_TOOLS;
+  if (!raw.trim()) return allTools;
 
   const whitelist = new Set(
     raw.split(',').map((t) => t.trim()).filter(Boolean)
@@ -892,7 +947,7 @@ function getToolsForAgent(agent) {
   whitelist.add('task_complete');
   whitelist.add('request_help');
 
-  return AGENT_TOOLS.filter((tool) => whitelist.has(tool.name));
+  return allTools.filter((tool) => whitelist.has(tool.name));
 }
 
 // ─── Command Sandboxing Helpers ───
