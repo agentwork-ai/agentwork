@@ -133,7 +133,7 @@
 
 ## 14. Communication
 
-- [ ] **Group Chat** — Multi-agent chat rooms for brainstorming sessions where the user discusses a topic and agents respond by expertise.
+- [x] **Group Chat** — Multi-agent chat rooms for brainstorming sessions where the user discusses a topic and agents respond by expertise.
 - [x] **Chat History Search** — Full-text search across all conversation history with any agent.
 - [x] **Rich Messages** — Support images, files, and code snippets in chat messages (user-to-agent and agent-to-user).
 - [x] **Chat Export** — Export conversation history as Markdown or PDF.
