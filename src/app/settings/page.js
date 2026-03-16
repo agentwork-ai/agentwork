@@ -4,15 +4,16 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
-import { useTheme } from '@/app/providers';
+import { useTheme, useAuth } from '@/app/providers';
 import {
   Key, Globe, DollarSign, Shield, Palette, Bell,
-  FolderOpen, Save, Eye, EyeOff, TrendingUp,
+  FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
   const [settings, setSettings] = useState({});
   const [budget, setBudget] = useState(null);
   const [showKeys, setShowKeys] = useState({});
@@ -34,6 +35,16 @@ export default function SettingsPage() {
     setSaving(true);
     try {
       await api.updateSettings(settings);
+      // If dashboard password was changed, update the auth token
+      if (settings.dashboard_password) {
+        const result = await api.login(settings.dashboard_password);
+        if (result.success && result.token) {
+          localStorage.setItem('agentwork-auth-token', result.token);
+        }
+      } else {
+        // Password cleared, remove token
+        localStorage.removeItem('agentwork-auth-token');
+      }
       toast.success('Settings saved');
     } catch (err) {
       toast.error(err.message);
@@ -233,19 +244,47 @@ export default function SettingsPage() {
 
             {/* Security */}
             <Section icon={<Shield size={18} />} title="Security">
-              <div className="flex items-center justify-between">
+              <div className="space-y-4">
                 <div>
-                  <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                    Require confirmation for destructive commands
-                  </p>
-                  <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                    Agents will ask before running rm, drop, delete, etc.
+                  <label className="label">Dashboard Password</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.dashboard_password ? 'text' : 'password'}
+                      value={settings.dashboard_password || ''}
+                      onChange={(e) => updateField('dashboard_password', e.target.value)}
+                      placeholder="Leave empty to disable"
+                    />
+                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, dashboard_password: !p.dashboard_password }))}>
+                      {showKeys.dashboard_password ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Protect the dashboard with a password. Leave empty to disable authentication.
+                    After saving, you will need to log in with this password.
                   </p>
                 </div>
-                <ToggleSwitch
-                  checked={settings.require_confirmation_destructive === 'true'}
-                  onChange={(v) => updateField('require_confirmation_destructive', v ? 'true' : 'false')}
-                />
+                {settings.dashboard_password && (
+                  <div className="flex">
+                    <button className="btn btn-ghost text-sm flex items-center gap-1.5" onClick={logout}>
+                      <LogOut size={14} /> Sign Out
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Require confirmation for destructive commands
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Agents will ask before running rm, drop, delete, etc.
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.require_confirmation_destructive === 'true'}
+                    onChange={(v) => updateField('require_confirmation_destructive', v ? 'true' : 'false')}
+                  />
+                </div>
               </div>
             </Section>
 

@@ -25,7 +25,7 @@
 - [x] **Task Templates / Recurring Blueprints** — Allow saving a task as a "template" with pre-filled title, description, agent, and project. One-click to create a new task from the template.
 - [ ] **Time Estimates & SLA Tracking** — Add estimated duration per task and track actual execution time. Surface SLA violations (tasks taking 3x longer than estimated) in the dashboard.
 - [x] **Task Labels / Tags** — Add a free-form tagging system (e.g., "bug", "feature", "refactor", "urgent") for filtering and grouping tasks on the Kanban board.
-- [ ] **Bulk Task Operations** — Add multi-select on the Kanban board for bulk status changes, bulk agent assignment, or bulk deletion.
+- [x] **Bulk Task Operations** — Add multi-select on the Kanban board for bulk status changes, bulk agent assignment, or bulk deletion.
 - [x] **Retry with Modified Prompt** — When a task lands in "Blocked," allow the user to edit the task description and retry execution with one click.
 - [ ] **Parallel Flow Steps** — Allow marking certain flow steps as parallelizable so multiple agents can work on different steps simultaneously, with a join step that waits for all parallel branches.
 - [x] **Task Execution Timeout** — Add a configurable per-task timeout (e.g., 30 minutes) that moves the task to "Blocked" if exceeded.
@@ -57,8 +57,8 @@
 ## 5. Security & Access Control
 
 - [ ] **API Key Encryption at Rest** — Encrypt API keys in the SQLite settings table using OS keychain or a local encryption key.
-- [ ] **Dashboard Authentication** — Add optional password protection or local-only binding so the dashboard isn't open to anyone on the network.
-- [ ] **Command Sandboxing** — Configurable restrictions for agent commands: blocked patterns (rm -rf /, DROP TABLE), directory jail, optional Docker container isolation.
+- [x] **Dashboard Authentication** — Add optional password protection or local-only binding so the dashboard isn't open to anyone on the network.
+- [x] **Command Sandboxing** — Configurable restrictions for agent commands: blocked patterns (rm -rf /, DROP TABLE), directory jail, optional Docker container isolation.
 - [x] **Audit Log** — Record all user actions (settings changes, agent creation/deletion, task modifications) in a separate audit log table with timestamps.
 - [x] **Per-Agent Budget Limits** — Individual daily spend caps per agent (e.g., Opus agent at $5/day, Haiku agent at $20/day).
 - [x] **Path Traversal Protection** — Restrict the file read API to registered project directories only, preventing access to sensitive system files.

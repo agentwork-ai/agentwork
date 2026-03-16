@@ -1,5 +1,6 @@
 const express = require('express');
 const http = require('http');
+const crypto = require('crypto');
 const { Server: SocketServer } = require('socket.io');
 const next = require('next');
 const path = require('path');
@@ -27,6 +28,95 @@ app.prepare().then(() => {
   // Middleware
   server.use(express.json({ limit: '10mb' }));
   server.use(express.urlencoded({ extended: true }));
+
+  // --- Dashboard Authentication ---
+
+  function hashPassword(password) {
+    return crypto.createHash('sha256').update(password).digest('hex');
+  }
+
+  function getAuthToken(req) {
+    // Check x-auth-token header first, then cookie
+    const header = req.headers['x-auth-token'];
+    if (header) return header;
+    const cookies = req.headers.cookie;
+    if (cookies) {
+      const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith('auth_token='));
+      if (match) return match.split('=')[1];
+    }
+    return null;
+  }
+
+  // Auth endpoints (always accessible)
+  server.post('/api/auth/login', (req, res) => {
+    const { db: dbAuth } = require('./db');
+    const stored = dbAuth.prepare("SELECT value FROM settings WHERE key = 'dashboard_password'").get()?.value || '';
+    if (!stored) {
+      return res.json({ success: true, token: null, message: 'No password set' });
+    }
+    const { password } = req.body;
+    if (!password) {
+      return res.status(400).json({ error: 'Password is required' });
+    }
+    if (password !== stored) {
+      return res.status(401).json({ error: 'Invalid password' });
+    }
+    const token = hashPassword(stored);
+    res.json({ success: true, token });
+  });
+
+  server.get('/api/auth/check', (req, res) => {
+    const { db: dbAuth } = require('./db');
+    const stored = dbAuth.prepare("SELECT value FROM settings WHERE key = 'dashboard_password'").get()?.value || '';
+    if (!stored) {
+      return res.json({ required: false, valid: true });
+    }
+    const token = getAuthToken(req);
+    const expectedToken = hashPassword(stored);
+    const valid = token === expectedToken;
+    return res.json({ required: true, valid });
+  });
+
+  // Auth middleware - protect API and page routes
+  server.use((req, res, next) => {
+    // Skip auth for auth endpoints and health check
+    if (req.path.startsWith('/api/auth/') || req.path === '/api/health') {
+      return next();
+    }
+
+    // Skip auth for Next.js internal assets
+    if (req.path.startsWith('/_next/') || req.path.startsWith('/__nextjs')) {
+      return next();
+    }
+
+    // Skip static assets
+    if (req.path.match(/\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot|map)$/)) {
+      return next();
+    }
+
+    const { db: dbAuth } = require('./db');
+    const stored = dbAuth.prepare("SELECT value FROM settings WHERE key = 'dashboard_password'").get()?.value || '';
+
+    // No password set = no protection
+    if (!stored) {
+      return next();
+    }
+
+    const token = getAuthToken(req);
+    const expectedToken = hashPassword(stored);
+
+    if (token === expectedToken) {
+      return next();
+    }
+
+    // For API requests, return 401
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ error: 'Authentication required' });
+    }
+
+    // For page requests, let the frontend handle it (the frontend will check auth and show login)
+    return next();
+  });
 
   // API routes
   server.use('/api/projects', require('./routes/projects'));
