@@ -700,16 +700,19 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
   const saveChanges = async () => {
     setSaving(true);
     try {
+      const retryAfterSave = form._retryAfterSave;
       const data = {
         ...form,
         agent_id: form.agent_id || null,
         project_id: form.project_id || null,
         flow_items: isFlow ? form.flow_items : undefined,
       };
+      delete data._retryAfterSave;
+      if (retryAfterSave) data.status = 'doing';
       const updated = await api.updateTask(task.id, data);
       onUpdate(updated);
       setEditing(false);
-      toast.success('Task updated');
+      toast.success(retryAfterSave ? 'Task retrying...' : 'Task updated');
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -732,6 +735,12 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
             <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{task.title}</h3>
           </div>
           <div className="flex items-center gap-2">
+            {task.status === 'blocked' && !editing && (
+              <button className="btn btn-primary text-xs" onClick={() => {
+                setEditing(true);
+                setForm((f) => ({ ...f, _retryAfterSave: true }));
+              }}><RefreshCw size={13} /> Retry</button>
+            )}
             {isEditable && !editing && (
               <button className="btn btn-ghost text-xs" onClick={() => setEditing(true)}><Edit2 size={13} /> Edit</button>
             )}

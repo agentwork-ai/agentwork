@@ -26,7 +26,7 @@
 - [ ] **Time Estimates & SLA Tracking** — Add estimated duration per task and track actual execution time. Surface SLA violations (tasks taking 3x longer than estimated) in the dashboard.
 - [x] **Task Labels / Tags** — Add a free-form tagging system (e.g., "bug", "feature", "refactor", "urgent") for filtering and grouping tasks on the Kanban board.
 - [ ] **Bulk Task Operations** — Add multi-select on the Kanban board for bulk status changes, bulk agent assignment, or bulk deletion.
-- [ ] **Retry with Modified Prompt** — When a task lands in "Blocked," allow the user to edit the task description and retry execution with one click.
+- [x] **Retry with Modified Prompt** — When a task lands in "Blocked," allow the user to edit the task description and retry execution with one click.
 - [ ] **Parallel Flow Steps** — Allow marking certain flow steps as parallelizable so multiple agents can work on different steps simultaneously, with a join step that waits for all parallel branches.
 - [x] **Task Execution Timeout** — Add a configurable per-task timeout (e.g., 30 minutes) that moves the task to "Blocked" if exceeded.
 
