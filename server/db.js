@@ -3,7 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-const DATA_DIR = path.join(process.env.AGENTHUB_ROOT || path.resolve(__dirname, '..'), 'data');
+const DATA_DIR = process.env.AGENTHUB_DATA || path.join(require('os').homedir(), '.agenthub');
 
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });

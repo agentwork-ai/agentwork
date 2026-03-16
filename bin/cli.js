@@ -6,9 +6,11 @@ const path = require('path');
 const fs = require('fs');
 const chalk = require('chalk');
 
+const os = require('os');
+
 const program = new Command();
 const ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = path.join(ROOT, 'data');
+const DATA_DIR = process.env.AGENTHUB_DATA || path.join(os.homedir(), '.agenthub');
 const PID_FILE = path.join(DATA_DIR, 'agenthub.pid');
 const LOG_FILE = path.join(DATA_DIR, 'agenthub.log');
 
