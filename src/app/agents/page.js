@@ -6,7 +6,7 @@ import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
-  Plus, Trash2, Edit2, Settings2, Brain, FileText,
+  Plus, Trash2, Edit2, Settings2, Brain, FileText, Copy,
   User, Shield, BookOpen, X, RotateCcw, Key, Terminal, MessageCircle,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -144,6 +144,15 @@ export default function AgentsPage() {
     };
   }, [socket, loadAgents]);
 
+  const cloneAgent = async (id) => {
+    try {
+      const cloned = await api.cloneAgent(id);
+      toast.success(`Cloned as ${cloned.name}`);
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
   const deleteAgent = async (id) => {
     if (!confirm('Fire this agent? This will delete their memory files.')) return;
     await api.deleteAgent(id);
@@ -246,6 +255,9 @@ export default function AgentsPage() {
                     </button>
                     <button className="btn btn-ghost text-xs flex-1" onClick={() => { setEditAgent(agent); setShowForm(true); }}>
                       <Edit2 size={14} /> Edit
+                    </button>
+                    <button className="btn btn-ghost text-xs" onClick={() => cloneAgent(agent.id)} title="Clone agent">
+                      <Copy size={14} />
                     </button>
                     <button className="btn btn-ghost text-xs" style={{ color: 'var(--danger)' }} onClick={() => deleteAgent(agent.id)}>
                       <Trash2 size={14} />

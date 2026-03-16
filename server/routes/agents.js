@@ -214,6 +214,41 @@ router.delete('/:id', (req, res) => {
   res.json({ success: true });
 });
 
+// Clone agent
+router.post('/:id/clone', (req, res) => {
+  const source = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  if (!source) return res.status(404).json({ error: 'Agent not found' });
+
+  const id = uuidv4();
+  const cloneName = req.body.name || `${source.name} (Copy)`;
+
+  db.prepare(
+    `INSERT INTO agents (id, name, avatar, role, auth_type, provider, model, status, personality,
+      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(id, cloneName, source.avatar, source.role, source.auth_type, source.provider,
+    source.model, 'idle', source.personality, 0, '', '', '', '');
+
+  // Clone memory files
+  const srcDir = path.join(DATA_DIR, 'agents', source.id);
+  const destDir = path.join(DATA_DIR, 'agents', id);
+  fs.mkdirSync(destDir, { recursive: true });
+  for (const file of ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md']) {
+    const srcPath = path.join(srcDir, file);
+    if (fs.existsSync(srcPath)) {
+      let content = fs.readFileSync(srcPath, 'utf8');
+      if (file === 'SOUL.md') content = content.replace(source.name, cloneName);
+      if (file === 'MEMORY.md') content = `# ${cloneName} - Long-term Memory\n## Cloned from: ${source.name}\n## ${new Date().toISOString()}\nNo new memories recorded yet.\n`;
+      fs.writeFileSync(path.join(destDir, file), content);
+    }
+  }
+
+  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+  const io = req.app.get('io');
+  if (io) io.emit('agent:created', agent);
+  res.status(201).json(agent);
+});
+
 // Clear agent memory
 router.post('/:id/clear-memory', (req, res) => {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);

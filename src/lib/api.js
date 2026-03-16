@@ -43,6 +43,7 @@ export const api = {
   updateAgentMemory: (id, filename, content) =>
     request(`/api/agents/${id}/memory/${filename}`, { method: 'PUT', body: JSON.stringify({ content }) }),
   clearAgentMemory: (id) => request(`/api/agents/${id}/clear-memory`, { method: 'POST' }),
+  cloneAgent: (id, name) => request(`/api/agents/${id}/clone`, { method: 'POST', body: JSON.stringify({ name }) }),
 
   // Chat
   getMessages: (agentId, limit) => request(`/api/chat/${agentId}?limit=${limit || 100}`),
