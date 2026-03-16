@@ -332,9 +332,41 @@ async function executeFlowTask(taskId, mainAgentId, task, project, execState) {
     if (!currentTask || currentTask.status === 'blocked') break;
 
     flowItems = JSON.parse(currentTask.flow_items || '[]');
-    const currentIdx = flowItems.findIndex((i) => i.status === 'pending');
-    if (currentIdx === -1) break;
 
+    // Collect consecutive pending parallel steps
+    const pendingIdx = flowItems.findIndex((i) => i.status === 'pending');
+    if (pendingIdx === -1) break;
+
+    const parallelGroup = [pendingIdx];
+    for (let i = pendingIdx + 1; i < flowItems.length; i++) {
+      if (flowItems[i].status === 'pending' && flowItems[i].parallel) parallelGroup.push(i);
+      else break;
+    }
+
+    // Execute parallel steps concurrently
+    if (parallelGroup.length > 1) {
+      addLog(taskId, 'info', `Running ${parallelGroup.length} parallel steps: ${parallelGroup.map((i) => flowItems[i].title).join(', ')}`);
+      const parallelResults = await Promise.allSettled(
+        parallelGroup.map((idx) => executeFlowStepWrapper(taskId, mainAgentId, task, project, execState, flowItems, idx))
+      );
+      let anyFailed = false;
+      for (let pi = 0; pi < parallelGroup.length; pi++) {
+        const idx = parallelGroup[pi];
+        const result = parallelResults[pi];
+        flowItems = JSON.parse(db.prepare('SELECT flow_items FROM tasks WHERE id = ?').get(taskId)?.flow_items || '[]');
+        if (result.status === 'rejected') {
+          flowItems[idx] = { ...flowItems[idx], status: 'failed' };
+          anyFailed = true;
+        } else {
+          flowItems[idx] = { ...flowItems[idx], status: 'done', output: result.value || '' };
+        }
+        updateFlowItems(taskId, flowItems);
+      }
+      if (anyFailed) { moveTask(taskId, 'blocked'); return; }
+      continue;
+    }
+
+    const currentIdx = pendingIdx;
     const currentItem = flowItems[currentIdx];
     const agentId = currentItem.agent_id || mainAgentId;
     if (!agentId) {
@@ -620,6 +652,28 @@ Complete your step autonomously.`;
   }
 
   return stepOutput || `Step ${stepIdx + 1}: ${flowItem.title} — completed`;
+}
+
+async function executeFlowStepWrapper(taskId, mainAgentId, task, project, execState, flowItems, stepIdx) {
+  const item = flowItems[stepIdx];
+  const agentId = item.agent_id || mainAgentId;
+  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
+  if (!agent) throw new Error(`Agent not found for step ${stepIdx + 1}`);
+  const workDir = project?.path || process.cwd();
+  const previousContext = flowItems.slice(0, stepIdx).filter((i) => i.status === 'done' && i.output).map((i, idx) => `Step ${idx + 1}: ${i.output}`).join('\n');
+
+  db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+  io.emit('agent:status_changed', { agentId, status: 'working' });
+  try {
+    if (agent.auth_type === 'cli') {
+      return await executeFlowStepCli(taskId, agentId, agent, task, item, previousContext, workDir, execState, stepIdx, flowItems.length);
+    } else {
+      return await executeFlowStepApi(taskId, agentId, agent, task, item, previousContext, project, workDir, execState, stepIdx, flowItems.length);
+    }
+  } finally {
+    db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
+    io.emit('agent:status_changed', { agentId, status: 'idle' });
+  }
 }
 
 function updateFlowItems(taskId, flowItems) {
