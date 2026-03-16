@@ -77,7 +77,7 @@
 ## 7. Developer Experience
 
 - [ ] **REST API Documentation** — Auto-generated Swagger/OpenAPI docs for the full API surface.
-- [ ] **CLI Task Management** — Add `agentwork task create/list`, `agentwork agent list` commands for scripting agent workflows from the terminal.
+- [x] **CLI Task Management** — Add `agentwork task create/list`, `agentwork agent list` commands for scripting agent workflows from the terminal.
 - [ ] **Hot Reload for Server** — Add nodemon or file watcher for server-side code changes in dev mode.
 - [ ] **TypeScript Migration** — Add TypeScript or JSDoc type annotations for better IDE support and fewer runtime errors.
 - [ ] **Test Suite** — Unit tests for AI service, executor logic, scheduler, and integration tests for API routes.
