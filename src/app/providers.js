@@ -117,11 +117,31 @@ export default function Providers({ children }) {
     totalTokens: 0,
   });
 
+  // Accent color presets
+  const ACCENT_PRESETS = {
+    blue: { accent: '#4c6ef5', hover: '#4263eb', light: '#dbe4ff', darkAccent: '#5c7cfa', darkHover: '#748ffc', darkLight: '#1a2350' },
+    purple: { accent: '#7950f2', hover: '#7048e8', light: '#e5dbff', darkAccent: '#845ef7', darkHover: '#9775fa', darkLight: '#2b1a50' },
+    green: { accent: '#40c057', hover: '#37b24d', light: '#d3f9d8', darkAccent: '#51cf66', darkHover: '#69db7c', darkLight: '#1a3d20' },
+    orange: { accent: '#fd7e14', hover: '#f76707', light: '#ffe8cc', darkAccent: '#ff922b', darkHover: '#ffa94d', darkLight: '#3d2a0a' },
+    pink: { accent: '#e64980', hover: '#d6336c', light: '#ffdeeb', darkAccent: '#f06595', darkHover: '#f783ac', darkLight: '#3d1028' },
+    teal: { accent: '#20c997', hover: '#12b886', light: '#c3fae8', darkAccent: '#38d9a9', darkHover: '#63e6be', darkLight: '#0a3d2c' },
+  };
+
+  function applyAccentColor(colorName) {
+    const preset = ACCENT_PRESETS[colorName] || ACCENT_PRESETS.blue;
+    const isDark = document.documentElement.classList.contains('dark');
+    document.documentElement.style.setProperty('--accent', isDark ? preset.darkAccent : preset.accent);
+    document.documentElement.style.setProperty('--accent-hover', isDark ? preset.darkHover : preset.hover);
+    document.documentElement.style.setProperty('--accent-light', isDark ? preset.darkLight : preset.light);
+  }
+
   // Initialize theme
   useEffect(() => {
     const saved = localStorage.getItem('agentwork-theme') || 'dark';
     setTheme(saved);
     document.documentElement.classList.toggle('dark', saved === 'dark');
+    const accentColor = localStorage.getItem('agentwork-accent') || 'blue';
+    applyAccentColor(accentColor);
   }, []);
 
   // Check authentication on mount
