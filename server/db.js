@@ -98,10 +98,19 @@ db.exec(`
   );
 `);
 
-// Migrate tasks table: add completion_output column if missing
+// Migrate tasks table: add new columns if missing
 const taskCols = db.prepare("PRAGMA table_info(tasks)").all().map((c) => c.name);
 if (!taskCols.includes('completion_output')) {
   db.exec("ALTER TABLE tasks ADD COLUMN completion_output TEXT DEFAULT ''");
+}
+if (!taskCols.includes('trigger_type')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN trigger_type TEXT DEFAULT 'manual'");
+}
+if (!taskCols.includes('trigger_at')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN trigger_at TEXT DEFAULT NULL");
+}
+if (!taskCols.includes('trigger_cron')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN trigger_cron TEXT DEFAULT ''");
 }
 
 // Migrate agents table: add platform columns if missing

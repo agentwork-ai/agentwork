@@ -7,7 +7,7 @@ import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
-  Layers, ChevronRight,
+  Layers, ChevronRight, Clock, RefreshCw, Play,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -483,6 +483,15 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
       {task.description && (
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
       )}
+      {task.trigger_type && task.trigger_type !== 'manual' && (
+        <div className="flex items-center gap-1 mt-1.5">
+          <div className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
+            style={{ background: task.trigger_type === 'cron' ? '#7c3aed20' : '#4c6ef520', color: task.trigger_type === 'cron' ? '#7c3aed' : '#4c6ef5' }}>
+            {task.trigger_type === 'cron' ? <RefreshCw size={9} /> : <Clock size={9} />}
+            <span>{task.trigger_type === 'cron' ? task.trigger_cron || 'Cron' : 'Scheduled'}</span>
+          </div>
+        </div>
+      )}
       <div className="flex items-center gap-2 mt-2.5 flex-wrap">
         {/* Priority dropdown */}
         <div className="relative">
@@ -751,6 +760,22 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                     <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{task.priority}</p>
                   </div>
                 </div>
+                {task.trigger_type && task.trigger_type !== 'manual' && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                    <div className="flex items-center gap-1.5 font-medium text-xs"
+                      style={{ color: task.trigger_type === 'cron' ? '#7c3aed' : '#4c6ef5' }}>
+                      {task.trigger_type === 'cron' ? <RefreshCw size={13} /> : <Clock size={13} />}
+                      <span>{task.trigger_type === 'cron' ? 'Cron' : 'Scheduled'}</span>
+                    </div>
+                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                      {task.trigger_type === 'schedule' && task.trigger_at && new Date(task.trigger_at).toLocaleString()}
+                      {task.trigger_type === 'cron' && task.trigger_cron}
+                    </span>
+                    {task.trigger_type === 'cron' && (
+                      <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>· resets to To Do after each run</span>
+                    )}
+                  </div>
+                )}
                 <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                   Created: {new Date(task.created_at).toLocaleString()}
                   {task.completed_at && <> · Completed: {new Date(task.completed_at).toLocaleString()}</>}
@@ -817,6 +842,15 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
   );
 }
 
+const CRON_PRESETS = [
+  { label: 'Every hour',        value: '0 * * * *' },
+  { label: 'Every day at 9am',  value: '0 9 * * *' },
+  { label: 'Every day at 6pm',  value: '0 18 * * *' },
+  { label: 'Every Monday 9am',  value: '0 9 * * 1' },
+  { label: 'Every weekday 9am', value: '0 9 * * 1-5' },
+  { label: 'Custom…',           value: '__custom__' },
+];
+
 function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSaved }) {
   const [form, setForm] = useState({
     title: task?.title || '',
@@ -825,14 +859,32 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
     priority: task?.priority || 'medium',
     agent_id: task?.agent_id || '',
     project_id: task?.project_id || defaultProjectId || '',
+    trigger_type: task?.trigger_type || 'manual',
+    trigger_at: task?.trigger_at ? task.trigger_at.slice(0, 16) : '',
+    trigger_cron: task?.trigger_cron || '',
+  });
+  const [cronPreset, setCronPreset] = useState(() => {
+    const match = CRON_PRESETS.find((p) => p.value === task?.trigger_cron && p.value !== '__custom__');
+    return match ? match.value : (task?.trigger_cron ? '__custom__' : '0 9 * * *');
   });
   const [saving, setSaving] = useState(false);
+
+  const handleCronPreset = (val) => {
+    setCronPreset(val);
+    if (val !== '__custom__') setForm((f) => ({ ...f, trigger_cron: val }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const data = { ...form, agent_id: form.agent_id || null, project_id: form.project_id || null };
+      const data = {
+        ...form,
+        agent_id: form.agent_id || null,
+        project_id: form.project_id || null,
+        trigger_at: form.trigger_type === 'schedule' ? (form.trigger_at ? new Date(form.trigger_at).toISOString() : null) : null,
+        trigger_cron: form.trigger_type === 'cron' ? form.trigger_cron : '',
+      };
       if (task) {
         await api.updateTask(task.id, data);
         toast.success('Task updated');
@@ -848,9 +900,11 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
     }
   };
 
+  const triggerIcons = { manual: <Play size={13} />, schedule: <Clock size={13} />, cron: <RefreshCw size={13} /> };
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-      <div className="card p-6 w-full max-w-md animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
+      <div className="card p-6 w-full max-w-lg max-h-[90vh] overflow-auto animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
         <h3 className="font-semibold text-lg mb-4" style={{ color: 'var(--text-primary)' }}>
           {task ? 'Edit Task' : 'New Task'}
         </h3>
@@ -892,6 +946,69 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
           </div>
+
+          {/* Trigger */}
+          <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+            <label className="label">Trigger</label>
+            <div className="grid grid-cols-3 gap-2 mb-3">
+              {[
+                { id: 'manual',   label: 'Manual',   desc: 'Drag to Doing' },
+                { id: 'schedule', label: 'Schedule',  desc: 'Run once at time' },
+                { id: 'cron',     label: 'Cron',      desc: 'Run periodically' },
+              ].map((t) => (
+                <button key={t.id} type="button"
+                  className="p-2.5 rounded-lg text-left transition-all"
+                  style={{
+                    background: form.trigger_type === t.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                    border: `1px solid ${form.trigger_type === t.id ? 'var(--accent)' : 'var(--border)'}`,
+                  }}
+                  onClick={() => setForm({ ...form, trigger_type: t.id })}
+                >
+                  <div className="flex items-center gap-1.5 mb-0.5" style={{ color: form.trigger_type === t.id ? 'var(--accent)' : 'var(--text-secondary)' }}>
+                    {triggerIcons[t.id]}
+                    <span className="text-xs font-semibold">{t.label}</span>
+                  </div>
+                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{t.desc}</p>
+                </button>
+              ))}
+            </div>
+
+            {form.trigger_type === 'schedule' && (
+              <div>
+                <label className="label">Run at</label>
+                <input
+                  type="datetime-local"
+                  className="input"
+                  value={form.trigger_at}
+                  onChange={(e) => setForm({ ...form, trigger_at: e.target.value })}
+                  required
+                />
+              </div>
+            )}
+
+            {form.trigger_type === 'cron' && (
+              <div className="space-y-2">
+                <label className="label">Schedule</label>
+                <select className="input" value={cronPreset} onChange={(e) => handleCronPreset(e.target.value)}>
+                  {CRON_PRESETS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                </select>
+                {cronPreset === '__custom__' && (
+                  <input
+                    className="input font-mono text-sm"
+                    placeholder="e.g. 0 9 * * 1-5"
+                    value={form.trigger_cron}
+                    onChange={(e) => setForm({ ...form, trigger_cron: e.target.value })}
+                  />
+                )}
+                {form.trigger_cron && (
+                  <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                    Expression: <code className="font-mono">{form.trigger_cron}</code> · Task moves back to To Do after each run
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" disabled={saving}>

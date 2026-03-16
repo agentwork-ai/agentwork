@@ -50,6 +50,10 @@ app.prepare().then(() => {
   const { initExecutor } = require('./services/executor');
   initExecutor(io);
 
+  // Initialize task scheduler
+  const { initScheduler } = require('./services/scheduler');
+  initScheduler(io);
+
   // Initialize chat platform bots (Telegram/Slack)
   const { initPlatforms } = require('./services/platforms');
   initPlatforms().catch((err) => console.error('[Platforms] init error:', err.message));

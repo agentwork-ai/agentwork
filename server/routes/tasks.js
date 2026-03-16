@@ -58,14 +58,24 @@ router.get('/:id', (req, res) => {
 
 // Create task
 router.post('/', (req, res) => {
-  const { title, description, status, priority, agent_id, project_id } = req.body;
+  const { title, description, status, priority, agent_id, project_id,
+          trigger_type, trigger_at, trigger_cron } = req.body;
 
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
   const id = uuidv4();
   db.prepare(
-    'INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id) VALUES (?, ?, ?, ?, ?, ?, ?)'
-  ).run(id, title, description || '', status || 'backlog', priority || 'medium', agent_id || null, project_id || null);
+    `INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id,
+      trigger_type, trigger_at, trigger_cron)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id, title, description || '',
+    status || 'backlog', priority || 'medium',
+    agent_id || null, project_id || null,
+    trigger_type || 'manual',
+    trigger_at || null,
+    trigger_cron || ''
+  );
 
   const task = db.prepare(
     'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
@@ -77,6 +87,12 @@ router.post('/', (req, res) => {
   const io = req.app.get('io');
   if (io) io.emit('task:created', task);
 
+  // Schedule if needed
+  try {
+    const { scheduleTask } = require('../services/scheduler');
+    scheduleTask(task);
+  } catch {}
+
   res.status(201).json(task);
 });
 
@@ -85,7 +101,8 @@ router.put('/:id', (req, res) => {
   const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: 'Task not found' });
 
-  const { title, description, status, priority, agent_id, project_id, execution_logs, attachments } = req.body;
+  const { title, description, status, priority, agent_id, project_id, execution_logs, attachments,
+          trigger_type, trigger_at, trigger_cron } = req.body;
 
   const newStatus = status || existing.status;
 
@@ -99,7 +116,9 @@ router.put('/:id', (req, res) => {
 
   db.prepare(
     `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, agent_id = ?, project_id = ?,
-     execution_logs = ?, attachments = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`
+     execution_logs = ?, attachments = ?, completed_at = ?,
+     trigger_type = ?, trigger_at = ?, trigger_cron = ?,
+     updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     title || existing.title,
     description !== undefined ? description : existing.description,
@@ -110,6 +129,9 @@ router.put('/:id', (req, res) => {
     execution_logs ? JSON.stringify(execution_logs) : existing.execution_logs,
     attachments ? JSON.stringify(attachments) : existing.attachments,
     completedAt,
+    trigger_type !== undefined ? trigger_type : existing.trigger_type,
+    trigger_at !== undefined ? trigger_at : existing.trigger_at,
+    trigger_cron !== undefined ? trigger_cron : existing.trigger_cron,
     req.params.id
   );
 
@@ -135,11 +157,22 @@ router.put('/:id', (req, res) => {
     }
   }
 
+  // Reschedule if trigger config changed
+  try {
+    const { scheduleTask, cancelTask } = require('../services/scheduler');
+    if (task.trigger_type === 'manual') {
+      cancelTask(task.id);
+    } else {
+      scheduleTask(task);
+    }
+  } catch {}
+
   res.json(task);
 });
 
 // Delete task
 router.delete('/:id', (req, res) => {
+  try { require('../services/scheduler').cancelTask(req.params.id); } catch {}
   db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
   const io = req.app.get('io');
   if (io) io.emit('task:deleted', { id: req.params.id });

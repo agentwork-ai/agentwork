@@ -361,9 +361,11 @@ Please complete this task autonomously. Analyze the codebase, plan your approach
     }
 
     const cliCompletionMsg = `I've completed the task: ${task.title}`;
-    moveTask(taskId, 'done', cliCompletionMsg);
+    const cliDoneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
+    moveTask(taskId, cliDoneStatus, cliCompletionMsg);
     sendMessage(agentId, 'agent', cliCompletionMsg, taskId);
     reflectAfterTask(agent, agentDir, task.title, 'Completed via CLI agent.', project);
+    try { require('./scheduler').onTaskCompleted(task); } catch {}
   } catch (err) {
     if (err.name === 'AbortError') {
       addLog(taskId, 'warning', 'Task execution was aborted.');
@@ -661,9 +663,11 @@ Use tools to complete your task — do NOT write explanations without acting:
       if (taskDone) {
         addLog(taskId, 'success', 'Task completed!');
         const completionMsg = `I've completed the task: ${task.title}\n\n${summary}`;
-        moveTask(taskId, 'done', completionMsg);
+        const doneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
+        moveTask(taskId, doneStatus, completionMsg);
         sendMessage(agentId, 'agent', completionMsg, taskId);
         reflectAfterTask(agent, agentDir, task.title, summary, project);
+        try { require('./scheduler').onTaskCompleted(task); } catch {}
         break;
       }
 
@@ -694,7 +698,8 @@ Use tools to complete your task — do NOT write explanations without acting:
         addLog(taskId, 'success', 'Task completed (text signal)!');
         const textSummary = extractSummary(response.content);
         const textCompletionMsg = `I've completed the task: ${task.title}\n\n${textSummary}`;
-        moveTask(taskId, 'done', textCompletionMsg);
+        const textDoneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
+        moveTask(taskId, textDoneStatus, textCompletionMsg);
         sendMessage(agentId, 'agent', textCompletionMsg, taskId);
         reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);
         break;
