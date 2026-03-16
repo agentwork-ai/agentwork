@@ -100,7 +100,7 @@ async function _createCompletion(provider, model, messages, options = {}) {
     openrouter: 'openrouter_api_key',
     deepseek: 'deepseek_api_key',
     mistral: 'mistral_api_key',
-    google: 'openai_api_key',
+    google: 'google_api_key',
   };
   apiKey = getSetting(keyMap[provider] || 'openai_api_key');
 
@@ -119,6 +119,8 @@ async function _createCompletion(provider, model, messages, options = {}) {
     return callOpenAI(apiKey, model, messages, options, 'https://api.deepseek.com');
   } else if (provider === 'mistral') {
     return callOpenAI(apiKey, model, messages, options, 'https://api.mistral.ai/v1');
+  } else if (provider === 'google') {
+    return callOpenAI(apiKey, model, messages, options, 'https://generativelanguage.googleapis.com/v1beta/openai');
   } else {
     return callOpenAI(apiKey, model, messages, options, customBaseUrl);
   }

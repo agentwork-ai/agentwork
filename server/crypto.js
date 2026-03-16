@@ -46,7 +46,8 @@ function decrypt(ciphertext) {
 // Keys that should be encrypted
 const SENSITIVE_KEYS = [
   'anthropic_api_key', 'openai_api_key', 'openrouter_api_key',
-  'deepseek_api_key', 'mistral_api_key', 'dashboard_password',
+  'deepseek_api_key', 'mistral_api_key', 'google_api_key',
+  'dashboard_password', 'smtp_pass',
 ];
 
 function isSensitiveKey(key) {

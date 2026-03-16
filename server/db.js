@@ -229,6 +229,7 @@ const defaultSettings = {
   dashboard_password: '',
   accent_color: 'blue',
   verbose_ai_logging: 'false',
+  google_api_key: '',
   smtp_host: '',
   smtp_port: '587',
   smtp_user: '',
