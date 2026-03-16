@@ -245,6 +245,11 @@ export default function KanbanPage() {
                   onDrop={(e) => handleDrop(e, col.id)}
                 >
                   <div className="flex items-center gap-2 px-3 py-2.5">
+                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.color }} />
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{col.label}</span>
+                    <span className="text-xs ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                      {colTasks.length}
+                    </span>
                     {(col.id === 'backlog' || col.id === 'todo') && (
                       <button
                         onClick={() => openQuickAdd(col.id)}
@@ -255,11 +260,6 @@ export default function KanbanPage() {
                         <Plus size={14} />
                       </button>
                     )}
-                    <div className="w-2.5 h-2.5 rounded-full shrink-0" style={{ background: col.color }} />
-                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{col.label}</span>
-                    <span className="text-xs ml-auto px-1.5 py-0.5 rounded-md" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
-                      {colTasks.length}
-                    </span>
                   </div>
                   <div className="flex-1 overflow-y-auto px-2 pb-2 space-y-2">
                     {quickAddCol === col.id && (
