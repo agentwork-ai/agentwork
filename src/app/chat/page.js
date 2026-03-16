@@ -9,7 +9,7 @@ import { Send, Bot, User, Key, Terminal } from 'lucide-react';
 
 export default function ChatPage() {
   const socket = useSocket();
-  const { clearUnread } = useUnread();
+  const { unread, clearUnread } = useUnread();
   const [agents, setAgents] = useState([]);
   const [selectedAgent, setSelectedAgent] = useState(null);
   const [messages, setMessages] = useState([]);
@@ -121,6 +121,8 @@ export default function ChatPage() {
                 </p>
               ) : (
                 agents.map((agent) => {
+                  const agentUnread = unread[agent.id];
+                  const hasUnread = agentUnread && agentUnread.count > 0;
                   return (
                   <button
                     key={agent.id}
@@ -141,11 +143,11 @@ export default function ChatPage() {
                       />
                     </div>
                     <div className="min-w-0 flex-1">
-                      <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>
+                      <p className={`text-sm truncate ${hasUnread ? 'font-bold' : 'font-medium'}`} style={{ color: 'var(--text-primary)' }}>
                         {agent.name}
                       </p>
-                      <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
-                        {agent.role}
+                      <p className="text-xs truncate" style={{ color: hasUnread ? 'var(--text-secondary)' : 'var(--text-tertiary)' }}>
+                        {hasUnread ? agentUnread.lastMessage : agent.role}
                       </p>
                     </div>
                     <span className="text-[9px] shrink-0 px-1.5 py-0.5 rounded" style={{
