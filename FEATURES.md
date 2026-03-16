@@ -24,7 +24,7 @@
 - [ ] **Priority Queue per Agent** — Add a priority queue per agent so when one task finishes, the next highest-priority "To Do" task auto-starts.
 - [ ] **Task Templates / Recurring Blueprints** — Allow saving a task as a "template" with pre-filled title, description, agent, and project. One-click to create a new task from the template.
 - [ ] **Time Estimates & SLA Tracking** — Add estimated duration per task and track actual execution time. Surface SLA violations (tasks taking 3x longer than estimated) in the dashboard.
-- [ ] **Task Labels / Tags** — Add a free-form tagging system (e.g., "bug", "feature", "refactor", "urgent") for filtering and grouping tasks on the Kanban board.
+- [x] **Task Labels / Tags** — Add a free-form tagging system (e.g., "bug", "feature", "refactor", "urgent") for filtering and grouping tasks on the Kanban board.
 - [ ] **Bulk Task Operations** — Add multi-select on the Kanban board for bulk status changes, bulk agent assignment, or bulk deletion.
 - [ ] **Retry with Modified Prompt** — When a task lands in "Blocked," allow the user to edit the task description and retry execution with one click.
 - [ ] **Parallel Flow Steps** — Allow marking certain flow steps as parallelizable so multiple agents can work on different steps simultaneously, with a join step that waits for all parallel branches.

@@ -493,6 +493,16 @@ function TaskCard({ task, projects, agents, showProject, onDragStart, onClick, o
       {task.description && (
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>
       )}
+      {task.tags && (
+        <div className="flex flex-wrap gap-1 mt-1.5">
+          {task.tags.split(',').filter(Boolean).map((tag) => (
+            <span key={tag} className="text-[9px] px-1.5 py-0.5 rounded-full font-medium"
+              style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
+              {tag.trim()}
+            </span>
+          ))}
+        </div>
+      )}
       {task.trigger_type && task.trigger_type !== 'manual' && (
         <div className="flex items-center gap-1 mt-1.5">
           <div className="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium"
@@ -654,6 +664,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
     priority: task.priority,
     agent_id: task.agent_id || '',
     project_id: task.project_id || '',
+    tags: task.tags || '',
     flow_items: task.flow_items || [],
   });
   const [saving, setSaving] = useState(false);
@@ -670,6 +681,7 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
       priority: task.priority,
       agent_id: task.agent_id || '',
       project_id: task.project_id || '',
+      tags: task.tags || '',
       flow_items: task.flow_items || [],
     });
   }, [task]);
@@ -755,6 +767,10 @@ function TaskDetailModal({ task, agents, projects, onClose, onUpdate, onDelete }
                 <div>
                   <label className="label">Description</label>
                   <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+                </div>
+                <div>
+                  <label className="label">Tags <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(comma-separated)</span></label>
+                  <input className="input text-sm" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="bug, feature, urgent" />
                 </div>
                 <div className="grid grid-cols-3 gap-3">
                   <div>
@@ -1077,6 +1093,11 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
           <div>
             <label className="label">Description</label>
             <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
+          </div>
+
+          <div>
+            <label className="label">Tags <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(comma-separated)</span></label>
+            <input className="input text-sm" value={form.tags || ''} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="bug, feature, urgent" />
           </div>
 
           {/* Task Type */}

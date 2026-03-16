@@ -124,6 +124,9 @@ if (!taskCols.includes('task_type')) {
 if (!taskCols.includes('flow_items')) {
   db.exec("ALTER TABLE tasks ADD COLUMN flow_items TEXT DEFAULT '[]'");
 }
+if (!taskCols.includes('tags')) {
+  db.exec("ALTER TABLE tasks ADD COLUMN tags TEXT DEFAULT ''");
+}
 
 // Migrate agents table: add platform columns if missing
 const agentCols = db.prepare("PRAGMA table_info(agents)").all().map((c) => c.name);

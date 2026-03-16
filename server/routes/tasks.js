@@ -61,15 +61,15 @@ router.get('/:id', (req, res) => {
 // Create task
 router.post('/', (req, res) => {
   const { title, description, status, priority, agent_id, project_id,
-          trigger_type, trigger_at, trigger_cron, task_type, flow_items } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags } = req.body;
 
   if (!title) return res.status(400).json({ error: 'Title is required' });
 
   const id = uuidv4();
   db.prepare(
     `INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id,
-      trigger_type, trigger_at, trigger_cron, task_type, flow_items)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, title, description || '',
     status || 'backlog', priority || 'medium',
@@ -78,7 +78,8 @@ router.post('/', (req, res) => {
     trigger_at || null,
     trigger_cron || '',
     task_type || 'single',
-    flow_items ? JSON.stringify(flow_items) : '[]'
+    flow_items ? JSON.stringify(flow_items) : '[]',
+    tags || ''
   );
 
   const task = db.prepare(
@@ -107,7 +108,7 @@ router.put('/:id', (req, res) => {
   if (!existing) return res.status(404).json({ error: 'Task not found' });
 
   const { title, description, status, priority, agent_id, project_id, execution_logs, attachments,
-          trigger_type, trigger_at, trigger_cron, task_type, flow_items } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags } = req.body;
 
   const newStatus = status || existing.status;
   const newAgentId = agent_id !== undefined ? agent_id : existing.agent_id;
@@ -128,7 +129,7 @@ router.put('/:id', (req, res) => {
     `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, agent_id = ?, project_id = ?,
      execution_logs = ?, attachments = ?, completed_at = ?,
      trigger_type = ?, trigger_at = ?, trigger_cron = ?,
-     task_type = ?, flow_items = ?,
+     task_type = ?, flow_items = ?, tags = ?,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     title || existing.title,
@@ -145,6 +146,7 @@ router.put('/:id', (req, res) => {
     trigger_cron !== undefined ? trigger_cron : existing.trigger_cron,
     task_type !== undefined ? task_type : (existing.task_type || 'single'),
     flow_items ? JSON.stringify(flow_items) : existing.flow_items,
+    tags !== undefined ? tags : (existing.tags || ''),
     req.params.id
   );
 
