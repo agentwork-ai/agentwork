@@ -1,10 +1,25 @@
 const BASE = '';
 
+function getAuthHeaders() {
+  if (typeof window !== 'undefined') {
+    const token = localStorage.getItem('agentwork-auth-token');
+    if (token) return { 'x-auth-token': token };
+  }
+  return {};
+}
+
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...options.headers },
+    headers: { 'Content-Type': 'application/json', ...getAuthHeaders(), ...options.headers },
     ...options,
   });
+
+  // If unauthorized, redirect to trigger login screen
+  if (res.status === 401 && typeof window !== 'undefined') {
+    // Emit a custom event so the auth provider can show the login screen
+    window.dispatchEvent(new CustomEvent('agentwork:auth-required'));
+    throw new Error('Authentication required');
+  }
 
   if (!res.ok) {
     const error = await res.json().catch(() => ({ error: res.statusText }));
@@ -35,6 +50,8 @@ export const api = {
   createTask: (data) => request('/api/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id, data) => request(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: 'DELETE' }),
+  bulkTaskAction: (action, taskIds, data) =>
+    request('/api/tasks/bulk', { method: 'POST', body: JSON.stringify({ action, task_ids: taskIds, data }) }),
   getSubtasks: (id) => request(`/api/tasks/${id}/subtasks`),
   createSubtask: (id, data) => request(`/api/tasks/${id}/subtasks`, { method: 'POST', body: JSON.stringify(data) }),
   getTaskComments: (taskId) => request(`/api/tasks/${taskId}/comments`),
@@ -52,6 +69,8 @@ export const api = {
   clearAgentMemory: (id) => request(`/api/agents/${id}/clear-memory`, { method: 'POST' }),
   cloneAgent: (id, name) => request(`/api/agents/${id}/clone`, { method: 'POST', body: JSON.stringify({ name }) }),
   getAgentMetrics: (id) => request(`/api/agents/${id}/metrics`),
+  suggestAgent: (title, description, projectId) =>
+    request(`/api/agents/suggest?title=${encodeURIComponent(title || '')}&description=${encodeURIComponent(description || '')}${projectId ? `&project_id=${projectId}` : ''}`),
 
   // Chat
   getMessages: (agentId, limit) => request(`/api/chat/${agentId}?limit=${limit || 100}`),
@@ -80,4 +99,14 @@ export const api = {
 
   // Status
   getStatus: () => request('/api/status'),
+
+  // Auth
+  checkAuth: () => fetch('/api/auth/check', {
+    headers: { ...getAuthHeaders() },
+  }).then(r => r.json()),
+  login: (password) => fetch('/api/auth/login', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  }).then(r => r.json()),
 };

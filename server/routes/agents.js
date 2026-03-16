@@ -15,6 +15,51 @@ router.get('/', (req, res) => {
   res.json(agents);
 });
 
+// Suggest best agent for a task
+router.get('/suggest', (req, res) => {
+  const { title, description, project_id } = req.query;
+  const text = `${title || ''} ${description || ''}`.toLowerCase();
+  const agents = db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all();
+  if (agents.length === 0) return res.json([]);
+
+  // Score agents based on role match, project history, and workload
+  const scored = agents.map((agent) => {
+    let score = 0;
+    const role = (agent.role || '').toLowerCase();
+
+    // Role keyword matching
+    const keywords = text.split(/\s+/).filter((w) => w.length > 3);
+    for (const kw of keywords) {
+      if (role.includes(kw)) score += 10;
+    }
+
+    // Common role-task associations
+    if (text.match(/react|frontend|ui|css|component/) && role.match(/react|frontend|ui|full.?stack/)) score += 15;
+    if (text.match(/api|backend|server|database|sql/) && role.match(/backend|server|full.?stack|data/)) score += 15;
+    if (text.match(/test|qa|bug|fix/) && role.match(/qa|test|quality/)) score += 15;
+    if (text.match(/deploy|ci|docker|infra/) && role.match(/devops|infra|deploy/)) score += 15;
+    if (text.match(/doc|readme|write/) && role.match(/writer|doc/)) score += 15;
+
+    // Past performance on same project
+    if (project_id) {
+      const completed = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE agent_id = ? AND project_id = ? AND status = 'done'").get(agent.id, project_id);
+      score += (completed?.c || 0) * 5;
+    }
+
+    // Penalize busy agents
+    const active = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE agent_id = ? AND status = 'doing'").get(agent.id);
+    score -= (active?.c || 0) * 10;
+
+    // Prefer idle agents
+    if (agent.status === 'idle') score += 5;
+
+    return { ...agent, score };
+  });
+
+  scored.sort((a, b) => b.score - a.score);
+  res.json(scored.slice(0, 5));
+});
+
 // Get single agent
 router.get('/:id', (req, res) => {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
