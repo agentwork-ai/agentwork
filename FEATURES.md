@@ -78,7 +78,7 @@
 
 - [x] **REST API Documentation** — Auto-generated Swagger/OpenAPI docs for the full API surface.
 - [x] **CLI Task Management** — Add `agentwork task create/list`, `agentwork agent list` commands for scripting agent workflows from the terminal.
-- [ ] **Hot Reload for Server** — Add nodemon or file watcher for server-side code changes in dev mode.
+- [x] **Hot Reload for Server** — Add nodemon or file watcher for server-side code changes in dev mode.
 - [ ] **TypeScript Migration** — Add TypeScript or JSDoc type annotations for better IDE support and fewer runtime errors.
 - [ ] **Test Suite** — Unit tests for AI service, executor logic, scheduler, and integration tests for API routes.
 - [ ] **Plugin System** — Allow third-party plugins that register new agent tools, platform integrations, or custom task types without modifying core code.
@@ -141,7 +141,7 @@
 
 ## 15. Mobile & Accessibility
 
-- [ ] **Progressive Web App (PWA)** — Add manifest.json and service worker for installable mobile experience with push notifications.
+- [x] **Progressive Web App (PWA)** — Add manifest.json and service worker for installable mobile experience with push notifications.
 - [ ] **Touch-Friendly Kanban** — Proper touch drag-and-drop using dnd-kit's touch sensors.
 - [ ] **Accessible Color Contrast** — Audit and fix WCAG AA compliance across both themes.
 - [ ] **Screen Reader Support** — ARIA labels on interactive elements and semantic HTML landmarks.

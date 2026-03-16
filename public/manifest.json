@@ -1,0 +1,16 @@
+{
+  "name": "AgentWork",
+  "short_name": "AgentWork",
+  "start_url": "/",
+  "display": "standalone",
+  "theme_color": "#0f0f17",
+  "background_color": "#0f0f17",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

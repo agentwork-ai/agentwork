@@ -135,6 +135,15 @@ export default function Providers({ children }) {
     document.documentElement.style.setProperty('--accent-light', isDark ? preset.darkLight : preset.light);
   }
 
+  // Register service worker
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch((err) => {
+        console.warn('Service worker registration failed:', err);
+      });
+    }
+  }, []);
+
   // Initialize theme
   useEffect(() => {
     const saved = localStorage.getItem('agentwork-theme') || 'dark';
