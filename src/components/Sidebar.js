@@ -35,6 +35,13 @@ export default function Sidebar() {
   const { unread } = useUnread();
   const [collapsed, setCollapsed] = useState(false);
 
+  // Listen for keyboard shortcut toggle event
+  useEffect(() => {
+    const handler = () => setCollapsed((prev) => !prev);
+    window.addEventListener('sidebar:toggle', handler);
+    return () => window.removeEventListener('sidebar:toggle', handler);
+  }, []);
+
   const totalUnread = Object.values(unread).reduce((sum, v) => sum + (v.count || 0), 0);
 
   return (

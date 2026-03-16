@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { io } from 'socket.io-client';
 import { Toaster, toast } from 'react-hot-toast';
 import { X } from 'lucide-react';
+import KeyboardShortcuts from '@/components/KeyboardShortcuts';
 
 // Socket context
 const SocketContext = createContext(null);
@@ -144,6 +145,7 @@ export default function Providers({ children }) {
         <StatusContext.Provider value={systemStatus}>
           <UnreadContext.Provider value={{ unread, clearUnread }}>
           {children}
+          <KeyboardShortcuts />
           <Toaster
             position="top-right"
             toastOptions={{
