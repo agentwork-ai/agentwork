@@ -29,6 +29,13 @@ router.get('/:id', (req, res) => {
       agent.memory[file] = fs.readFileSync(filePath, 'utf8');
     }
   }
+  // Load shared TEAM.md
+  const teamPath = path.join(DATA_DIR, 'TEAM.md');
+  if (fs.existsSync(teamPath)) {
+    agent.memory['TEAM.md'] = fs.readFileSync(teamPath, 'utf8');
+  } else {
+    agent.memory['TEAM.md'] = '';
+  }
 
   res.json(agent);
 });
@@ -185,9 +192,15 @@ router.put('/:id/memory/:filename', (req, res) => {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
-  const allowedFiles = ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md'];
+  const allowedFiles = ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md', 'TEAM.md'];
   if (!allowedFiles.includes(req.params.filename)) {
     return res.status(400).json({ error: 'Invalid memory file' });
+  }
+
+  // TEAM.md is shared — stored at DATA_DIR level, not per-agent
+  if (req.params.filename === 'TEAM.md') {
+    fs.writeFileSync(path.join(DATA_DIR, 'TEAM.md'), req.body.content || '');
+    return res.json({ success: true });
   }
 
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
