@@ -88,6 +88,13 @@ router.put('/:id', (req, res) => {
   const { title, description, status, priority, agent_id, project_id, execution_logs, attachments } = req.body;
 
   const newStatus = status || existing.status;
+
+  // Prevent moving unassigned tasks to active columns
+  const newAgentId = agent_id !== undefined ? agent_id : existing.agent_id;
+  if (newStatus !== 'backlog' && newStatus !== 'todo' && newStatus !== existing.status && !newAgentId) {
+    return res.status(400).json({ error: 'Assign an agent before moving this task.' });
+  }
+
   const completedAt = newStatus === 'done' && existing.status !== 'done' ? new Date().toISOString() : existing.completed_at;
 
   db.prepare(

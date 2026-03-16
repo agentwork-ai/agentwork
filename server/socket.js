@@ -56,6 +56,15 @@ function initSocket(io) {
     // Task status changes
     socket.on('task:move', (data) => {
       const { taskId, status } = data;
+
+      if (status !== 'backlog' && status !== 'todo') {
+        const check = db.prepare('SELECT agent_id FROM tasks WHERE id = ?').get(taskId);
+        if (check && !check.agent_id) {
+          socket.emit('task:move_error', { taskId, message: 'Assign an agent before moving this task.' });
+          return;
+        }
+      }
+
       db.prepare('UPDATE tasks SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?').run(status, taskId);
 
       const task = db.prepare('SELECT * FROM tasks WHERE id = ?').get(taskId);

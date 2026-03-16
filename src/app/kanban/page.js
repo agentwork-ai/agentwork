@@ -77,6 +77,13 @@ export default function KanbanPage() {
   }, [socket]);
 
   const moveTask = async (taskId, newStatus) => {
+    if (newStatus !== 'backlog' && newStatus !== 'todo') {
+      const task = tasks.find((t) => t.id === taskId);
+      if (task && !task.agent_id) {
+        toast.error('Assign an agent before moving this task.');
+        return;
+      }
+    }
     try {
       await api.updateTask(taskId, { status: newStatus });
     } catch (err) {
