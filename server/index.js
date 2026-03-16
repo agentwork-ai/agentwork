@@ -6,10 +6,10 @@ const path = require('path');
 
 const PORT = parseInt(process.env.PORT || '1248', 10);
 const dev = process.env.NODE_ENV !== 'production';
-const ROOT = process.env.AGENTHUB_ROOT || path.resolve(__dirname, '..');
+const ROOT = process.env.AGENTWORK_ROOT || path.resolve(__dirname, '..');
 
-// Set AGENTHUB_ROOT for other modules
-process.env.AGENTHUB_ROOT = ROOT;
+// Set AGENTWORK_ROOT for other modules
+process.env.AGENTWORK_ROOT = ROOT;
 
 const app = next({ dev, dir: ROOT });
 const handle = app.getRequestHandler();
@@ -70,13 +70,13 @@ app.prepare().then(() => {
   server.all('*', (req, res) => handle(req, res));
 
   httpServer.listen(PORT, () => {
-    console.log(`[AgentHub] Server running on http://localhost:${PORT}`);
-    console.log(`[AgentHub] Environment: ${dev ? 'development' : 'production'}`);
+    console.log(`[AgentWork] Server running on http://localhost:${PORT}`);
+    console.log(`[AgentWork] Environment: ${dev ? 'development' : 'production'}`);
   });
 
   // Graceful shutdown
   const shutdown = () => {
-    console.log('\n[AgentHub] Shutting down...');
+    console.log('\n[AgentWork] Shutting down...');
     const { db } = require('./db');
     // Stop platform bots
     try {

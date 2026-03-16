@@ -37,7 +37,7 @@ export default function Providers({ children }) {
 
   // Initialize theme
   useEffect(() => {
-    const saved = localStorage.getItem('agenthub-theme') || 'dark';
+    const saved = localStorage.getItem('agentwork-theme') || 'dark';
     setTheme(saved);
     document.documentElement.classList.toggle('dark', saved === 'dark');
   }, []);
@@ -45,7 +45,7 @@ export default function Providers({ children }) {
   const toggleTheme = useCallback(() => {
     setTheme((prev) => {
       const next = prev === 'dark' ? 'light' : 'dark';
-      localStorage.setItem('agenthub-theme', next);
+      localStorage.setItem('agentwork-theme', next);
       document.documentElement.classList.toggle('dark', next === 'dark');
       return next;
     });

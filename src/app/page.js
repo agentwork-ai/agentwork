@@ -50,7 +50,7 @@ export default function DashboardPage() {
           {/* Header */}
           <div className="mb-8">
             <h1 className="text-2xl font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
-              Welcome to AgentHub
+              Welcome to AgentWork
             </h1>
             <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
               Your autonomous AI agent orchestrator

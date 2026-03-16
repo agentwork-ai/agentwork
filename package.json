@@ -1,10 +1,10 @@
 {
-  "name": "agenthub",
+  "name": "agentwork",
   "version": "1.0.0",
-  "description": "AgentHub - Autonomous AI Agent Orchestrator",
+  "description": "AgentWork - Autonomous AI Agent Orchestrator",
   "private": true,
   "bin": {
-    "agenthub": "./bin/cli.js"
+    "agentwork": "./bin/cli.js"
   },
   "scripts": {
     "dev": "node server/index.js",

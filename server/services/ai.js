@@ -164,7 +164,7 @@ async function callOpenRouter(apiKey, model, messages, options) {
     baseURL: 'https://openrouter.ai/api/v1',
     defaultHeaders: {
       'HTTP-Referer': 'http://localhost:1248',
-      'X-Title': 'AgentHub',
+      'X-Title': 'AgentWork',
     },
   });
 

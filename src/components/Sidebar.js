@@ -57,7 +57,7 @@ export default function Sidebar() {
         </div>
         {!collapsed && (
           <span className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>
-            AgentHub
+            AgentWork
           </span>
         )}
       </div>

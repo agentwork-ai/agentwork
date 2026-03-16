@@ -10,9 +10,9 @@ const os = require('os');
 
 const program = new Command();
 const ROOT = path.resolve(__dirname, '..');
-const DATA_DIR = process.env.AGENTHUB_DATA || path.join(os.homedir(), '.agenthub');
-const PID_FILE = path.join(DATA_DIR, 'agenthub.pid');
-const LOG_FILE = path.join(DATA_DIR, 'logs', 'agenthub.log');
+const DATA_DIR = process.env.AGENTWORK_DATA || path.join(os.homedir(), '.agentwork');
+const PID_FILE = path.join(DATA_DIR, 'agentwork.pid');
+const LOG_FILE = path.join(DATA_DIR, 'logs', 'agentwork.log');
 
 fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
 
@@ -29,27 +29,27 @@ function isRunning() {
 }
 
 program
-  .name('agenthub')
-  .description('AgentHub - Autonomous AI Agent Orchestrator')
+  .name('agentwork')
+  .description('AgentWork - Autonomous AI Agent Orchestrator')
   .version('1.0.0');
 
 program
   .command('start')
-  .description('Start AgentHub daemon and dashboard')
+  .description('Start AgentWork daemon and dashboard')
   .option('-p, --port <port>', 'Port to run on', '1248')
   .option('-f, --foreground', 'Run in foreground (no daemon)')
   .action((opts) => {
     const pid = isRunning();
     if (pid) {
-      console.log(chalk.yellow(`AgentHub is already running (PID: ${pid})`));
+      console.log(chalk.yellow(`AgentWork is already running (PID: ${pid})`));
       console.log(chalk.gray(`Dashboard: http://localhost:${opts.port}`));
       return;
     }
 
-    console.log(chalk.blue.bold('🚀 Starting AgentHub...'));
+    console.log(chalk.blue.bold('🚀 Starting AgentWork...'));
 
     const serverScript = path.join(ROOT, 'server', 'index.js');
-    const env = { ...process.env, PORT: opts.port, AGENTHUB_ROOT: ROOT };
+    const env = { ...process.env, PORT: opts.port, AGENTWORK_ROOT: ROOT };
 
     if (opts.foreground) {
       const child = spawn('node', [serverScript], {
@@ -78,12 +78,12 @@ program
     setTimeout(() => {
       const running = isRunning();
       if (running) {
-        console.log(chalk.green.bold('✓ AgentHub started successfully'));
+        console.log(chalk.green.bold('✓ AgentWork started successfully'));
         console.log(chalk.gray(`  PID:       ${running}`));
         console.log(chalk.gray(`  Dashboard: http://localhost:${opts.port}`));
         console.log(chalk.gray(`  Logs:      ${LOG_FILE}`));
       } else {
-        console.log(chalk.red('✗ Failed to start AgentHub. Check logs:'));
+        console.log(chalk.red('✗ Failed to start AgentWork. Check logs:'));
         console.log(chalk.gray(`  ${LOG_FILE}`));
       }
     }, 2000);
@@ -91,15 +91,15 @@ program
 
 program
   .command('stop')
-  .description('Stop AgentHub daemon')
+  .description('Stop AgentWork daemon')
   .action(() => {
     const pid = isRunning();
     if (!pid) {
-      console.log(chalk.yellow('AgentHub is not running.'));
+      console.log(chalk.yellow('AgentWork is not running.'));
       return;
     }
 
-    console.log(chalk.blue(`Stopping AgentHub (PID: ${pid})...`));
+    console.log(chalk.blue(`Stopping AgentWork (PID: ${pid})...`));
     try {
       process.kill(pid, 'SIGTERM');
       // Give it a moment to shut down
@@ -115,27 +115,27 @@ program
         } catch {
           clearInterval(check);
           if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-          console.log(chalk.green.bold('✓ AgentHub stopped.'));
+          console.log(chalk.green.bold('✓ AgentWork stopped.'));
         }
       }, 500);
     } catch (err) {
       if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-      console.log(chalk.green('AgentHub stopped.'));
+      console.log(chalk.green('AgentWork stopped.'));
     }
   });
 
 program
   .command('status')
-  .description('Show AgentHub status')
+  .description('Show AgentWork status')
   .action(() => {
     const pid = isRunning();
     if (!pid) {
-      console.log(chalk.red.bold('● AgentHub is not running'));
+      console.log(chalk.red.bold('● AgentWork is not running'));
       return;
     }
 
     const port = process.env.PORT || 1248;
-    console.log(chalk.green.bold('● AgentHub is running'));
+    console.log(chalk.green.bold('● AgentWork is running'));
     console.log(chalk.gray(`  PID:       ${pid}`));
     console.log(chalk.gray(`  Dashboard: http://localhost:${port}`));
 
@@ -161,7 +161,7 @@ program
 
 program
   .command('logs')
-  .description('Tail AgentHub logs')
+  .description('Tail AgentWork logs')
   .option('-n, --lines <lines>', 'Number of lines to show', '50')
   .option('-f, --follow', 'Follow log output')
   .action((opts) => {
@@ -189,7 +189,7 @@ program
   .action(() => {
     const pid = isRunning();
     if (pid) {
-      console.log(chalk.yellow('Please stop AgentHub first: agenthub stop'));
+      console.log(chalk.yellow('Please stop AgentWork first: agentwork stop'));
       return;
     }
 

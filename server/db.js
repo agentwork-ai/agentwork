@@ -3,8 +3,14 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 
-const DATA_DIR = process.env.AGENTHUB_DATA || path.join(require('os').homedir(), '.agenthub');
+const DATA_DIR = process.env.AGENTWORK_DATA || path.join(require('os').homedir(), '.agentwork');
 const DB_DIR = path.join(DATA_DIR, 'db');
+
+// Migrate data directory from old .agenthub location if needed
+const OLD_DATA_DIR = path.join(require('os').homedir(), '.agenthub');
+if (fs.existsSync(OLD_DATA_DIR) && !fs.existsSync(DATA_DIR)) {
+  try { fs.renameSync(OLD_DATA_DIR, DATA_DIR); } catch {}
+}
 
 // Ensure directories exist
 fs.mkdirSync(DB_DIR, { recursive: true });
@@ -12,8 +18,8 @@ fs.mkdirSync(path.join(DATA_DIR, 'agents'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
 
 // Migrate DB from old location if needed
-const OLD_DB = path.join(DATA_DIR, 'agenthub.db');
-const DB_PATH = path.join(DB_DIR, 'agenthub.db');
+const OLD_DB = path.join(DATA_DIR, 'agentwork.db');
+const DB_PATH = path.join(DB_DIR, 'agentwork.db');
 if (fs.existsSync(OLD_DB) && !fs.existsSync(DB_PATH)) {
   fs.renameSync(OLD_DB, DB_PATH);
   for (const ext of ['-shm', '-wal']) {

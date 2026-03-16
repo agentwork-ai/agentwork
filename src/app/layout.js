@@ -2,7 +2,7 @@ import './globals.css';
 import Providers from './providers';
 
 export const metadata = {
-  title: 'AgentHub',
+  title: 'AgentWork',
   description: 'Autonomous AI Agent Orchestrator',
 };
 
