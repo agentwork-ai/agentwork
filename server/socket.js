@@ -58,7 +58,7 @@ function initSocket(io) {
       const { taskId, status } = data;
 
       if (status !== 'backlog' && status !== 'todo') {
-        const check = db.prepare('SELECT agent_id, task_type, flow_items FROM tasks WHERE id = ?').get(taskId);
+        const check = db.prepare('SELECT agent_id, task_type, flow_items, depends_on FROM tasks WHERE id = ?').get(taskId);
         if (check && !check.agent_id) {
           const isFlow = (check.task_type || 'single') === 'flow';
           const flowItems = JSON.parse(check.flow_items || '[]');
@@ -66,6 +66,21 @@ function initSocket(io) {
           if (!flowHasAgents) {
             socket.emit('task:move_error', { taskId, message: 'Assign an agent before moving this task.' });
             return;
+          }
+        }
+
+        // Check dependencies when moving to 'doing'
+        if (status === 'doing' && check) {
+          const depIds = JSON.parse(check.depends_on || '[]');
+          if (Array.isArray(depIds) && depIds.length > 0) {
+            const placeholders = depIds.map(() => '?').join(',');
+            const depTasks = db.prepare(`SELECT id, title, status FROM tasks WHERE id IN (${placeholders})`).all(...depIds);
+            const unmet = depTasks.filter((d) => d.status !== 'done');
+            if (unmet.length > 0) {
+              const names = unmet.map((d) => d.title).join(', ');
+              socket.emit('task:move_error', { taskId, message: `Dependencies not met: ${names}` });
+              return;
+            }
           }
         }
       }
@@ -79,6 +94,7 @@ function initSocket(io) {
         task.execution_logs = JSON.parse(task.execution_logs || '[]');
         task.attachments = JSON.parse(task.attachments || '[]');
         task.flow_items = JSON.parse(task.flow_items || '[]');
+        task.depends_on = JSON.parse(task.depends_on || '[]');
       }
       io.emit('task:updated', task);
 

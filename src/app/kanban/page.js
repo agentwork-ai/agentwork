@@ -8,6 +8,7 @@ import { useSocket } from '@/app/providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
   Layers, ChevronRight, Clock, RefreshCw, Play, Lock,
+  Search, Filter,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -74,15 +75,18 @@ export default function KanbanPage() {
         return { ...prev, execution_logs: [...(prev.execution_logs || []), log] };
       });
     };
+    const onMoveError = ({ message }) => toast.error(message);
     socket.on('task:updated', onTaskUpdated);
     socket.on('task:created', onTaskCreated);
     socket.on('task:deleted', onTaskDeleted);
     socket.on('task:log', onTaskLog);
+    socket.on('task:move_error', onMoveError);
     return () => {
       socket.off('task:updated', onTaskUpdated);
       socket.off('task:created', onTaskCreated);
       socket.off('task:deleted', onTaskDeleted);
       socket.off('task:log', onTaskLog);
+      socket.off('task:move_error', onMoveError);
     };
   }, [socket]);
 
@@ -680,6 +684,21 @@ function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, 
   );
 }
 
+const LOG_TYPE_CONFIG = {
+  all:         { label: 'All',         color: 'var(--text-secondary)', bg: 'var(--bg-secondary)', icon: '●' },
+  response:    { label: 'Response',    color: '#339af0', bg: '#339af015', icon: '◉' },
+  command:     { label: 'Command',     color: '#20c997', bg: '#20c99715', icon: '$' },
+  output:      { label: 'Output',      color: '#868e96', bg: '#868e9615', icon: '▸' },
+  error:       { label: 'Error',       color: '#fa5252', bg: '#fa525215', icon: '✗' },
+  info:        { label: 'Info',        color: '#339af0', bg: '#339af015', icon: 'ℹ' },
+  thinking:    { label: 'Thinking',    color: '#7950f2', bg: '#7950f215', icon: '◆' },
+  success:     { label: 'Success',     color: '#40c057', bg: '#40c05715', icon: '✓' },
+  warning:     { label: 'Warning',     color: '#fab005', bg: '#fab00515', icon: '!' },
+  file_change: { label: 'File Change', color: '#f783ac', bg: '#f783ac15', icon: '△' },
+};
+
+const LOG_TYPE_KEYS = Object.keys(LOG_TYPE_CONFIG);
+
 function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, onDelete }) {
   const logsEndRef = useRef(null);
   const isEditable = task.status !== 'doing';
@@ -699,6 +718,19 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
   });
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
+  const [logTypeFilter, setLogTypeFilter] = useState('all');
+  const [logSearchText, setLogSearchText] = useState('');
+
+  const filteredLogs = (task.execution_logs || []).filter((log) => {
+    if (logTypeFilter !== 'all' && log.type !== logTypeFilter) return false;
+    if (logSearchText && !log.content?.toLowerCase().includes(logSearchText.toLowerCase())) return false;
+    return true;
+  });
+
+  const logTypeCounts = (task.execution_logs || []).reduce((acc, log) => {
+    acc[log.type] = (acc[log.type] || 0) + 1;
+    return acc;
+  }, {});
 
   useEffect(() => {
     if (activeTab === 'logs') logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -881,6 +913,72 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
                     )}
                   </div>
                 )}
+                {/* Dependencies */}
+                <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <label className="label">Dependencies <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(must be done before this task can start)</span></label>
+                  {form.depends_on.length > 0 && (
+                    <div className="space-y-1 mb-2">
+                      {form.depends_on.map((depId) => {
+                        const dep = (allTasks || []).find((t) => t.id === depId);
+                        return (
+                          <div key={depId} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs"
+                            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                            <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                              style={{ background: dep?.status === 'done' ? '#40c057' : '#fa5252' }} />
+                            <span className="flex-1 truncate" style={{ color: 'var(--text-primary)' }}>
+                              {dep ? dep.title : depId}
+                            </span>
+                            <span className="text-[10px] capitalize px-1.5 py-0.5 rounded"
+                              style={{
+                                background: dep?.status === 'done' ? '#40c05720' : 'var(--bg-tertiary)',
+                                color: dep?.status === 'done' ? '#40c057' : 'var(--text-tertiary)',
+                              }}>
+                              {dep?.status || 'unknown'}
+                            </span>
+                            <button type="button" className="p-0.5 rounded hover:opacity-70"
+                              style={{ color: 'var(--text-tertiary)' }}
+                              onClick={() => setForm((f) => ({ ...f, depends_on: f.depends_on.filter((id) => id !== depId) }))}>
+                              <X size={12} />
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                  <div className="relative">
+                    <input
+                      className="input text-sm"
+                      placeholder="Search tasks to add as dependency..."
+                      value={depSearch}
+                      onChange={(e) => setDepSearch(e.target.value)}
+                    />
+                    {depSearch.trim() && (
+                      <div className="absolute left-0 right-0 top-full mt-1 rounded-lg shadow-lg z-50 py-1 max-h-40 overflow-auto"
+                        style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                        {(allTasks || [])
+                          .filter((t) => t.id !== task.id && !form.depends_on.includes(t.id) && t.title.toLowerCase().includes(depSearch.toLowerCase()))
+                          .slice(0, 10)
+                          .map((t) => (
+                            <button key={t.id} type="button"
+                              className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:opacity-80 transition-colors"
+                              style={{ color: 'var(--text-primary)' }}
+                              onClick={() => {
+                                setForm((f) => ({ ...f, depends_on: [...f.depends_on, t.id] }));
+                                setDepSearch('');
+                              }}>
+                              <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                                style={{ background: COLUMNS.find((c) => c.id === t.status)?.color || '#868e96' }} />
+                              <span className="flex-1 truncate">{t.title}</span>
+                              <span className="text-[10px] capitalize" style={{ color: 'var(--text-tertiary)' }}>{t.status}</span>
+                            </button>
+                          ))}
+                        {(allTasks || []).filter((t) => t.id !== task.id && !form.depends_on.includes(t.id) && t.title.toLowerCase().includes(depSearch.toLowerCase())).length === 0 && (
+                          <p className="px-3 py-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>No matching tasks found</p>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
                 <div className="flex justify-end gap-2">
                   <button className="btn btn-secondary text-xs" onClick={() => setEditing(false)}>Cancel</button>
                   <button className="btn btn-primary text-xs" onClick={saveChanges} disabled={saving}>
@@ -917,6 +1015,34 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
                     <p className="text-sm capitalize" style={{ color: 'var(--text-primary)' }}>{task.priority}</p>
                   </div>
                 </div>
+                {task.depends_on && task.depends_on.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Dependencies</p>
+                    <div className="space-y-1">
+                      {task.depends_on.map((depId) => {
+                        const dep = (allTasks || []).find((t) => t.id === depId);
+                        const met = dep?.status === 'done';
+                        return (
+                          <div key={depId} className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
+                            style={{ background: 'var(--bg-secondary)', border: `1px solid ${met ? '#40c05740' : '#fa525240'}` }}>
+                            <span className="w-2 h-2 rounded-full shrink-0"
+                              style={{ background: met ? '#40c057' : '#fa5252' }} />
+                            <span className="flex-1" style={{ color: 'var(--text-primary)' }}>
+                              {dep ? dep.title : depId}
+                            </span>
+                            <span className="text-[10px] capitalize px-1.5 py-0.5 rounded font-medium"
+                              style={{
+                                background: met ? '#40c05720' : '#fa525220',
+                                color: met ? '#40c057' : '#fa5252',
+                              }}>
+                              {met ? 'done' : (dep?.status || 'unknown')}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {(task.task_type || 'single') === 'flow' && task.flow_items?.length > 0 && (
                   <div>
                     <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Flow Steps</p>
@@ -982,57 +1108,138 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
               </div>
             )
           ) : (
-            <div className="space-y-0.5 font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>
-              {(!task.execution_logs || task.execution_logs.length === 0) ? (
-                <div className="text-center py-12">
-                  <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                    {isDoing ? 'Waiting for logs...' : 'No execution logs yet.'}
-                  </p>
-                  {isDoing && <div className="mt-3 flex justify-center gap-1">
-                    {[0,1,2].map((i) => (
-                      <div key={i} className="w-2 h-2 rounded-full animate-pulse-slow"
-                        style={{ background: 'var(--accent)', animationDelay: `${i * 0.3}s` }} />
-                    ))}
-                  </div>}
-                </div>
-              ) : (
-                task.execution_logs.map((log, i) => (
-                  <div key={i} className="py-1.5 px-2 rounded animate-fade-in flex gap-2"
-                    style={{ background: i % 2 === 0 ? 'transparent' : 'var(--bg-secondary)' }}>
-                    <span className="shrink-0 w-16 text-right" style={{ color: 'var(--text-tertiary)' }}>
-                      {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false })}
-                    </span>
-                    <span className="shrink-0 w-3 text-center" style={{
-                      color: log.type === 'error' ? 'var(--danger)' : log.type === 'success' ? 'var(--success)' :
-                        log.type === 'command' ? '#20c997' : log.type === 'warning' ? 'var(--warning)' :
-                        log.type === 'thinking' ? 'var(--accent)' : 'var(--text-secondary)',
-                    }}>
-                      {log.type === 'error' ? '✗' : log.type === 'success' ? '✓' :
-                       log.type === 'command' ? '$' : log.type === 'warning' ? '!' :
-                       log.type === 'thinking' ? '◆' : '·'}
-                    </span>
-                    <span className="flex-1 whitespace-pre-wrap break-all" style={{
-                      color: log.type === 'error' ? 'var(--danger)' : log.type === 'success' ? 'var(--success)' :
-                        log.type === 'command' ? '#20c997' : log.type === 'warning' ? 'var(--warning)' :
-                        log.type === 'thinking' ? 'var(--accent)' : 'var(--text-secondary)',
-                    }}>
-                      {log.content}
-                    </span>
+            <div className="flex flex-col gap-2" style={{ color: 'var(--text-secondary)' }}>
+              {/* Filter Bar */}
+              {task.execution_logs?.length > 0 && (
+                <div className="space-y-2 pb-2 border-b" style={{ borderColor: 'var(--border)' }}>
+                  {/* Search Input */}
+                  <div className="relative">
+                    <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-tertiary)' }} />
+                    <input
+                      className="input text-xs pl-8 py-1.5"
+                      placeholder="Search logs..."
+                      value={logSearchText}
+                      onChange={(e) => setLogSearchText(e.target.value)}
+                    />
+                    {logSearchText && (
+                      <button
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-0.5 rounded hover:opacity-70"
+                        style={{ color: 'var(--text-tertiary)' }}
+                        onClick={() => setLogSearchText('')}
+                      >
+                        <X size={12} />
+                      </button>
+                    )}
                   </div>
-                ))
-              )}
-              <div ref={logsEndRef} />
-              {isDoing && task.execution_logs?.length > 0 && (
-                <div className="flex items-center gap-2 py-2 px-2" style={{ color: 'var(--text-tertiary)' }}>
-                  <div className="flex gap-0.5">
-                    {[0,1,2].map((i) => (
-                      <div key={i} className="w-1.5 h-1.5 rounded-full animate-pulse-slow"
-                        style={{ background: '#fab005', animationDelay: `${i * 0.2}s` }} />
-                    ))}
+                  {/* Type Filter Chips */}
+                  <div className="flex flex-wrap gap-1">
+                    {LOG_TYPE_KEYS.map((type) => {
+                      const cfg = LOG_TYPE_CONFIG[type];
+                      const count = type === 'all' ? (task.execution_logs?.length || 0) : (logTypeCounts[type] || 0);
+                      if (type !== 'all' && count === 0) return null;
+                      const isActive = logTypeFilter === type;
+                      return (
+                        <button
+                          key={type}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium transition-all"
+                          style={{
+                            background: isActive ? cfg.color : 'var(--bg-secondary)',
+                            color: isActive ? '#fff' : cfg.color,
+                            border: `1px solid ${isActive ? cfg.color : 'var(--border)'}`,
+                          }}
+                          onClick={() => setLogTypeFilter(type)}
+                        >
+                          <span>{cfg.label}</span>
+                          <span className="opacity-70">{count}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                  <span className="text-[10px]">Agent is working...</span>
+                  {/* Active filter summary */}
+                  {(logTypeFilter !== 'all' || logSearchText) && (
+                    <div className="flex items-center justify-between text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                      <span>
+                        Showing {filteredLogs.length} of {task.execution_logs.length} entries
+                        {logTypeFilter !== 'all' && <> ({LOG_TYPE_CONFIG[logTypeFilter]?.label})</>}
+                        {logSearchText && <> matching "{logSearchText}"</>}
+                      </span>
+                      <button
+                        className="hover:underline"
+                        style={{ color: 'var(--accent)' }}
+                        onClick={() => { setLogTypeFilter('all'); setLogSearchText(''); }}
+                      >
+                        Clear filters
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
+
+              {/* Log Entries */}
+              <div className="space-y-0.5 font-mono text-xs">
+                {(!task.execution_logs || task.execution_logs.length === 0) ? (
+                  <div className="text-center py-12">
+                    <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                      {isDoing ? 'Waiting for logs...' : 'No execution logs yet.'}
+                    </p>
+                    {isDoing && <div className="mt-3 flex justify-center gap-1">
+                      {[0,1,2].map((i) => (
+                        <div key={i} className="w-2 h-2 rounded-full animate-pulse-slow"
+                          style={{ background: 'var(--accent)', animationDelay: `${i * 0.3}s` }} />
+                      ))}
+                    </div>}
+                  </div>
+                ) : filteredLogs.length === 0 ? (
+                  <div className="text-center py-8">
+                    <Filter size={20} className="mx-auto mb-2" style={{ color: 'var(--text-tertiary)', opacity: 0.5 }} />
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      No logs match the current filters.
+                    </p>
+                  </div>
+                ) : (
+                  filteredLogs.map((log, i) => {
+                    const cfg = LOG_TYPE_CONFIG[log.type] || LOG_TYPE_CONFIG.output;
+                    return (
+                      <div key={i} className="py-1.5 px-2 rounded animate-fade-in flex gap-2"
+                        style={{ background: i % 2 === 0 ? 'transparent' : 'var(--bg-secondary)' }}>
+                        <span className="shrink-0 w-16 text-right" style={{ color: 'var(--text-tertiary)' }}>
+                          {new Date(log.timestamp).toLocaleTimeString('en-US', { hour12: false })}
+                        </span>
+                        <span className="shrink-0 rounded px-1 text-center text-[9px] font-bold" style={{
+                          color: cfg.color,
+                          background: cfg.bg,
+                          minWidth: '16px',
+                        }}>
+                          {cfg.icon}
+                        </span>
+                        <span className="shrink-0 rounded px-1.5 py-0 text-[9px] uppercase font-semibold tracking-wide" style={{
+                          color: cfg.color,
+                          background: cfg.bg,
+                        }}>
+                          {log.type || 'log'}
+                        </span>
+                        <span className="flex-1 whitespace-pre-wrap break-all" style={{
+                          color: cfg.color,
+                        }}>
+                          {log.content}
+                        </span>
+                      </div>
+                    );
+                  })
+                )}
+                <div ref={logsEndRef} />
+                {isDoing && task.execution_logs?.length > 0 && (
+                  <div className="flex items-center gap-2 py-2 px-2" style={{ color: 'var(--text-tertiary)' }}>
+                    <div className="flex gap-0.5">
+                      {[0,1,2].map((i) => (
+                        <div key={i} className="w-1.5 h-1.5 rounded-full animate-pulse-slow"
+                          style={{ background: '#fab005', animationDelay: `${i * 0.2}s` }} />
+                      ))}
+                    </div>
+                    <span className="text-[10px]">Agent is working...</span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -1050,7 +1257,8 @@ const CRON_PRESETS = [
   { label: 'Custom…',           value: '__custom__' },
 ];
 
-function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSaved }) {
+function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onClose, onSaved }) {
+  const [depSearch, setDepSearch] = useState('');
   const [form, setForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
@@ -1063,6 +1271,7 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
     trigger_cron: task?.trigger_cron || '',
     task_type: task?.task_type || 'single',
     flow_items: task?.flow_items || [],
+    depends_on: task?.depends_on || [],
   });
   const [cronPreset, setCronPreset] = useState(() => {
     const match = CRON_PRESETS.find((p) => p.value === task?.trigger_cron && p.value !== '__custom__');
@@ -1102,6 +1311,7 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
         trigger_at: form.trigger_type === 'schedule' ? (form.trigger_at ? new Date(form.trigger_at).toISOString() : null) : null,
         trigger_cron: form.trigger_type === 'cron' ? form.trigger_cron : '',
         flow_items: form.task_type === 'flow' ? form.flow_items : [],
+        depends_on: form.depends_on || [],
       };
       if (task) {
         await api.updateTask(task.id, data);
@@ -1246,6 +1456,67 @@ function TaskFormModal({ task, agents, projects, defaultProjectId, onClose, onSa
               <option value="">No Project</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
+          </div>
+
+          {/* Dependencies */}
+          <div>
+            <label className="label">Dependencies <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(must be done before this task can start)</span></label>
+            {form.depends_on.length > 0 && (
+              <div className="space-y-1 mb-2">
+                {form.depends_on.map((depId) => {
+                  const dep = (allTasks || []).find((t) => t.id === depId);
+                  return (
+                    <div key={depId} className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs"
+                      style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                      <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                        style={{ background: dep?.status === 'done' ? '#40c057' : COLUMNS.find((c) => c.id === dep?.status)?.color || '#868e96' }} />
+                      <span className="flex-1 truncate" style={{ color: 'var(--text-primary)' }}>
+                        {dep ? dep.title : depId}
+                      </span>
+                      <span className="text-[10px] capitalize" style={{ color: 'var(--text-tertiary)' }}>{dep?.status || 'unknown'}</span>
+                      <button type="button" className="p-0.5 rounded hover:opacity-70"
+                        style={{ color: 'var(--text-tertiary)' }}
+                        onClick={() => setForm((f) => ({ ...f, depends_on: f.depends_on.filter((id) => id !== depId) }))}>
+                        <X size={12} />
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <div className="relative">
+              <input
+                className="input text-sm"
+                placeholder="Search tasks to add as dependency..."
+                value={depSearch}
+                onChange={(e) => setDepSearch(e.target.value)}
+              />
+              {depSearch.trim() && (
+                <div className="absolute left-0 right-0 top-full mt-1 rounded-lg shadow-lg z-50 py-1 max-h-40 overflow-auto"
+                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                  {(allTasks || [])
+                    .filter((t) => t.id !== task?.id && !form.depends_on.includes(t.id) && t.title.toLowerCase().includes(depSearch.toLowerCase()))
+                    .slice(0, 10)
+                    .map((t) => (
+                      <button key={t.id} type="button"
+                        className="w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:opacity-80 transition-colors"
+                        style={{ color: 'var(--text-primary)' }}
+                        onClick={() => {
+                          setForm((f) => ({ ...f, depends_on: [...f.depends_on, t.id] }));
+                          setDepSearch('');
+                        }}>
+                        <span className="w-1.5 h-1.5 rounded-full shrink-0"
+                          style={{ background: COLUMNS.find((c) => c.id === t.status)?.color || '#868e96' }} />
+                        <span className="flex-1 truncate">{t.title}</span>
+                        <span className="text-[10px] capitalize" style={{ color: 'var(--text-tertiary)' }}>{t.status}</span>
+                      </button>
+                    ))}
+                  {(allTasks || []).filter((t) => t.id !== task?.id && !form.depends_on.includes(t.id) && t.title.toLowerCase().includes(depSearch.toLowerCase())).length === 0 && (
+                    <p className="px-3 py-2 text-xs" style={{ color: 'var(--text-tertiary)' }}>No matching tasks found</p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Trigger */}

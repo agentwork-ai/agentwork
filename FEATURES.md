@@ -33,7 +33,7 @@
 ## 3. UI/UX Improvements
 
 - [ ] **Syntax-Highlighted Code Viewer** — Add syntax highlighting (Prism.js or highlight.js) to the project file viewer based on file extension.
-- [ ] **Execution Log Filtering** — Add log-level filtering (show only errors, hide thinking steps), text search within logs, and timestamp-relative display.
+- [x] **Execution Log Filtering** — Add log-level filtering (show only errors, hide thinking steps), text search within logs, and timestamp-relative display.
 - [ ] **In-Line File Editor** — Add the ability to edit and save files directly from the dashboard Projects page.
 - [x] **Markdown Rendering in Chat** — Render agent responses with proper markdown formatting (code blocks, lists, headers) instead of raw text.
 - [ ] **Keyboard Shortcuts** — Cmd/Ctrl+K for quick task creation, Cmd+/ to toggle sidebar, Escape to close modals, arrow keys for Kanban navigation.
