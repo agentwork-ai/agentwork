@@ -128,6 +128,7 @@ app.prepare().then(() => {
   server.use('/api/templates', require('./routes/templates'));
   server.use('/api/rooms', require('./routes/rooms'));
   server.use('/api/tools', require('./routes/tools'));
+  server.use('/api/pipelines', require('./routes/pipelines'));
 
   // Webhook endpoint for external triggers
   server.post('/api/webhooks/trigger', (req, res) => {
@@ -219,6 +220,7 @@ app.prepare().then(() => {
         { method: 'GET', path: '/api/settings/report', description: 'Usage report', query: 'days' },
         { method: 'GET', path: '/api/settings/export', description: 'Export data as JSON', query: 'type' },
         { method: 'GET', path: '/api/settings/audit-logs', description: 'Audit logs', query: 'limit, offset' },
+        { method: 'GET', path: '/api/settings/plugins', description: 'List installed plugins' },
         { method: 'GET', path: '/api/templates', description: 'List templates' },
         { method: 'POST', path: '/api/templates', description: 'Create template' },
         { method: 'POST', path: '/api/templates/:id/use', description: 'Create task from template' },
@@ -226,6 +228,12 @@ app.prepare().then(() => {
         { method: 'GET', path: '/api/tools', description: 'List custom tools' },
         { method: 'POST', path: '/api/tools', description: 'Create custom tool', body: '{ name, description, command_template }' },
         { method: 'DELETE', path: '/api/tools/:id', description: 'Delete custom tool' },
+        { method: 'GET', path: '/api/pipelines', description: 'List all pipelines' },
+        { method: 'POST', path: '/api/pipelines', description: 'Create pipeline', body: '{ name, steps }' },
+        { method: 'GET', path: '/api/pipelines/:id', description: 'Get pipeline' },
+        { method: 'PUT', path: '/api/pipelines/:id', description: 'Update pipeline', body: '{ name, steps }' },
+        { method: 'DELETE', path: '/api/pipelines/:id', description: 'Delete pipeline' },
+        { method: 'POST', path: '/api/pipelines/:id/run', description: 'Run pipeline (creates tasks from steps)', body: '{}' },
         { method: 'POST', path: '/api/webhooks/trigger', description: 'Create and execute task via webhook', body: '{ title, description, agent_id, project_id }' },
         { method: 'GET', path: '/api/files/read', description: 'Read file content', query: 'path' },
         { method: 'POST', path: '/api/files/write', description: 'Write file content', body: '{ path, content }' },
@@ -290,6 +298,10 @@ app.prepare().then(() => {
   // Initialize task scheduler
   const { initScheduler } = require('./services/scheduler');
   initScheduler(io);
+
+  // Load plugins
+  const { loadPlugins } = require('./plugins');
+  loadPlugins();
 
   // Initialize chat platform bots (Telegram/Slack)
   const { initPlatforms } = require('./services/platforms');

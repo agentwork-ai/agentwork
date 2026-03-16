@@ -174,4 +174,10 @@ router.get('/audit-logs', (req, res) => {
   res.json({ logs, total });
 });
 
+// List installed plugins
+router.get('/plugins', (req, res) => {
+  const { getPlugins } = require('../plugins');
+  res.json(getPlugins());
+});
+
 module.exports = router;

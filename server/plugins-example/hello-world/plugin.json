@@ -1,0 +1,6 @@
+{
+  "name": "hello-world",
+  "version": "1.0.0",
+  "description": "Example plugin that greets the user. Copy this folder to ~/.agentwork/plugins/ to install.",
+  "type": "tool"
+}
