@@ -16,6 +16,7 @@ if (fs.existsSync(OLD_DATA_DIR) && !fs.existsSync(DATA_DIR)) {
 fs.mkdirSync(DB_DIR, { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'agents'), { recursive: true });
 fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
+fs.mkdirSync(path.join(DATA_DIR, 'plugins'), { recursive: true });
 
 // Migrate DB from old location if needed
 const OLD_DB = path.join(DATA_DIR, 'agentwork.db');
@@ -228,6 +229,12 @@ const defaultSettings = {
   dashboard_password: '',
   accent_color: 'blue',
   verbose_ai_logging: 'false',
+  smtp_host: '',
+  smtp_port: '587',
+  smtp_user: '',
+  smtp_pass: '',
+  smtp_from: '',
+  notification_email: '',
   notify_task_complete: 'true',
   notify_task_blocked: 'true',
   notify_budget_threshold: 'true',
@@ -251,6 +258,17 @@ const insertSetting = db.prepare(
 for (const [key, value] of Object.entries(defaultSettings)) {
   insertSetting.run(key, value);
 }
+
+// Create pipelines table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS pipelines (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    steps TEXT DEFAULT '[]',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
 
 // Create task_templates table
 db.exec(`

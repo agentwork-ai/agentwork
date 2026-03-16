@@ -69,7 +69,7 @@
 - [ ] **GitHub Integration** — Auto-create issues from blocked tasks, auto-create PRs from completed tasks, sync task status with GitHub project boards, trigger tasks on webhook events.
 - [ ] **Linear / Jira Sync** — Bidirectional sync between the AgentWork Kanban board and external project management tools.
 - [x] **Webhook API for External Triggers** — Inbound endpoint (`POST /api/webhooks/trigger`) that creates and/or executes a task from CI/CD, GitHub Actions, or other systems.
-- [ ] **Email Notifications** — Allow agents to send email via SMTP or SendGrid for task completion reports and daily summaries.
+- [x] **Email Notifications** — Allow agents to send email via SMTP or SendGrid for task completion reports and daily summaries.
 - [ ] **VS Code Extension** — Companion extension showing agent activity, quick task creation from the editor, and execution logs in a VS Code panel.
 - [ ] **Native Google Gemini SDK** — Add `@google/generative-ai` for proper Gemini API support beyond the OpenAI compatibility layer.
 - [ ] **MCP (Model Context Protocol) Tool Server** — Expose AgentWork tasks, agents, and projects as MCP resources and tools for Claude Desktop and other MCP clients.
