@@ -435,8 +435,65 @@ function estimateCost(provider, model, inputTokens, outputTokens) {
   return (inputTokens * rates.input + outputTokens * rates.output) / 1_000_000;
 }
 
+// Streaming completion for chat — yields partial text chunks
+async function createStreamingCompletion(provider, model, messages, onChunk) {
+  let apiKey;
+  let customBaseUrl = getSetting('custom_base_url');
+  const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key', deepseek: 'deepseek_api_key', mistral: 'mistral_api_key', google: 'openai_api_key' };
+  apiKey = getSetting(keyMap[provider] || 'openai_api_key');
+  if (!apiKey && !customBaseUrl) throw new Error(`No API key for ${provider}`);
+
+  let fullContent = '';
+  let inputTokens = 0, outputTokens = 0;
+
+  if (provider === 'anthropic') {
+    const Anthropic = require('@anthropic-ai/sdk');
+    const client = new Anthropic({ apiKey, ...(customBaseUrl ? { baseURL: customBaseUrl } : {}) });
+    const systemMessage = messages.find((m) => m.role === 'system');
+    const chatMessages = messages.filter((m) => m.role !== 'system');
+    const stream = client.messages.stream({
+      model: model || 'claude-sonnet-4-20250514',
+      max_tokens: 4096,
+      system: systemMessage?.content || '',
+      messages: chatMessages,
+    });
+    for await (const event of stream) {
+      if (event.type === 'content_block_delta' && event.delta?.text) {
+        fullContent += event.delta.text;
+        onChunk(event.delta.text);
+      }
+    }
+    const final = await stream.finalMessage();
+    inputTokens = final.usage?.input_tokens || 0;
+    outputTokens = final.usage?.output_tokens || 0;
+  } else {
+    // OpenAI-compatible (OpenAI, OpenRouter, DeepSeek, Mistral)
+    const OpenAI = require('openai');
+    let baseURL = customBaseUrl;
+    if (provider === 'openrouter') baseURL = 'https://openrouter.ai/api/v1';
+    else if (provider === 'deepseek') baseURL = 'https://api.deepseek.com';
+    else if (provider === 'mistral') baseURL = 'https://api.mistral.ai/v1';
+    const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+    const stream = await client.chat.completions.create({
+      model: model || 'gpt-4o',
+      max_tokens: 4096,
+      messages,
+      stream: true,
+      stream_options: { include_usage: true },
+    });
+    for await (const chunk of stream) {
+      const delta = chunk.choices?.[0]?.delta?.content;
+      if (delta) { fullContent += delta; onChunk(delta); }
+      if (chunk.usage) { inputTokens = chunk.usage.prompt_tokens || 0; outputTokens = chunk.usage.completion_tokens || 0; }
+    }
+  }
+
+  return { content: fullContent, inputTokens, outputTokens };
+}
+
 module.exports = {
   createCompletion,
+  createStreamingCompletion,
   estimateCost,
   fetchOpenRouterPricing,
   runClaudeAgent,

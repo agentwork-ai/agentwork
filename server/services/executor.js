@@ -1,5 +1,5 @@
 const { db, uuidv4, DATA_DIR } = require('../db');
-const { createCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
+const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -132,9 +132,24 @@ async function handleApiChat(agent, userMessage, platformChatId) {
       { role: 'user', content: userMessage },
     ];
 
-    const response = await createCompletion(agent.provider, agent.model, messages);
+    // Stream response tokens to the UI
+    const msgId = uuidv4();
+    let streamedContent = '';
+    const onChunk = (chunk) => {
+      streamedContent += chunk;
+      if (io) io.emit('chat:stream', { agentId, msgId, chunk, full: streamedContent });
+    };
+
+    let response;
+    try {
+      response = await createStreamingCompletion(agent.provider, agent.model, messages, onChunk);
+    } catch {
+      // Fallback to non-streaming if streaming fails
+      response = await createCompletion(agent.provider, agent.model, messages);
+    }
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
     sendMessage(agentId, 'agent', response.content, null, platformChatId);
+    if (io) io.emit('chat:stream_end', { agentId, msgId });
 
     // Fire-and-forget memory reflection
     reflectAfterChat(agent, agentDir, userMessage, response.content);
