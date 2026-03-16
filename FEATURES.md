@@ -143,5 +143,5 @@
 
 - [x] **Progressive Web App (PWA)** — Add manifest.json and service worker for installable mobile experience with push notifications.
 - [ ] **Touch-Friendly Kanban** — Proper touch drag-and-drop using dnd-kit's touch sensors.
-- [ ] **Accessible Color Contrast** — Audit and fix WCAG AA compliance across both themes.
-- [ ] **Screen Reader Support** — ARIA labels on interactive elements and semantic HTML landmarks.
+- [x] **Accessible Color Contrast** — Audit and fix WCAG AA compliance across both themes.
+- [x] **Screen Reader Support** — ARIA labels on interactive elements and semantic HTML landmarks.
