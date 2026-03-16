@@ -42,6 +42,33 @@ app.prepare().then(() => {
     res.json(getSystemStatus());
   });
 
+  // Health check endpoint
+  server.get('/api/health', (req, res) => {
+    const health = { status: 'ok', timestamp: new Date().toISOString(), uptime: process.uptime() };
+    try {
+      const { db: dbCheck } = require('./db');
+      dbCheck.prepare('SELECT 1').get();
+      health.database = 'ok';
+    } catch (err) {
+      health.database = 'error';
+      health.database_error = err.message;
+      health.status = 'degraded';
+    }
+    try {
+      const mem = process.memoryUsage();
+      health.memory = {
+        rss: `${Math.round(mem.rss / 1024 / 1024)}MB`,
+        heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB`,
+        heapTotal: `${Math.round(mem.heapTotal / 1024 / 1024)}MB`,
+      };
+    } catch {}
+    const sysStatus = getSystemStatus();
+    health.activeAgents = sysStatus.activeAgents;
+    health.activeTasks = sysStatus.activeTasks;
+    health.socketClients = io.engine?.clientsCount || 0;
+    res.status(health.status === 'ok' ? 200 : 503).json(health);
+  });
+
   // Initialize socket handlers
   const { initSocket } = require('./socket');
   initSocket(io);

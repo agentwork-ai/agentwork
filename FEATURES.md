@@ -50,7 +50,7 @@
 - [ ] **Execution Replay** — Store full execution traces with timestamps and allow replaying them step-by-step to debug agent decisions.
 - [ ] **Agent Performance Metrics** — Track per-agent stats: average task completion time, success rate, average tokens per task, number of iterations, and times blocked.
 - [ ] **Error Alerting & Escalation** — Send push notifications via Telegram/Slack to the user when tasks fail. Add webhook support for external alerting (PagerDuty, Discord, email).
-- [ ] **Health Check Endpoint** — Add `/api/health` that verifies database connectivity, disk space, memory usage, and active bot connections.
+- [x] **Health Check Endpoint** — Add `/api/health` that verifies database connectivity, disk space, memory usage, and active bot connections.
 - [ ] **Full AI Request/Response Logging** — Optional verbose logging that captures the full prompt and response for each AI API call, for debugging and prompt optimization.
 - [ ] **Execution Timeline / Gantt Chart** — Show a timeline of when each agent was active, what tasks they worked on, and for how long in The Office view.
 
