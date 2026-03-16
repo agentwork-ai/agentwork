@@ -3,11 +3,23 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const { execSync } = require('child_process');
+const { db } = require('../db');
+
+// Check if a file path is within a registered project directory
+function isPathAllowed(filePath) {
+  const resolved = path.resolve(filePath);
+  const projects = db.prepare('SELECT path FROM projects').all();
+  return projects.some((p) => resolved.startsWith(path.resolve(p.path)));
+}
 
 // Read a file's content
 router.get('/read', (req, res) => {
   const filePath = req.query.path;
   if (!filePath) return res.status(400).json({ error: 'Path is required' });
+
+  if (!isPathAllowed(filePath)) {
+    return res.status(403).json({ error: 'Access denied: file is outside registered project directories' });
+  }
 
   try {
     const stat = fs.statSync(filePath);
