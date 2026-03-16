@@ -60,6 +60,42 @@ router.get('/suggest', (req, res) => {
   res.json(scored.slice(0, 5));
 });
 
+// Get prompt effectiveness analysis for an agent
+router.get('/:id/prompt-analysis', (req, res) => {
+  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  if (!agent) return res.status(404).json({ error: 'Agent not found' });
+
+  const agentId = req.params.id;
+  const total = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE agent_id = ?").get(agentId).c;
+  const blocked = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE agent_id = ? AND status = 'blocked'").get(agentId).c;
+  const done = db.prepare("SELECT COUNT(*) as c FROM tasks WHERE agent_id = ? AND status = 'done'").get(agentId).c;
+  const successRate = total > 0 ? (done / total * 100).toFixed(1) : 0;
+  const blockRate = total > 0 ? (blocked / total * 100).toFixed(1) : 0;
+
+  // Analyze blocked task reasons from execution logs
+  const blockedTasks = db.prepare("SELECT title, execution_logs FROM tasks WHERE agent_id = ? AND status = 'blocked' ORDER BY updated_at DESC LIMIT 10").all(agentId);
+  const blockReasons = blockedTasks.map((t) => {
+    const logs = JSON.parse(t.execution_logs || '[]');
+    const blockLog = logs.filter((l) => l.type === 'blocked' || l.type === 'error').slice(-1)[0];
+    return { title: t.title, reason: blockLog?.content || 'Unknown' };
+  });
+
+  const suggestions = [];
+  if (parseFloat(blockRate) > 30) suggestions.push('High block rate — consider adding more specific instructions to SOUL.md');
+  if (parseFloat(blockRate) > 50) suggestions.push('Very high block rate — the agent may need a different model or more operational rules in AGENTS.md');
+  if (blockedTasks.some((t) => JSON.parse(t.execution_logs || '[]').some((l) => l.content?.includes('Budget')))) {
+    suggestions.push('Agent hitting budget limits — consider increasing per-agent or global budget');
+  }
+  if (blockedTasks.some((t) => JSON.parse(t.execution_logs || '[]').some((l) => l.content?.includes('API key')))) {
+    suggestions.push('Missing API key errors — check Settings > API Providers');
+  }
+  if (total > 5 && parseFloat(successRate) < 50) {
+    suggestions.push('Low success rate — review the agent personality and task descriptions for clarity');
+  }
+
+  res.json({ total, done, blocked, successRate: parseFloat(successRate), blockRate: parseFloat(blockRate), blockReasons, suggestions });
+});
+
 // Get single agent
 router.get('/:id', (req, res) => {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
