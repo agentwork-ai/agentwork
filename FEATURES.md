@@ -111,7 +111,7 @@
 ## 11. Automation & CI/CD
 
 - [x] **Git Hook Integration** — Trigger agent tasks on git push/merge events (e.g., auto-run QA agent on every push).
-- [ ] **Visual Pipeline Builder** — Drag-and-drop DAG editor with conditional branches, parallel steps, and merge gates.
+- [x] **Visual Pipeline Builder** — Drag-and-drop DAG editor with conditional branches, parallel steps, and merge gates.
 - [x] **Auto-PR Creation** — After task completion, auto-create a git branch, commit agent changes, and open a PR on GitHub/GitLab.
 - [x] **Scheduled Reports** — Cron-triggered tasks that generate and send reports (test results, code quality, dependency audit) to platforms.
 
