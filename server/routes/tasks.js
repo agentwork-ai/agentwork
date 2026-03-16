@@ -11,6 +11,115 @@ function getExecuteTask() {
   return _executeTask;
 }
 
+// Bulk operations on multiple tasks
+router.post('/bulk', (req, res) => {
+  const { action, task_ids, data } = req.body;
+
+  if (!action || !Array.isArray(task_ids) || task_ids.length === 0) {
+    return res.status(400).json({ error: 'action and task_ids[] are required' });
+  }
+
+  const io = req.app.get('io');
+
+  if (action === 'delete') {
+    const deleteStmt = db.prepare('DELETE FROM tasks WHERE id = ?');
+    const deleteTx = db.transaction((ids) => {
+      for (const id of ids) {
+        try { require('../services/scheduler').cancelTask(id); } catch {}
+        deleteStmt.run(id);
+        logAudit('delete', 'task', id);
+        if (io) io.emit('task:deleted', { id });
+      }
+    });
+    deleteTx(task_ids);
+    return res.json({ success: true, deleted: task_ids.length });
+  }
+
+  if (action === 'move') {
+    const newStatus = data?.status;
+    if (!newStatus) return res.status(400).json({ error: 'data.status is required for move action' });
+
+    const results = [];
+    for (const id of task_ids) {
+      const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+      if (!existing) continue;
+
+      const completedAt = newStatus === 'done' && existing.status !== 'done' ? new Date().toISOString() : existing.completed_at;
+
+      db.prepare('UPDATE tasks SET status = ?, completed_at = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(newStatus, completedAt, id);
+
+      const task = db.prepare(
+        'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+      ).get(id);
+
+      task.execution_logs = JSON.parse(task.execution_logs || '[]');
+      task.attachments = JSON.parse(task.attachments || '[]');
+      task.flow_items = JSON.parse(task.flow_items || '[]');
+      task.depends_on = JSON.parse(task.depends_on || '[]');
+
+      if (io) io.emit('task:updated', task);
+      results.push(task);
+    }
+    return res.json(results);
+  }
+
+  if (action === 'assign') {
+    const agentId = data?.agent_id !== undefined ? data.agent_id : null;
+
+    const results = [];
+    for (const id of task_ids) {
+      const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+      if (!existing) continue;
+
+      db.prepare('UPDATE tasks SET agent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(agentId, id);
+
+      const task = db.prepare(
+        'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+      ).get(id);
+
+      task.execution_logs = JSON.parse(task.execution_logs || '[]');
+      task.attachments = JSON.parse(task.attachments || '[]');
+      task.flow_items = JSON.parse(task.flow_items || '[]');
+      task.depends_on = JSON.parse(task.depends_on || '[]');
+
+      if (io) io.emit('task:updated', task);
+      results.push(task);
+    }
+    return res.json(results);
+  }
+
+  if (action === 'set_priority') {
+    const priority = data?.priority;
+    if (!priority) return res.status(400).json({ error: 'data.priority is required for set_priority action' });
+
+    const results = [];
+    for (const id of task_ids) {
+      const existing = db.prepare('SELECT * FROM tasks WHERE id = ?').get(id);
+      if (!existing) continue;
+
+      db.prepare('UPDATE tasks SET priority = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
+        .run(priority, id);
+
+      const task = db.prepare(
+        'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+      ).get(id);
+
+      task.execution_logs = JSON.parse(task.execution_logs || '[]');
+      task.attachments = JSON.parse(task.attachments || '[]');
+      task.flow_items = JSON.parse(task.flow_items || '[]');
+      task.depends_on = JSON.parse(task.depends_on || '[]');
+
+      if (io) io.emit('task:updated', task);
+      results.push(task);
+    }
+    return res.json(results);
+  }
+
+  return res.status(400).json({ error: `Unknown action: ${action}` });
+});
+
 // Get all tasks (optionally filtered by project)
 router.get('/', (req, res) => {
   const { project_id, status, agent_id } = req.query;

@@ -9,6 +9,7 @@ import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
   Layers, ChevronRight, Clock, RefreshCw, Play, Lock,
   Search, Filter, Copy, FileText, MessageSquare, Send,
+  CheckSquare, ArrowRight, UserPlus, XCircle,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -36,6 +37,7 @@ export default function KanbanPage() {
   const [quickAddAgentId, setQuickAddAgentId] = useState('');
   const [quickAddProjectId, setQuickAddProjectId] = useState('');
   const quickAddRef = useRef(null);
+  const [selectedTasks, setSelectedTasks] = useState(new Set());
 
   const loadData = useCallback(async () => {
     const [t, a, p] = await Promise.all([api.getTasks(), api.getAgents(), api.getProjects()]);
@@ -145,6 +147,34 @@ export default function KanbanPage() {
   const changeProject = async (taskId, projectId) => {
     try {
       await api.updateTask(taskId, { project_id: projectId });
+    } catch (err) {
+      toast.error(err.message);
+    }
+  };
+
+  const toggleTaskSelection = (taskId) => {
+    setSelectedTasks((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedTasks(new Set());
+
+  const handleBulkAction = async (action, data) => {
+    const ids = Array.from(selectedTasks);
+    if (ids.length === 0) return;
+    try {
+      if (action === 'delete') {
+        if (!confirm(`Delete ${ids.length} task(s)?`)) return;
+      }
+      await api.bulkTaskAction(action, ids, data);
+      clearSelection();
+      loadData();
+      const labels = { move: 'Moved', assign: 'Assigned', delete: 'Deleted', set_priority: 'Updated priority for' };
+      toast.success(`${labels[action] || 'Updated'} ${ids.length} task(s)`);
     } catch (err) {
       toast.error(err.message);
     }
@@ -403,6 +433,9 @@ export default function KanbanPage() {
                         onPriorityChange={changePriority}
                         onAgentChange={changeAgent}
                         onProjectChange={changeProject}
+                        isSelected={selectedTasks.has(task.id)}
+                        selectionActive={selectedTasks.size > 0}
+                        onToggleSelect={() => toggleTaskSelection(task.id)}
                       />
                     ))}
                   </div>
@@ -412,6 +445,72 @@ export default function KanbanPage() {
           </div>
         </main>
         <BottomBar />
+
+        {/* Bulk action floating bar */}
+        {selectedTasks.size > 0 && (
+          <div
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 flex items-center gap-3 px-5 py-3 rounded-xl shadow-2xl animate-fade-in"
+            style={{ background: '#1a1a2e', border: '1px solid #2a2a4a' }}
+          >
+            <div className="flex items-center gap-2 pr-3 border-r" style={{ borderColor: '#2a2a4a' }}>
+              <CheckSquare size={15} style={{ color: '#7c8aff' }} />
+              <span className="text-sm font-semibold" style={{ color: '#e0e0e0' }}>
+                {selectedTasks.size} selected
+              </span>
+            </div>
+
+            {/* Move to status */}
+            <div className="flex items-center gap-1.5">
+              <ArrowRight size={13} style={{ color: '#888' }} />
+              <select
+                className="text-xs rounded px-2 py-1.5 outline-none cursor-pointer"
+                style={{ background: '#2a2a4a', color: '#e0e0e0', border: '1px solid #3a3a5a' }}
+                value=""
+                onChange={(e) => { if (e.target.value) handleBulkAction('move', { status: e.target.value }); }}
+              >
+                <option value="">Move to...</option>
+                {COLUMNS.map((col) => (
+                  <option key={col.id} value={col.id}>{col.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Assign to agent */}
+            <div className="flex items-center gap-1.5">
+              <UserPlus size={13} style={{ color: '#888' }} />
+              <select
+                className="text-xs rounded px-2 py-1.5 outline-none cursor-pointer"
+                style={{ background: '#2a2a4a', color: '#e0e0e0', border: '1px solid #3a3a5a' }}
+                value=""
+                onChange={(e) => { if (e.target.value !== '') handleBulkAction('assign', { agent_id: e.target.value === '__none__' ? null : e.target.value }); }}
+              >
+                <option value="">Assign to...</option>
+                <option value="__none__">Unassign</option>
+                {agents.map((a) => (
+                  <option key={a.id} value={a.id}>{a.avatar} {a.name}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Delete */}
+            <button
+              className="flex items-center gap-1.5 text-xs rounded px-3 py-1.5 transition-colors hover:opacity-80"
+              style={{ background: '#fa525220', color: '#fa5252', border: '1px solid #fa525240' }}
+              onClick={() => handleBulkAction('delete')}
+            >
+              <Trash2 size={13} /> Delete
+            </button>
+
+            {/* Clear selection */}
+            <button
+              className="flex items-center gap-1 text-xs rounded px-2 py-1.5 transition-colors hover:opacity-80"
+              style={{ color: '#888' }}
+              onClick={clearSelection}
+            >
+              <XCircle size={13} /> Clear
+            </button>
+          </div>
+        )}
       </div>
 
       {showForm && (
@@ -448,9 +547,10 @@ export default function KanbanPage() {
 const PRIORITIES = ['low', 'medium', 'high', 'critical'];
 const PRIORITY_COLORS = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
 
-function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange }) {
+function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange, isSelected, selectionActive, onToggleSelect }) {
   const isDoing = task.status === 'doing';
   const [openDropdown, setOpenDropdown] = useState(null); // 'priority' | 'project' | 'agent' | null
+  const [hovered, setHovered] = useState(false);
   const cardRef = useRef(null);
 
   // Check for unmet dependencies
@@ -498,14 +598,29 @@ function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, 
   const assignedProject = projects?.find((p) => p.id === task.project_id);
   const priorityColor = PRIORITY_COLORS[task.priority] || PRIORITY_COLORS.medium;
 
+  const showCheckbox = selectionActive || hovered;
+
   return (
     <div
       ref={cardRef}
       draggable
       onDragStart={onDragStart}
-      onClick={onClick}
+      onClick={(e) => {
+        if (e.shiftKey || selectionActive) {
+          e.stopPropagation();
+          onToggleSelect();
+        } else {
+          onClick();
+        }
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
       className={`card p-3 cursor-pointer active:cursor-grabbing animate-fade-in transition-all hover:scale-[1.01] ${isDoing ? 'doing-card' : ''}`}
-      style={{ borderLeft: isDoing ? '3px solid #fab005' : undefined }}
+      style={{
+        borderLeft: isDoing ? '3px solid #fab005' : undefined,
+        outline: isSelected ? '2px solid var(--accent)' : undefined,
+        outlineOffset: isSelected ? '-1px' : undefined,
+      }}
     >
       {isDoing && (
         <div className="flex items-center gap-1.5 mb-2">
@@ -514,6 +629,18 @@ function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, 
         </div>
       )}
       <div className="flex items-start justify-between gap-2">
+        {showCheckbox && (
+          <button
+            className="shrink-0 mt-0.5 w-4 h-4 rounded border flex items-center justify-center transition-colors"
+            style={{
+              borderColor: isSelected ? 'var(--accent)' : 'var(--text-tertiary)',
+              background: isSelected ? 'var(--accent)' : 'transparent',
+            }}
+            onClick={(e) => { e.stopPropagation(); onToggleSelect(); }}
+          >
+            {isSelected && <span className="text-white text-[10px] font-bold leading-none">&#10003;</span>}
+          </button>
+        )}
         <p className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
         {unmetDeps.length > 0 && (
           <span title={`Blocked by: ${unmetDeps.map((d) => d.title).join(', ')}`}
