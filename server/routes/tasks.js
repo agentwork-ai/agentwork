@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, uuidv4 } = require('../db');
+const { db, uuidv4, logAudit } = require('../db');
 
 // Lazy-loaded to avoid circular dependency
 let _executeTask = null;
@@ -90,6 +90,7 @@ router.post('/', (req, res) => {
   task.attachments = JSON.parse(task.attachments || '[]');
   task.flow_items = JSON.parse(task.flow_items || '[]');
 
+  logAudit('create', 'task', id, { title });
   const io = req.app.get('io');
   if (io) io.emit('task:created', task);
 
@@ -194,6 +195,7 @@ router.put('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try { require('../services/scheduler').cancelTask(req.params.id); } catch {}
   db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
+  logAudit('delete', 'task', req.params.id);
   const io = req.app.get('io');
   if (io) io.emit('task:deleted', { id: req.params.id });
   res.json({ success: true });

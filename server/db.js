@@ -178,4 +178,24 @@ for (const [key, value] of Object.entries(defaultSettings)) {
   insertSetting.run(key, value);
 }
 
-module.exports = { db, uuidv4, DATA_DIR };
+// Create audit_logs table
+db.exec(`
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    resource_type TEXT NOT NULL,
+    resource_id TEXT,
+    details TEXT DEFAULT '',
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  )
+`);
+
+function logAudit(action, resourceType, resourceId, details) {
+  try {
+    db.prepare('INSERT INTO audit_logs (action, resource_type, resource_id, details) VALUES (?, ?, ?, ?)').run(
+      action, resourceType, resourceId || '', typeof details === 'string' ? details : JSON.stringify(details || '')
+    );
+  } catch {}
+}
+
+module.exports = { db, uuidv4, DATA_DIR, logAudit };

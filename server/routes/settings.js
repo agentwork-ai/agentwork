@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
+const { db, logAudit } = require('../db');
 
 // Get all settings
 router.get('/', (req, res) => {
@@ -25,6 +25,7 @@ router.put('/', (req, res) => {
   });
 
   tx(Object.entries(req.body));
+  logAudit('update', 'settings', null, Object.keys(req.body).join(', '));
 
   const rows = db.prepare('SELECT * FROM settings').all();
   const settings = {};
@@ -71,6 +72,15 @@ router.get('/budget/history', (req, res) => {
   ).all(`-${days} days`);
 
   res.json(logs);
+});
+
+// Get audit logs
+router.get('/audit-logs', (req, res) => {
+  const limit = parseInt(req.query.limit || '100');
+  const offset = parseInt(req.query.offset || '0');
+  const logs = db.prepare('SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT ? OFFSET ?').all(limit, offset);
+  const total = db.prepare('SELECT COUNT(*) as count FROM audit_logs').get().count;
+  res.json({ logs, total });
 });
 
 module.exports = router;

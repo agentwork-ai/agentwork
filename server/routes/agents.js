@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, uuidv4, DATA_DIR } = require('../db');
+const { db, uuidv4, DATA_DIR, logAudit } = require('../db');
 const fs = require('fs');
 const path = require('path');
 
@@ -113,6 +113,7 @@ No memories recorded yet.
   fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), memoryContent);
 
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+  logAudit('create', 'agent', id, { name, role: role || 'General Developer' });
   const io = req.app.get('io');
   if (io) io.emit('agent:created', agent);
 
@@ -207,6 +208,7 @@ router.delete('/:id', (req, res) => {
   if (platforms) platforms.stopBotForAgent(req.params.id).catch(() => {});
 
   db.prepare('DELETE FROM agents WHERE id = ?').run(req.params.id);
+  logAudit('delete', 'agent', req.params.id, { name: agent.name });
 
   const io = req.app.get('io');
   if (io) io.emit('agent:deleted', { id: req.params.id });
