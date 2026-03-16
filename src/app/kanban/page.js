@@ -8,7 +8,7 @@ import { useSocket } from '@/app/providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
   Layers, ChevronRight, Clock, RefreshCw, Play, Lock,
-  Search, Filter,
+  Search, Filter, Copy, FileText, MessageSquare, Send,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -432,6 +432,7 @@ export default function KanbanPage() {
           agents={agents}
           projects={projects}
           allTasks={tasks}
+          socket={socket}
           onClose={() => setViewTask(null)}
           onUpdate={(updated) => {
             setTasks((prev) => prev.map((t) => (t.id === updated.id ? updated : t)));
@@ -699,8 +700,9 @@ const LOG_TYPE_CONFIG = {
 
 const LOG_TYPE_KEYS = Object.keys(LOG_TYPE_CONFIG);
 
-function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, onDelete }) {
+function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, onUpdate, onDelete }) {
   const logsEndRef = useRef(null);
+  const commentsEndRef = useRef(null);
   const isEditable = task.status !== 'doing';
   const isDoing = task.status === 'doing';
   const isFlow = (task.task_type || 'single') === 'flow';
@@ -720,6 +722,56 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
   const [logTypeFilter, setLogTypeFilter] = useState('all');
   const [logSearchText, setLogSearchText] = useState('');
+
+  // Comments state
+  const [comments, setComments] = useState([]);
+  const [newComment, setNewComment] = useState('');
+  const [submittingComment, setSubmittingComment] = useState(false);
+
+  // Load comments when task changes
+  useEffect(() => {
+    if (task?.id) {
+      api.getTaskComments(task.id).then(setComments).catch(() => {});
+    }
+  }, [task?.id]);
+
+  // Scroll to bottom when new comments arrive
+  useEffect(() => {
+    if (activeTab === 'comments') commentsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [comments.length, activeTab]);
+
+  // Listen for real-time comment events via socket
+  useEffect(() => {
+    if (!socket) return;
+    const onComment = ({ taskId, comment }) => {
+      if (taskId === task?.id) {
+        setComments((prev) => {
+          if (prev.some((c) => c.id === comment.id)) return prev;
+          return [...prev, comment];
+        });
+      }
+    };
+    socket.on('task:comment', onComment);
+    return () => socket.off('task:comment', onComment);
+  }, [socket, task?.id]);
+
+  const submitComment = async () => {
+    const text = newComment.trim();
+    if (!text || submittingComment) return;
+    setSubmittingComment(true);
+    try {
+      const comment = await api.addTaskComment(task.id, text);
+      setComments((prev) => {
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [...prev, comment];
+      });
+      setNewComment('');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setSubmittingComment(false);
+    }
+  };
 
   const filteredLogs = (task.execution_logs || []).filter((log) => {
     if (logTypeFilter !== 'all' && log.type !== logTypeFilter) return false;
@@ -808,13 +860,23 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
             {isEditable && !editing && (
               <button className="btn btn-ghost text-xs" onClick={() => setEditing(true)}><Edit2 size={13} /> Edit</button>
             )}
+            {!editing && (
+              <button className="btn btn-ghost text-xs" onClick={async () => {
+                try {
+                  await api.createTemplate({ from_task_id: task.id, name: task.title });
+                  toast.success('Saved as template');
+                } catch (err) {
+                  toast.error(err.message);
+                }
+              }}><Copy size={13} /> Save as Template</button>
+            )}
             <button className="btn btn-ghost text-xs" style={{ color: 'var(--danger)' }} onClick={onDelete}><Trash2 size={13} /></button>
             <button onClick={onClose} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }}><X size={18} /></button>
           </div>
         </div>
 
         <div className="flex border-b px-4" style={{ borderColor: 'var(--border)' }}>
-          {['details', 'logs'].map((tab) => (
+          {['details', 'comments', 'logs'].map((tab) => (
             <button key={tab}
               className="px-4 py-2.5 text-xs font-medium border-b-2 transition-colors capitalize"
               style={{
@@ -824,7 +886,9 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
               onClick={() => setActiveTab(tab)}
             >
               {tab === 'logs' && isDoing && <span className="inline-block w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse-slow mr-1.5" />}
-              {tab === 'logs' ? `Execution Logs (${task.execution_logs?.length || 0})` : 'Details'}
+              {tab === 'logs' ? `Execution Logs (${task.execution_logs?.length || 0})`
+                : tab === 'comments' ? <span className="flex items-center gap-1"><MessageSquare size={12} /> Comments{comments.length > 0 ? ` (${comments.length})` : ''}</span>
+                : 'Details'}
             </button>
           ))}
         </div>
@@ -1107,6 +1171,44 @@ function TaskDetailModal({ task, agents, projects, allTasks, onClose, onUpdate, 
                 </div>
               </div>
             )
+          ) : activeTab === 'comments' ? (
+            <div className="flex flex-col h-full">
+              <div className="flex-1 overflow-auto space-y-3 mb-3">
+                {comments.length === 0 ? (
+                  <div className="text-center py-12">
+                    <MessageSquare size={28} className="mx-auto mb-2" style={{ color: 'var(--text-tertiary)', opacity: 0.4 }} />
+                    <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>No comments yet.</p>
+                    <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)', opacity: 0.7 }}>Be the first to add a comment.</p>
+                  </div>
+                ) : (
+                  comments.map((c) => (
+                    <div key={c.id} className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                      <p className="text-sm whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>{c.content}</p>
+                      <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-tertiary)' }}>
+                        {new Date(c.created_at).toLocaleString()}
+                      </p>
+                    </div>
+                  ))
+                )}
+                <div ref={commentsEndRef} />
+              </div>
+              <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                <input
+                  className="input flex-1 text-sm"
+                  placeholder="Add a comment..."
+                  value={newComment}
+                  onChange={(e) => setNewComment(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submitComment(); } }}
+                />
+                <button
+                  className="btn btn-primary text-xs px-3"
+                  onClick={submitComment}
+                  disabled={submittingComment || !newComment.trim()}
+                >
+                  <Send size={13} />
+                </button>
+              </div>
+            </div>
           ) : (
             <div className="flex flex-col gap-2" style={{ color: 'var(--text-secondary)' }}>
               {/* Filter Bar */}
@@ -1259,6 +1361,7 @@ const CRON_PRESETS = [
 
 function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onClose, onSaved }) {
   const [depSearch, setDepSearch] = useState('');
+  const [templates, setTemplates] = useState([]);
   const [form, setForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
@@ -1278,6 +1381,35 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
     return match ? match.value : (task?.trigger_cron ? '__custom__' : '0 9 * * *');
   });
   const [saving, setSaving] = useState(false);
+
+  // Load templates for the "From Template" dropdown (only for new tasks)
+  useEffect(() => {
+    if (!task) {
+      api.getTemplates().then(setTemplates).catch(() => {});
+    }
+  }, [task]);
+
+  const applyTemplate = (templateId) => {
+    if (!templateId) return;
+    const tpl = templates.find((t) => t.id === templateId);
+    if (!tpl) return;
+    setForm((f) => ({
+      ...f,
+      title: tpl.name || f.title,
+      description: tpl.description || '',
+      priority: tpl.priority || 'medium',
+      agent_id: tpl.agent_id || '',
+      project_id: tpl.project_id || f.project_id,
+      task_type: tpl.task_type || 'single',
+      flow_items: (tpl.flow_items || []).map((item) => ({
+        ...item,
+        id: String(Date.now()) + Math.random().toString(36).slice(2, 6),
+        status: 'pending',
+        output: '',
+      })),
+      tags: tpl.tags || '',
+    }));
+  };
 
   const addFlowItem = () => setForm((f) => ({
     ...f,
@@ -1337,6 +1469,21 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
           {task ? 'Edit Task' : 'New Task'}
         </h3>
         <form onSubmit={handleSubmit} className="space-y-4">
+          {!task && templates.length > 0 && (
+            <div>
+              <label className="label flex items-center gap-1.5"><FileText size={12} /> From Template</label>
+              <select
+                className="input"
+                defaultValue=""
+                onChange={(e) => applyTemplate(e.target.value)}
+              >
+                <option value="">-- Select a template to pre-fill --</option>
+                {templates.map((tpl) => (
+                  <option key={tpl.id} value={tpl.id}>{tpl.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="label">Title</label>
             <input className="input" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} required />

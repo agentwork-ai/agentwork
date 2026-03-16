@@ -35,6 +35,7 @@ app.prepare().then(() => {
   server.use('/api/settings', require('./routes/settings'));
   server.use('/api/chat', require('./routes/chat'));
   server.use('/api/files', require('./routes/files'));
+  server.use('/api/templates', require('./routes/templates'));
 
   // Webhook endpoint for external triggers
   server.post('/api/webhooks/trigger', (req, res) => {
