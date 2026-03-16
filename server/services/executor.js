@@ -604,7 +604,7 @@ Use tools to complete your task — do NOT write explanations without acting:
 
   while (iterations < maxIterations && !execState.aborted) {
     iterations++;
-    addLog(taskId, 'thinking', `Iteration ${iterations}/${maxIterations}...`);
+    addLog(taskId, 'thinking', `Iteration ${iterations}...`);
     io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
     let response;
