@@ -302,6 +302,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     chat_token: agent?.chat_token || '',
     chat_app_token: agent?.chat_app_token || '',
     chat_allowed_ids: agent?.chat_allowed_ids || '',
+    allowed_tools: agent?.allowed_tools || '',
   });
   const [saving, setSaving] = useState(false);
 
@@ -527,6 +528,58 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             <input className="input" type="number" step="0.01" min="0" value={form.daily_budget_usd}
               onChange={(e) => setForm({ ...form, daily_budget_usd: parseFloat(e.target.value) || 0 })} />
             <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>0 = no per-agent limit (global budget still applies)</p>
+          </div>
+
+          {/* Tool Restrictions */}
+          <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-2 mb-2">
+              <Shield size={16} style={{ color: 'var(--text-secondary)' }} />
+              <label className="label mb-0" style={{ marginBottom: 0 }}>Tool Restrictions</label>
+            </div>
+            <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+              Limit which tools this agent can use during task execution. Unchecked tools will not be available. Leave all unchecked to allow all tools.
+            </p>
+            <div className="space-y-2">
+              {[
+                { name: 'read_file', label: 'Read File', desc: 'Read file contents' },
+                { name: 'write_file', label: 'Write File', desc: 'Create or overwrite files' },
+                { name: 'delete_path', label: 'Delete Path', desc: 'Delete files or directories' },
+                { name: 'run_bash', label: 'Run Bash', desc: 'Execute shell commands' },
+                { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
+              ].map((tool) => {
+                const allowedSet = new Set(
+                  (form.allowed_tools || '').split(',').map((t) => t.trim()).filter(Boolean)
+                );
+                const checked = allowedSet.has(tool.name);
+                const toggleTool = () => {
+                  const next = new Set(allowedSet);
+                  if (checked) {
+                    next.delete(tool.name);
+                  } else {
+                    next.add(tool.name);
+                  }
+                  setForm({ ...form, allowed_tools: Array.from(next).join(',') });
+                };
+                return (
+                  <label key={tool.name}
+                    className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                    style={{
+                      background: checked ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                      border: checked ? '1px solid var(--accent)' : '1px solid var(--border)',
+                    }}
+                  >
+                    <input type="checkbox" checked={checked} onChange={toggleTool} />
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{tool.label}</span>
+                      <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>{tool.desc}</span>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+            <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+              task_complete and request_help are always available regardless of restrictions.
+            </p>
           </div>
 
           {/* Chat Platform Integration */}

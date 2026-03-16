@@ -106,6 +106,13 @@ export const api = {
   getUsageReport: (days) => request(`/api/settings/report?days=${days || 30}`),
   exportData: (type) => request(`/api/settings/export?type=${type || 'all'}`),
 
+  // Rooms (Group Chat)
+  getRooms: () => request('/api/rooms'),
+  createRoom: (data) => request('/api/rooms', { method: 'POST', body: JSON.stringify(data) }),
+  getRoomMessages: (id, limit) => request(`/api/rooms/${id}/messages?limit=${limit || 200}`),
+  sendRoomMessage: (id, content) => request(`/api/rooms/${id}/messages`, { method: 'POST', body: JSON.stringify({ content }) }),
+  deleteRoom: (id) => request(`/api/rooms/${id}`, { method: 'DELETE' }),
+
   // Status
   getStatus: () => request('/api/status'),
 

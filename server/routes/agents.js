@@ -224,7 +224,7 @@ router.put('/:id', async (req, res) => {
 
   const { name, avatar, role, auth_type, provider, model, status, personality,
           chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids,
-          daily_budget_usd } = req.body;
+          daily_budget_usd, allowed_tools } = req.body;
 
   const newChatEnabled = chat_enabled !== undefined ? (chat_enabled ? 1 : 0) : existing.chat_enabled;
 
@@ -232,7 +232,7 @@ router.put('/:id', async (req, res) => {
     `UPDATE agents SET name = ?, avatar = ?, role = ?, auth_type = ?, provider = ?, model = ?,
      status = ?, personality = ?,
      chat_enabled = ?, chat_platform = ?, chat_token = ?, chat_app_token = ?, chat_allowed_ids = ?,
-     daily_budget_usd = ?,
+     daily_budget_usd = ?, allowed_tools = ?,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     name || existing.name,
@@ -249,6 +249,7 @@ router.put('/:id', async (req, res) => {
     chat_app_token !== undefined ? chat_app_token : existing.chat_app_token,
     chat_allowed_ids !== undefined ? chat_allowed_ids : existing.chat_allowed_ids,
     daily_budget_usd !== undefined ? daily_budget_usd : (existing.daily_budget_usd || 0),
+    allowed_tools !== undefined ? allowed_tools : (existing.allowed_tools || ''),
     req.params.id
   );
 
