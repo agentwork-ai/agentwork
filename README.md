@@ -1,5 +1,7 @@
 # AgentWork
 
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/agentwork-ai/agentwork) [![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/agentwork-ai/agentwork/releases) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+
 Autonomous AI agent orchestration platform. Hire, manage, and collaborate with multiple AI agents through a real-time dashboard — agents execute tasks, chat over Telegram/Slack/Discord, and run on schedules, all in the background.
 
 <table>
