@@ -69,9 +69,9 @@ const MODELS = {
 
 const STEPS = [
   { key: 'welcome', label: 'Welcome', icon: Zap },
+  { key: 'agent', label: 'Agent', icon: Users },
   { key: 'api-keys', label: 'API Keys', icon: Key },
   { key: 'project', label: 'Project', icon: FolderOpen },
-  { key: 'agent', label: 'Agent', icon: Users },
 ];
 
 export default function OnboardingWizard({ onComplete }) {
@@ -163,7 +163,7 @@ export default function OnboardingWizard({ onComplete }) {
     try {
       await api.createProject({ name: project.name, path: project.path });
       toast.success('Project created');
-      handleNext();
+      handleFinish();
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -190,7 +190,7 @@ export default function OnboardingWizard({ onComplete }) {
         model: agentAuthType === 'cli' ? '' : modelId,
       });
       toast.success('Agent hired!');
-      handleFinish();
+      handleNext();
     } catch (err) {
       toast.error(err.message);
     } finally {
@@ -277,7 +277,7 @@ export default function OnboardingWizard({ onComplete }) {
         {/* Step Content */}
         <div className="px-6 pb-4" style={{ minHeight: '260px' }}>
           {/* Step 1: Welcome */}
-          {step === 0 && (
+          {currentStep.key === 'welcome' && (
             <div className="text-center py-6">
               <div
                 className="w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-5"
@@ -295,8 +295,8 @@ export default function OnboardingWizard({ onComplete }) {
             </div>
           )}
 
-          {/* Step 2: API Keys */}
-          {step === 1 && (
+          {/* API Keys */}
+          {currentStep.key === 'api-keys' && (
             <div>
               <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
                 Add API Keys
@@ -381,7 +381,7 @@ export default function OnboardingWizard({ onComplete }) {
           )}
 
           {/* Step 3: Create Project */}
-          {step === 2 && (
+          {currentStep.key === 'project' && (
             <div>
               <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
                 Create a Project
@@ -424,7 +424,7 @@ export default function OnboardingWizard({ onComplete }) {
           )}
 
           {/* Step 4: Hire Agent */}
-          {step === 3 && (
+          {currentStep.key === 'agent' && (
             <div>
               <h2 className="text-lg font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
                 Hire Your First Agent
@@ -594,27 +594,27 @@ export default function OnboardingWizard({ onComplete }) {
               <SkipForward size={14} /> Skip
             </button>
 
-            {step === 0 && (
+            {currentStep.key === 'welcome' && (
               <button className="btn btn-primary text-sm" onClick={handleNext}>
                 Get Started <ChevronRight size={16} />
               </button>
             )}
 
-            {step === 1 && (
+            {currentStep.key === 'api-keys' && (
               <button className="btn btn-primary text-sm" onClick={saveApiKeys} disabled={saving}>
                 {saving ? 'Saving...' : 'Save & Continue'}
               </button>
             )}
 
-            {step === 2 && (
+            {currentStep.key === 'project' && (
               <button className="btn btn-primary text-sm" onClick={saveProject} disabled={saving}>
-                {saving ? 'Saving...' : 'Create & Continue'}
+                {saving ? 'Saving...' : 'Create & Finish'}
               </button>
             )}
 
-            {step === 3 && (
+            {currentStep.key === 'agent' && (
               <button className="btn btn-primary text-sm" onClick={saveAgent} disabled={saving}>
-                {saving ? 'Saving...' : 'Hire & Finish'}
+                {saving ? 'Saving...' : 'Hire & Continue'}
               </button>
             )}
           </div>
