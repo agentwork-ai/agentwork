@@ -34,6 +34,10 @@ function readFileCached(filePath) {
 
 // ─── Git Automation Helpers ───
 
+function getSetting(key) {
+  return db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value || '';
+}
+
 function isGitRepo(workDir) {
   try {
     execSync('git rev-parse --is-inside-work-tree', { cwd: workDir, stdio: 'pipe' });
@@ -45,10 +49,91 @@ function slugify(text) {
   return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 }
 
+function getMainBranch(workDir) {
+  try {
+    const branch = execSync('git symbolic-ref refs/remotes/origin/HEAD --short 2>/dev/null || echo origin/main', { cwd: workDir, encoding: 'utf8', shell: true }).trim().replace('origin/', '');
+    return branch || 'main';
+  } catch { return 'main'; }
+}
+
+/**
+ * Initialize git repo if auto_git_init is enabled and directory is not a repo.
+ */
+function gitAutoInit(workDir, logFn, taskId) {
+  if (getSetting('auto_git_init') !== 'true') return;
+  if (isGitRepo(workDir)) return;
+
+  try {
+    execSync('git init', { cwd: workDir, stdio: 'pipe' });
+    execSync('git add -A', { cwd: workDir, stdio: 'pipe' });
+    execSync('git commit -m "Initial commit (auto-created by AgentWork)" --allow-empty', { cwd: workDir, stdio: 'pipe', shell: true });
+    logFn(taskId, 'info', 'Git: auto-initialized repository');
+  } catch (err) {
+    logFn(taskId, 'warning', `Git auto-init failed: ${err.message}`);
+  }
+}
+
+/**
+ * Sync from main/master before creating a task branch.
+ * Pulls latest changes and handles conflicts.
+ */
+function gitSyncFromMain(workDir, logFn, taskId) {
+  if (getSetting('auto_git_sync') !== 'true') return;
+  if (!isGitRepo(workDir)) return;
+
+  try {
+    const mainBranch = getMainBranch(workDir);
+
+    // Stash any uncommitted changes
+    const hasChanges = execSync('git status --porcelain', { cwd: workDir, encoding: 'utf8' }).trim();
+    if (hasChanges) {
+      execSync('git stash --include-untracked', { cwd: workDir, stdio: 'pipe' });
+      logFn(taskId, 'info', 'Git: stashed local changes');
+    }
+
+    // Checkout main and pull latest
+    try {
+      execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
+      execSync('git pull --ff-only 2>/dev/null || git pull --rebase 2>/dev/null || true', { cwd: workDir, stdio: 'pipe', shell: true, timeout: 30000 });
+      logFn(taskId, 'info', `Git: synced with ${mainBranch}`);
+    } catch (err) {
+      logFn(taskId, 'warning', `Git: could not sync from ${mainBranch}: ${err.message}`);
+    }
+
+    // Restore stashed changes
+    if (hasChanges) {
+      try {
+        execSync('git stash pop', { cwd: workDir, stdio: 'pipe' });
+        logFn(taskId, 'info', 'Git: restored stashed changes');
+      } catch {
+        // Conflict during stash pop — accept theirs for auto-resolve
+        logFn(taskId, 'warning', 'Git: conflict restoring stash, attempting auto-resolve');
+        try {
+          execSync('git checkout --theirs . && git add -A && git stash drop', { cwd: workDir, stdio: 'pipe', shell: true });
+          logFn(taskId, 'info', 'Git: auto-resolved conflicts (accepted incoming changes)');
+        } catch {
+          execSync('git stash drop 2>/dev/null || true', { cwd: workDir, stdio: 'pipe', shell: true });
+          logFn(taskId, 'warning', 'Git: could not auto-resolve, proceeding with clean state');
+        }
+      }
+    }
+  } catch (err) {
+    logFn(taskId, 'warning', `Git sync failed: ${err.message}`);
+  }
+}
+
+/**
+ * Create a feature branch for the task.
+ */
 function gitCreateBranch(workDir, taskId, taskTitle, logFn) {
-  const autoGit = db.prepare("SELECT value FROM settings WHERE key = 'auto_git_branch'").get()?.value;
-  if (autoGit !== 'true') return null;
+  if (getSetting('auto_git_branch') !== 'true') return null;
+
+  // Auto-init if needed
+  gitAutoInit(workDir, logFn, taskId);
   if (!isGitRepo(workDir)) return null;
+
+  // Sync from main first
+  gitSyncFromMain(workDir, logFn, taskId);
 
   try {
     const branchName = `agentwork/${slugify(taskTitle)}-${taskId.slice(0, 8)}`;
@@ -61,9 +146,11 @@ function gitCreateBranch(workDir, taskId, taskTitle, logFn) {
   }
 }
 
+/**
+ * After task completion: commit, push, create PR, merge if auto-merge enabled.
+ */
 function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
-  const autoGit = db.prepare("SELECT value FROM settings WHERE key = 'auto_git_branch'").get()?.value;
-  if (autoGit !== 'true' || !branchName) return;
+  if (getSetting('auto_git_branch') !== 'true' || !branchName) return;
   if (!isGitRepo(workDir)) return;
 
   try {
@@ -71,6 +158,8 @@ function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
     const status = execSync('git status --porcelain', { cwd: workDir, encoding: 'utf8' }).trim();
     if (!status) {
       logFn(taskId, 'info', 'Git: no changes to commit');
+      // Still switch back to main
+      try { execSync('git checkout -', { cwd: workDir, stdio: 'pipe' }); } catch {}
       return;
     }
 
@@ -80,32 +169,79 @@ function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
     execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: workDir, stdio: 'pipe' });
     logFn(taskId, 'info', `Git: committed changes on ${branchName}`);
 
-    // Try to push (may fail if no remote configured)
+    // Try to push
+    let pushed = false;
     try {
       execSync(`git push -u origin "${branchName}"`, { cwd: workDir, stdio: 'pipe', timeout: 30000 });
-      logFn(taskId, 'info', `Git: pushed branch ${branchName} to origin`);
+      logFn(taskId, 'info', `Git: pushed branch ${branchName}`);
+      pushed = true;
 
       // Try to create PR via gh CLI
       try {
+        const mainBranch = getMainBranch(workDir);
         const prUrl = execSync(
-          `gh pr create --title "${taskTitle.replace(/"/g, '\\"')}" --body "Automated PR from AgentWork task \`${taskId}\`" --head "${branchName}" 2>&1`,
+          `gh pr create --title "${taskTitle.replace(/"/g, '\\"')}" --body "Automated PR from AgentWork task \`${taskId}\`" --head "${branchName}" --base "${mainBranch}" 2>&1`,
           { cwd: workDir, encoding: 'utf8', timeout: 15000 }
         ).trim();
         logFn(taskId, 'success', `Git: PR created — ${prUrl}`);
+
+        // Auto-merge if enabled
+        if (getSetting('auto_git_merge') === 'true') {
+          try {
+            execSync(`gh pr merge "${branchName}" --squash --delete-branch 2>&1`, { cwd: workDir, encoding: 'utf8', timeout: 15000 });
+            logFn(taskId, 'success', 'Git: PR auto-merged and branch deleted');
+          } catch (mergeErr) {
+            logFn(taskId, 'info', `Git: could not auto-merge — ${mergeErr.message?.slice(0, 100)}`);
+          }
+        }
       } catch {
         logFn(taskId, 'info', 'Git: pushed but could not create PR (gh CLI may not be installed)');
       }
     } catch {
-      logFn(taskId, 'info', 'Git: committed locally but could not push (no remote or auth issue)');
+      logFn(taskId, 'info', 'Git: committed locally but could not push (no remote)');
     }
 
-    // Switch back to previous branch
-    try {
-      execSync('git checkout -', { cwd: workDir, stdio: 'pipe' });
-    } catch {}
+    // If not pushed or not auto-merging, merge locally
+    if (!pushed || getSetting('auto_git_merge') !== 'true') {
+      const mainBranch = getMainBranch(workDir);
+      try {
+        execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
+        execSync(`git merge "${branchName}" --no-edit`, { cwd: workDir, stdio: 'pipe' });
+        execSync(`git branch -d "${branchName}"`, { cwd: workDir, stdio: 'pipe' });
+        logFn(taskId, 'info', `Git: merged ${branchName} into ${mainBranch} locally`);
+      } catch (mergeErr) {
+        // Conflict during merge — auto-resolve by accepting the branch changes
+        logFn(taskId, 'warning', 'Git: merge conflict, auto-resolving');
+        try {
+          execSync('git add -A && git commit --no-edit', { cwd: workDir, stdio: 'pipe', shell: true });
+          execSync(`git branch -D "${branchName}" 2>/dev/null || true`, { cwd: workDir, stdio: 'pipe', shell: true });
+          logFn(taskId, 'info', 'Git: merge conflict auto-resolved');
+        } catch {
+          logFn(taskId, 'warning', 'Git: could not auto-resolve merge conflict');
+        }
+      }
+    } else {
+      // Switch back to main
+      try {
+        const mainBranch = getMainBranch(workDir);
+        execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
+        execSync('git pull 2>/dev/null || true', { cwd: workDir, stdio: 'pipe', shell: true });
+      } catch {}
+    }
   } catch (err) {
     logFn(taskId, 'warning', `Git commit failed: ${err.message}`);
+    try { execSync('git checkout - 2>/dev/null || true', { cwd: workDir, stdio: 'pipe', shell: true }); } catch {}
   }
+}
+
+/**
+ * Generate a summary of what changed for the PR/commit message.
+ */
+function gitDiffSummary(workDir) {
+  try {
+    const stat = execSync('git diff --stat HEAD~1', { cwd: workDir, encoding: 'utf8', timeout: 5000 });
+    return stat.trim().split('\n').slice(-1)[0] || ''; // last line has summary
+  } catch { return ''; }
 }
 
 // DB-backed session persistence for Claude CLI sessions
@@ -1402,6 +1538,28 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     dirListing = execSync('ls -la', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1000);
   } catch {}
 
+  // Build recent project activity context so agents know what others did
+  let projectActivity = '';
+  if (project) {
+    try {
+      const recentDone = db.prepare(
+        "SELECT t.title, t.completion_output, a.name as agent_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id WHERE t.project_id = ? AND t.status = 'done' AND t.id != ? ORDER BY t.completed_at DESC LIMIT 5"
+      ).all(project.id, taskId);
+      if (recentDone.length > 0) {
+        projectActivity = '\n## Recent Activity on This Project\n' +
+          recentDone.map((t) => `- ${t.agent_name || 'Agent'}: ${t.title}${t.completion_output ? ` — ${t.completion_output.slice(0, 150)}` : ''}`).join('\n');
+      }
+    } catch {}
+
+    // Show git log if available
+    try {
+      if (isGitRepo(workDir)) {
+        const gitLog = execSync('git log --oneline -5 2>/dev/null', { cwd: workDir, encoding: 'utf8', timeout: 3000 }).trim();
+        if (gitLog) projectActivity += `\n\n## Recent Git Commits\n\`\`\`\n${gitLog}\n\`\`\``;
+      }
+    } catch {}
+  }
+
   // Build custom tools section for the system prompt
   const customToolDefs = getCustomToolDefinitions();
   const customToolsPrompt = customToolDefs.length > 0
@@ -1437,7 +1595,8 @@ Use tools to complete your task — do NOT write explanations without acting:
 2. Make your best judgment on ambiguous requirements.
 3. Use tools to read code, make changes, and verify your work.
 4. When finished, call task_complete with a summary.
-5. ${project ? `Working directory: ${project.path}` : 'Use the provided working directory.'}`;
+5. ${project ? `Working directory: ${project.path}` : 'Use the provided working directory.'}
+${projectActivity}`;
 
   const messages = [
     { role: 'system', content: systemPrompt },

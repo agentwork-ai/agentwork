@@ -308,12 +308,54 @@ export default function SettingsPage() {
                       Auto Git Branch + PR
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Auto-create a branch before task execution, then commit, push, and open a PR when done
+                      Auto-create a branch before task, commit + push + PR when done
                     </p>
                   </div>
                   <ToggleSwitch
                     checked={settings.auto_git_branch === 'true'}
                     onChange={(v) => updateField('auto_git_branch', v ? 'true' : 'false')}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Auto Sync from Main
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Pull latest from main/master before starting each task, auto-resolve conflicts
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.auto_git_sync === 'true'}
+                    onChange={(v) => updateField('auto_git_sync', v ? 'true' : 'false')}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Auto Merge to Main
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Automatically merge completed task branches back to main
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.auto_git_merge === 'true'}
+                    onChange={(v) => updateField('auto_git_merge', v ? 'true' : 'false')}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Auto Init Git for New Projects
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Automatically initialize a git repo if the project directory doesn't have one
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.auto_git_init === 'true'}
+                    onChange={(v) => updateField('auto_git_init', v ? 'true' : 'false')}
                   />
                 </div>
               </div>
