@@ -136,10 +136,24 @@ program
     console.log(chalk.blue.bold('🚀 Starting AgentWork...'));
 
     const serverScript = path.join(ROOT, 'server', 'index.js');
+    const nextDir = path.join(ROOT, '.next');
     const env = { ...process.env, PORT: opts.port, AGENTWORK_ROOT: ROOT };
+
+    // Auto-build if .next directory doesn't exist
+    if (!fs.existsSync(nextDir)) {
+      console.log(chalk.yellow('First run — building dashboard (this may take a minute)...'));
+      try {
+        execSync('npm run build', { cwd: ROOT, stdio: 'inherit', env });
+        console.log(chalk.green('✓ Build complete'));
+      } catch (err) {
+        console.log(chalk.red('✗ Build failed. Try running manually: cd ' + ROOT + ' && npm run build'));
+        process.exit(1);
+      }
+    }
 
     if (opts.foreground) {
       const child = spawn('node', [serverScript], {
+        cwd: ROOT,
         env,
         stdio: 'inherit',
       });
@@ -153,6 +167,7 @@ program
 
     const logStream = fs.openSync(LOG_FILE, 'a');
     const child = spawn('node', [serverScript], {
+      cwd: ROOT,
       env,
       detached: true,
       stdio: ['ignore', logStream, logStream],
