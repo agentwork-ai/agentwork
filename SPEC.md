@@ -2,7 +2,7 @@
 
 **AgentWork** is a fully autonomous AI agent orchestration platform that runs locally as a background daemon. It lets you hire, manage, and collaborate with multiple AI agents simultaneously — each with their own memory, personality, role, and long-term context — while you monitor everything through a modern real-time dashboard.
 
-Agents can read and write files, execute bash commands, work through multi-step tasks, chat with you over Telegram and Slack, and run on schedules — all while you sleep.
+Agents can read and write files, execute bash commands, work through multi-step tasks, chat with you over Telegram, Slack, and Discord, and run on schedules — all while you sleep.
 
 ---
 
@@ -20,6 +20,8 @@ Agents can read and write files, execute bash commands, work through multi-step 
   - [Kanban Task Engine](#kanban-task-engine)
   - [Agent Chat](#agent-chat)
   - [The Office](#the-office)
+  - [Analytics](#analytics)
+  - [Pipelines](#pipelines)
   - [Agents Manager](#agents-manager)
   - [Settings](#settings)
 - [Agents](#agents)
@@ -31,14 +33,36 @@ Agents can read and write files, execute bash commands, work through multi-step 
   - [Task Lifecycle](#task-lifecycle)
   - [Task Types](#task-types)
   - [Flow Tasks](#flow-tasks)
+  - [Task Dependencies](#task-dependencies)
+  - [Task Templates](#task-templates)
+  - [Task Comments](#task-comments)
   - [Task Scheduling](#task-scheduling)
   - [The YOLO Execution Loop](#the-yolo-execution-loop)
+- [Git Automation](#git-automation)
+  - [Settings](#git-settings)
+  - [Full Workflow](#git-workflow)
 - [Projects](#projects)
   - [PROJECT.md Engine](#projectmd-engine)
   - [File Explorer](#file-explorer)
-- [Platform Integrations](#platform-integrations)
+- [Plugin System](#plugin-system)
+  - [Plugin Types](#plugin-types)
+  - [Directory Structure](#plugin-directory-structure)
+  - [Plugin Manifest](#plugin-manifest)
+- [Integrations](#integrations)
   - [Telegram](#telegram)
   - [Slack](#slack)
+  - [Discord](#discord)
+  - [GitHub](#github)
+  - [Linear / Jira](#linear--jira)
+  - [Email Notifications](#email-notifications)
+  - [Webhooks](#webhooks)
+  - [MCP Server](#mcp-server)
+  - [VS Code Extension](#vs-code-extension)
+- [Security](#security)
+  - [API Key Encryption](#api-key-encryption)
+  - [Command Sandboxing](#command-sandboxing)
+  - [Dashboard Authentication](#dashboard-authentication)
+  - [Audit Logging](#audit-logging)
 - [Budget Management](#budget-management)
 - [Real-Time System](#real-time-system)
 - [Database Schema](#database-schema)
@@ -59,51 +83,97 @@ Each agent gets its own memory directory — a set of markdown files that persis
 
 ## Features
 
-### Core
-- **Background Daemon** — Agents keep working even when the dashboard is closed
-- **CLI Control** — `start`, `stop`, `status`, `logs`, `clean`
-- **Real-Time Dashboard** — Next.js frontend with WebSocket updates
-- **Multi-Agent** — Hire unlimited agents, each with their own role, model, and memory
-- **5-Column Kanban** — Backlog → To Do → Doing → Blocked → Done
-- **Streaming Execution Logs** — Watch agents think, type, and execute in real time
+### Agent Capabilities
+- **Multi-Agent** — Hire agents with distinct roles, models, and persistent memory
+- **Agent-to-Agent Communication** — Agents can message each other for delegation and review
+- **Per-Agent Tool Restrictions** — Whitelist which tools each agent can use
+- **Agent Cloning** — Clone an agent's full configuration and memory with one click
+- **Multi-Model Fallback** — Automatic fallback to secondary model on API failure
+- **Streaming Chat** — Token-by-token streaming responses via Socket.io
+- **Context Window Management** — Auto-prunes conversation history to prevent truncation
+- **Agent Warm-Up Cache** — Pre-loads memory files for faster task startup
+- **Vision / Image Support** — Agents can analyze images via the `read_image` tool
+- **Self-Improving Prompts** — Track success/failure rates with prompt improvement suggestions
+
+### Task Management
+- **5-Column Kanban** — Drag tasks to "Doing" and agents execute autonomously
+- **Flow Tasks** — Sequential or parallel multi-step workflows across agents
+- **Task Dependencies** — DAG-based execution — tasks wait for dependencies to complete
+- **Sub-Tasks** — Nested tasks with parent-child relationships
+- **Task Templates** — Save and reuse task blueprints
+- **Task Labels/Tags** — Free-form tagging for filtering and grouping
+- **Bulk Operations** — Multi-select for bulk status change, assign, or delete
+- **Priority Queue** — Auto-start next highest-priority task when one finishes
+- **Task Scheduling** — One-shot timestamps and recurring cron expressions
+- **Retry Blocked Tasks** — Edit description and one-click retry
+- **Task Comments** — Discussion threads separate from execution logs
+- **Swimlanes** — Group Kanban by agent, project, or priority
+- **Time Estimates & SLA** — Track estimated vs actual execution duration
+
+### Git Automation (enabled by default)
+- **Auto Branch** — Creates `agentwork/<task-slug>` branch before each task
+- **Auto Sync** — Pulls latest from main before starting, auto-resolves conflicts
+- **Auto Commit + PR** — Stages, commits, pushes, and opens PR via `gh` CLI
+- **Auto Merge** — Squash-merges to main (via PR or local merge as fallback)
+- **Auto Init** — Initializes git repo for projects that don't have one
 
 ### AI & Models
-- **8+ AI Providers** — Anthropic, OpenAI, OpenRouter, DeepSeek, Mistral, Google, Ollama, LMStudio
+- **9 AI Providers** — Anthropic, OpenAI, OpenRouter, DeepSeek, Mistral, Google, Ollama, LMStudio, Custom
 - **80+ Models** — Claude 4, GPT-5, Gemini 2.5, DeepSeek V3, Codestral, and more
 - **API Mode + CLI Mode** — Use API keys or local CLI auth (Claude Code, Codex)
 - **Tool-Enabled Agents** — Full filesystem and bash access via agent SDKs
-
-### Task Management
-- **Flow Tasks** — Multi-step sequential execution across different agents
-- **Task Scheduling** — One-shot timestamps and recurring cron expressions
-- **Blocked State** — Agents pause and notify you when they need input
-- **User Reply** — Reply in chat to unblock a task and resume execution
-- **Attachments** — Attach images and files to tasks
+- **Custom Tools** — Define your own tools with bash command templates
 
 ### Memory & Context
 - **OpenClaw Memory Architecture** — 4 markdown files per agent (SOUL, USER, AGENTS, MEMORY)
 - **Auto-Summarization** — MEMORY.md stays under 2000 tokens automatically
 - **PROJECT.md Engine** — Auto-generated project context file, updated by agents
 - **Tech Stack Detection** — Analyzes your project and pre-fills PROJECT.md
+- **RAG-Based File Retrieval** — Keyword-based TF-IDF file search for relevant project context
+
+### Security
+- **Dashboard Authentication** — Optional password protection
+- **API Key Encryption** — AES-256-GCM encryption at rest
+- **Command Sandboxing** — Blocks dangerous commands, enforces directory jail
+- **Path Traversal Protection** — File API restricted to project directories
+- **Audit Logging** — All CRUD operations logged with timestamps
+- **Per-Agent Budget Limits** — Individual daily spend caps
 
 ### Integrations
-- **Telegram Bot** — Chat with any agent directly from Telegram
-- **Slack Bot** — DMs and @mentions in any Slack workspace
-- **User Whitelisting** — Restrict platform access to specific user IDs
+- **Telegram Bot** — Chat with agents via Telegram
+- **Slack Bot** — DMs and @mentions via Socket Mode
+- **Discord Bot** — Chat with agents via Discord (requires discord.js)
+- **GitHub** — Auto-create issues from blocked tasks, PRs from completed tasks
+- **Linear / Jira** — Bidirectional task sync
+- **Email Notifications** — SMTP-based alerts for task completion/blocked
+- **Webhooks** — Inbound `POST /api/webhooks/trigger` for CI/CD
+- **MCP Server** — Expose tasks/agents/projects to Claude Desktop
+- **VS Code Extension** — Status, task creation, agent listing from editor
+- **Plugin System** — Third-party tools, hooks, and integrations
 
 ### Observability
 - **The Office** — Visual telemetry UI showing agent status in real time
+- **Analytics Dashboard** — Spend charts, agent utilization, model comparison
 - **Budget Tracking** — Daily and monthly USD spend limits with auto-kill
 - **Token Counters** — Input/output token tracking per task and globally
 - **Cost Estimation** — Static pricing table + live OpenRouter pricing API
 - **Execution History** — Full structured log stored per task
 
 ### UI/UX
-- **Dark & Light Mode** — System-aware with manual toggle
+- **Dark/Light Mode** — System-aware with 6 accent color presets
+- **Markdown Rendering** — Rich formatting in chat and task details
+- **Syntax-Highlighted Code Viewer** — JS/TS/Python/JSON/CSS/Markdown
+- **In-Line File Editor** — Edit and save files from the dashboard
+- **Diff Viewer** — Unified diff with color-coded added/removed lines
+- **Keyboard Shortcuts** — Cmd+K, Cmd+1-7, ? for help overlay
+- **Execution Log Filtering** — Type filters, text search, color-coding
+- **Live Activity Feed** — Real-time event stream on dashboard
+- **Onboarding Wizard** — Guided 4-step setup for first-time users
+- **Responsive Mobile Layout** — Hamburger menu, compact bottom bar
+- **PWA Support** — Installable as mobile app with service worker
 - **Collapsible Sidebar** — More screen space when you need it
 - **Global Status Bar** — Connection, active agents, tasks, tokens, spend
 - **Toast Notifications** — Real-time alerts from agents
-- **File Viewer** — Syntax-aware code viewer built into Projects
 
 ---
 
@@ -111,37 +181,48 @@ Each agent gets its own memory directory — a set of markdown files that persis
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                   AgentWork Daemon                  │
-│                    (Port 1248)                      │
-│                                                     │
-│  ┌──────────────┐   ┌──────────────────────────┐   │
-│  │  Express.js  │   │       Socket.io          │   │
-│  │  REST API    │   │   Real-Time Events       │   │
-│  └──────────────┘   └──────────────────────────┘   │
-│                                                     │
-│  ┌──────────────────────────────────────────────┐  │
-│  │              Service Layer                   │  │
-│  │  executor.js │ scheduler.js │ platforms.js   │  │
-│  │  ai.js       │ project-doc.js                │  │
-│  └──────────────────────────────────────────────┘  │
-│                                                     │
-│  ┌──────────────────────────────────────────────┐  │
-│  │        SQLite Database (~/.agentwork)        │  │
-│  │  projects │ agents │ tasks │ messages        │  │
-│  │  settings │ budget_logs                      │  │
-│  └──────────────────────────────────────────────┘  │
-│                                                     │
-│  ┌──────────────────────────────────────────────┐  │
-│  │          Next.js Frontend (SSR)              │  │
-│  │  Dashboard │ Kanban │ Projects │ Chat        │  │
-│  │  Office    │ Agents │ Settings               │  │
-│  └──────────────────────────────────────────────┘  │
+│                   AgentWork Daemon                   │
+│                    (Port 1248)                       │
+│                                                      │
+│  ┌──────────────┐   ┌──────────────────────────┐    │
+│  │  Express.js  │   │       Socket.io           │    │
+│  │  REST API    │   │   Real-Time Events        │    │
+│  └──────────────┘   └──────────────────────────┘    │
+│                                                      │
+│  ┌───────────────────────────────────────────────┐  │
+│  │               Service Layer                    │  │
+│  │  executor.js │ scheduler.js │ platforms.js     │  │
+│  │  ai.js       │ project-doc.js │ rag.js        │  │
+│  │  github.js   │ email.js   │ discord.js        │  │
+│  │  linear.js   │ plugins.js │ crypto.js         │  │
+│  └───────────────────────────────────────────────┘  │
+│                                                      │
+│  ┌───────────────────────────────────────────────┐  │
+│  │        SQLite Database (~/.agentwork)           │  │
+│  │  projects │ agents │ tasks │ messages          │  │
+│  │  settings │ budget_logs │ pipelines            │  │
+│  │  task_templates │ task_comments │ custom_tools │  │
+│  │  agent_messages │ chat_rooms │ room_messages   │  │
+│  │  agent_sessions │ audit_logs │ schema_migrations│ │
+│  └───────────────────────────────────────────────┘  │
+│                                                      │
+│  ┌───────────────────────────────────────────────┐  │
+│  │          Next.js Frontend (SSR)                │  │
+│  │  Dashboard │ Kanban │ Projects │ Chat          │  │
+│  │  Office    │ Analytics │ Pipelines             │  │
+│  │  Agents    │ Settings                          │  │
+│  └───────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────┘
         │                          │
         ▼                          ▼
   AI Providers               Platform Bots
-  (Anthropic, OpenAI,        (Telegram, Slack)
-   OpenRouter, etc.)
+  (Anthropic, OpenAI,        (Telegram, Slack,
+   OpenRouter, etc.)          Discord)
+        │                          │
+        ▼                          ▼
+  External Services          MCP Server / VS Code
+  (GitHub, Linear,           (Claude Desktop,
+   Jira, Email)               VS Code Extension)
 ```
 
 ### Directory Structure
@@ -152,41 +233,78 @@ agentwork/
 │   └── cli.js                    # CLI daemon manager
 ├── server/
 │   ├── index.js                  # Entry point: Express + Socket.io + Next.js
-│   ├── db.js                     # SQLite schema & query helpers
+│   ├── db.js                     # SQLite schema, migrations & query helpers
 │   ├── socket.js                 # WebSocket event handlers
+│   ├── crypto.js                 # AES-256-GCM encryption for API keys
+│   ├── plugins.js                # Plugin system loader & registry
+│   ├── mcp.js                    # MCP Tool Server (standalone stdio JSON-RPC)
 │   ├── routes/
 │   │   ├── agents.js             # Agent CRUD + memory file management
 │   │   ├── tasks.js              # Task CRUD + execution trigger
 │   │   ├── projects.js           # Project CRUD + file tree
 │   │   ├── chat.js               # Message history + unread count
 │   │   ├── settings.js           # Settings + budget API
-│   │   └── files.js              # File reader + folder picker
-│   └── services/
-│       ├── ai.js                 # Multi-provider AI completion engine
-│       ├── executor.js           # Task execution + agent orchestration
-│       ├── scheduler.js          # Cron & one-shot task triggers
-│       ├── platforms.js          # Telegram & Slack bot integrations
-│       └── project-doc.js        # PROJECT.md auto-generation
+│   │   ├── files.js              # File reader + folder picker
+│   │   ├── templates.js          # Task template CRUD
+│   │   ├── tools.js              # Custom tool CRUD
+│   │   ├── rooms.js              # Group chat rooms
+│   │   └── pipelines.js          # Pipeline CRUD + execution
+│   ├── services/
+│   │   ├── ai.js                 # Multi-provider AI completion engine
+│   │   ├── executor.js           # Task execution + agent orchestration + git automation
+│   │   ├── scheduler.js          # Cron & one-shot task triggers
+│   │   ├── platforms.js          # Telegram & Slack bot integrations
+│   │   ├── project-doc.js        # PROJECT.md auto-generation
+│   │   ├── rag.js                # Keyword-based TF-IDF file retrieval
+│   │   ├── github.js             # GitHub issue/PR integration
+│   │   ├── email.js              # SMTP notification service
+│   │   ├── discord.js            # Discord bot integration
+│   │   └── linear.js             # Linear / Jira bidirectional sync
+│   └── migrations/
+│       └── 001_initial.js        # Migration marker (future migrations go here)
 ├── src/
 │   ├── app/
 │   │   ├── page.js               # Dashboard home
 │   │   ├── layout.js             # Root layout + metadata
 │   │   ├── providers.js          # Socket, Theme, Status, Unread contexts
+│   │   ├── globals.css           # Global styles
 │   │   ├── projects/page.js      # Project manager + file explorer
-│   │   ├── kanban/page.js        # Kanban board
+│   │   ├── kanban/page.js        # Kanban board + swimlanes
 │   │   ├── agents/page.js        # Agent management (HR)
 │   │   ├── chat/page.js          # Agent chat interface
 │   │   ├── office/page.js        # Telemetry visualization
+│   │   ├── analytics/page.js     # Spend charts, agent performance
+│   │   ├── pipelines/page.js     # Pipeline management
 │   │   └── settings/page.js      # Configuration
 │   ├── components/
 │   │   ├── Sidebar.js            # Navigation + collapse + theme toggle
-│   │   └── BottomBar.js          # Global status bar
+│   │   ├── BottomBar.js          # Global status bar
+│   │   ├── CodeViewer.js         # Syntax-highlighted code viewer
+│   │   ├── DiffViewer.js         # Unified diff viewer
+│   │   ├── MarkdownContent.js    # Markdown rendering component
+│   │   ├── KeyboardShortcuts.js  # Keyboard shortcut overlay + handler
+│   │   ├── OnboardingWizard.js   # 4-step first-run setup wizard
+│   │   ├── agents/               # Agent-specific subcomponents
+│   │   ├── chat/                 # Chat-specific subcomponents
+│   │   ├── kanban/               # Kanban-specific subcomponents
+│   │   ├── office/               # Office-specific subcomponents
+│   │   ├── projects/             # Project-specific subcomponents
+│   │   └── settings/             # Settings-specific subcomponents
 │   └── lib/
 │       └── api.js                # Fetch-based API client
+├── vscode-extension/
+│   ├── extension.js              # VS Code extension entry point
+│   └── package.json              # Extension manifest (commands, config)
+├── public/
+│   ├── manifest.json             # PWA manifest
+│   ├── sw.js                     # Service worker for offline support
+│   ├── icon.svg                  # App icon
+│   └── icons/                    # PWA icon set
 ├── package.json
 ├── next.config.mjs
 ├── tailwind.config.js
-└── spec.md                       # Original product specification
+├── SPEC.md                       # This file — detailed technical spec
+└── README.md                     # Project overview
 ```
 
 ---
@@ -318,11 +436,36 @@ agentwork clean
 
 > If the daemon is running, you will be prompted to stop it first before cleaning.
 
+#### `agentwork task list`
+
+List tasks with optional status filter.
+
+```bash
+agentwork task list                # List all tasks
+agentwork task list --status doing # List only running tasks
+```
+
+#### `agentwork task create`
+
+Create a new task from the command line.
+
+```bash
+agentwork task create "Fix the login bug" --description "..." --priority high --agent <id>
+```
+
+#### `agentwork agent list`
+
+List all agents with their current status.
+
+```bash
+agentwork agent list
+```
+
 ---
 
 ## Dashboard
 
-Open [http://localhost:1248](http://localhost:1248) after starting the server.
+Open [http://localhost:1248](http://localhost:1248) after starting the server. On first visit, the **Onboarding Wizard** guides you through a 4-step setup: API key configuration, first project creation, first agent hire, and first task creation.
 
 ### Layout
 
@@ -346,10 +489,17 @@ Open [http://localhost:1248](http://localhost:1248) after starting the server.
 - Tasks (Kanban)
 - Chat
 - Office
+- Analytics
+- Pipelines
 - Agents
 - Settings
 
 The sidebar collapses to icon-only mode (68px) to maximize workspace. The theme toggle (dark/light) lives at the bottom.
+
+**Keyboard shortcuts** (press `?` to view):
+- `Cmd+K` — Quick command palette
+- `Cmd+1` through `Cmd+9` — Navigate to pages
+- `?` — Show shortcut help overlay
 
 **Bottom bar** shows live:
 - WebSocket connection status
@@ -367,6 +517,7 @@ The home page gives a quick overview of your entire system:
 - **Stats grid** — Total projects, hired agents, completed tasks, monthly spend
 - **Task pipeline** — Bar chart showing task distribution across all 5 kanban columns
 - **Recent tasks** — Latest task activity with status, agent, and project
+- **Live activity feed** — Real-time event stream showing agent actions as they happen
 - **Quick actions** — Shortcuts to create projects, hire agents, and create tasks
 
 All stats update in real time via WebSocket.
@@ -380,7 +531,7 @@ The Projects page is a three-pane editor for managing your codebases:
 ```
 ┌──────────────┬──────────────────┬──────────────────────┐
 │   Projects   │   File Tree      │   File Content       │
-│   List       │   (Explorer)     │   (Viewer)           │
+│   List       │   (Explorer)     │   (Viewer/Editor)    │
 └──────────────┴──────────────────┴──────────────────────┘
 ```
 
@@ -389,16 +540,22 @@ The Projects page is a three-pane editor for managing your codebases:
 - Each project maps to an absolute local directory path
 - Configure ignore patterns (e.g., `node_modules`, `.git`, `dist`)
 - Browse the full file tree for any project
-- Click any file to view its contents with syntax highlighting
+- Click any file to view its contents with **syntax highlighting** (CodeViewer component — JS/TS/Python/JSON/CSS/Markdown and more)
+- **In-line file editor** — Edit and save files directly from the dashboard
+- **Diff viewer** — View unified diffs with color-coded added/removed lines
 - Native folder picker dialog for path selection (macOS/Linux)
 - `PROJECT.md` is auto-generated when a project is created
+- **File search** — Search across the file tree
+- **Git status** — View git status and diffs for the project
+- **Project health score** — Computed from file coverage, test presence, and documentation
 
 **Project data model:**
 ```
-name          - Display name
-description   - Short description
-path          - Absolute local filesystem path
-ignore_patterns - Comma-separated patterns to exclude from tree
+name              - Display name
+description       - Short description
+path              - Absolute local filesystem path
+ignore_patterns   - Comma-separated patterns to exclude from tree
+default_agent_id  - Default agent to assign to new tasks
 ```
 
 ---
@@ -417,6 +574,15 @@ The Kanban board is the primary way to assign and dispatch work to agents.
 | **Blocked** | Agent paused, needs user input |
 | **Done** | Completed |
 
+#### Swimlanes
+
+The Kanban view supports three swimlane grouping modes:
+- **By Agent** — Group tasks by assigned agent
+- **By Project** — Group tasks by project
+- **By Priority** — Group tasks by priority level (high, medium, low)
+
+Toggle between swimlane modes via the toolbar above the board.
+
 #### Task Card
 
 Each task card shows:
@@ -425,20 +591,30 @@ Each task card shows:
 - Associated project name
 - Task type (single or flow)
 - For flow tasks: step count and progress
+- Tags/labels
 - Quick action buttons
+- Dependency indicator if task depends on others
 
 #### Task Detail Modal
 
 Click any task to open a full editing panel with tabs:
 
-- **Details** — Title, description, agent, project, priority, attachments
-- **Execution Logs** — Streaming logs from agent execution (thoughts, commands, output, file changes, errors)
+- **Details** — Title, description, agent, project, priority, tags, attachments, dependencies, parent task
+- **Execution Logs** — Streaming logs from agent execution (thoughts, commands, output, file changes, errors) with type filtering and text search
+- **Comments** — Discussion threads separate from execution logs
 - **Schedule** — Configure one-shot or recurring cron triggers
 - **Flow Steps** — For flow tasks: manage sequential steps with per-step agent assignment
 
+#### Bulk Operations
+
+Select multiple tasks and apply bulk actions:
+- Change status
+- Assign to agent
+- Delete
+
 #### Moving Tasks
 
-Drag a task card from one column to another, or use the move button in the detail modal. Moving a task to **Doing** automatically triggers agent execution if an agent is assigned.
+Drag a task card from one column to another, or use the move button in the detail modal. Moving a task to **Doing** automatically triggers agent execution if an agent is assigned. Dependency checks are enforced — a task with unmet dependencies cannot be moved to Doing.
 
 ---
 
@@ -461,9 +637,20 @@ The Chat page provides a direct messaging interface to all your agents.
 - Lists all agents with online/offline status indicators
 - Full message history per agent
 - Real-time message delivery via WebSocket
+- **Streaming responses** — Token-by-token streaming with live display
+- **Markdown rendering** — Rich formatting, code blocks with syntax highlighting
+- **Chat search** — Search message history
+- **Chat export** — Export conversation as text
 - Unread message badge on sidebar Chat link
 - If an agent is blocked on a task, your reply in chat resumes the execution
 - Toast notification when an agent sends a message while you're on another page
+
+#### Group Chat Rooms
+
+Create group chat rooms with multiple agents for collaborative discussions:
+- Agents respond in turn based on the conversation context
+- Messages stream in real time
+- Each agent uses its own memory and personality
 
 ---
 
@@ -480,12 +667,37 @@ The Office is a live visualization of all your agents' activity.
   - **Keyboard** — Coding (writing files)
   - **Gear** — Executing (running commands)
 - **Activity beams** — Animated lines flowing between an agent's desk and the hub when the agent is actively working
+- **Execution timeline / Gantt chart** — Visual timeline of task execution
 
 **Interaction:**
 - Click any agent desk to open a detail panel showing:
   - Current status
   - Active and recent tasks
   - Live execution log for the current task
+
+---
+
+### Analytics
+
+The Analytics page (`/analytics`) provides data visualization and performance metrics:
+
+- **Spend charts** — Daily and monthly cost breakdowns by agent and model
+- **Agent utilization** — Time spent working vs idle per agent
+- **Model comparison** — Cost-per-task and success rate across different models
+- **Task throughput** — Completed tasks over time
+- **Budget health** — Progress toward daily/monthly limits with trend lines
+
+---
+
+### Pipelines
+
+The Pipelines page (`/pipelines`) lets you define and manage reusable multi-step workflows:
+
+- **Pipeline CRUD** — Create, edit, and delete pipelines
+- Each pipeline consists of an ordered list of steps
+- Steps reference agents, task descriptions, and dependencies
+- **Run pipelines** — Execute a pipeline which creates and runs tasks for each step
+- Pipelines are stored in the `pipelines` database table
 
 ---
 
@@ -505,9 +717,16 @@ Click **Hire Agent** and fill in:
 | Auth Type | `api` (API key) or `cli` (local CLI) |
 | Provider | AI provider |
 | Model | Specific model ID |
+| Fallback Model | Secondary model on API failure |
 | Personality | Free-form system prompt additions |
+| Allowed Tools | Whitelist of tools this agent can use |
+| Daily Budget | Per-agent daily spend cap (USD) |
 
 On creation, a memory directory is created at `~/.agentwork/agents/<agent-id>/` with four initialized markdown files.
+
+#### Agent Cloning
+
+Click the **Clone** button on any agent to duplicate its configuration and memory files. The clone gets a new ID but inherits the source agent's personality, role, model, and all memory files.
 
 #### Agent Memory Tabs
 
@@ -525,11 +744,10 @@ The agent detail panel has four memory file editors:
 On the agent detail panel, configure platform integration:
 
 - Toggle `Enable Platform Chat`
-- Choose **Telegram** or **Slack**
+- Choose **Telegram**, **Slack**, or **Discord**
 - Enter the bot token (and Slack app token for Socket Mode)
 - Optionally whitelist specific user IDs
-
-The bot starts automatically when the agent is saved with a valid token.
+- Save — the bot starts automatically when the agent is saved with a valid token
 
 ---
 
@@ -546,9 +764,10 @@ Configure global API keys for all providers:
 | OpenRouter | `openrouter_api_key` | 200+ models via one key |
 | DeepSeek | `deepseek_api_key` | DeepSeek V3, Reasoner |
 | Mistral | `mistral_api_key` | Mistral & Codestral |
+| Google | `google_api_key` | Gemini 2.5 Pro/Flash |
 | Custom Base URL | `custom_base_url` | Ollama, LMStudio, any OpenAI-compatible |
 
-Keys are stored in the local SQLite database, never sent externally except to the configured provider.
+Keys are encrypted with AES-256-GCM before being stored in SQLite. They are never sent externally except to the configured provider.
 
 #### Budget
 
@@ -559,15 +778,60 @@ Set spending guardrails:
 - Live usage progress bars for both limits
 - Agents are automatically killed if either limit is exceeded mid-execution
 
+#### Git Automation
+
+Control git behavior with four toggles:
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `auto_git_branch` | `true` | Create feature branches for tasks |
+| `auto_git_sync` | `true` | Pull latest from main before starting |
+| `auto_git_merge` | `true` | Squash-merge PR or local merge after completion |
+| `auto_git_init` | `true` | Auto-initialize git for non-repo projects |
+
+#### Email Notifications
+
+Configure SMTP for email alerts:
+
+| Setting | Description |
+|---------|-------------|
+| `smtp_host` | SMTP server hostname |
+| `smtp_port` | SMTP port (default: 587) |
+| `smtp_user` | SMTP username |
+| `smtp_pass` | SMTP password (encrypted) |
+| `smtp_from` | Sender email address |
+| `notification_email` | Recipient email address |
+
+#### Notification Preferences
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `notify_task_complete` | `true` | Notify when tasks finish |
+| `notify_task_blocked` | `true` | Notify when tasks block |
+| `notify_budget_threshold` | `true` | Notify when approaching budget limit |
+| `notify_agent_messages` | `true` | Notify on agent chat messages |
+| `notification_sounds` | `true` | Audio notifications |
+
 #### Security
 
-- **Require confirmation for destructive commands** — When enabled, agents running `rm`, `drop`, `DELETE`, or other destructive operations will pause and request user approval before proceeding
+- **Dashboard Password** — Optional `dashboard_password` setting to protect the UI
+- **Require confirmation for destructive commands** — When enabled, agents running `rm`, `drop`, `DELETE`, or other destructive operations will pause and request user approval
+
+#### Execution
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `max_iterations` | `30` | Maximum agent iterations per task |
+| `task_timeout_minutes` | `0` | Task timeout (0 = no limit) |
+| `rate_limit_ms` | `0` | Minimum ms between API calls |
+| `max_concurrent_executions` | `3` | Maximum parallel task executions |
 
 #### Preferences
 
 - **Theme** — Dark, Light, or System
-- **Notification Sounds** — Audio alerts for agent messages and task completions
+- **Accent Color** — 6 presets (blue, green, purple, orange, red, pink)
 - **Default Workspace** — Pre-fill the path field when creating new projects
+- **Verbose AI Logging** — Log full API payloads for debugging
 
 ---
 
@@ -747,6 +1011,10 @@ Auto-managed by the agent. After each task, the agent appends key learnings:
 
 The memory summarization algorithm keeps this file under ~2000 tokens to avoid wasting context. You can reset it via the **Clear Memory** button in the Agents panel.
 
+#### `TEAM.md` — Shared Memory
+
+A shared memory file at `~/.agentwork/TEAM.md` is readable by all agents. Use this for cross-agent coordination, shared conventions, and team-wide rules.
+
 ---
 
 ## Task System
@@ -775,13 +1043,18 @@ Backlog → To Do → Doing → Done
 | `agent_id` | FK | Assigned agent |
 | `project_id` | FK | Associated project |
 | `task_type` | Enum | `single`, `flow` |
-| `flow_items` | JSON | Array of flow steps (flow tasks only) |
+| `flow_items` | JSON | Array of flow step objects |
 | `execution_logs` | JSON | Array of log entries from agent |
 | `attachments` | JSON | Array of attached files/images |
 | `completion_output` | Text | Final agent output summary |
 | `trigger_type` | Enum | `manual`, `schedule`, `cron` |
 | `trigger_at` | ISO datetime | When to auto-trigger (schedule) |
 | `trigger_cron` | String | Cron expression (cron) |
+| `tags` | Text | Comma-separated tags for filtering |
+| `depends_on` | JSON | Array of task IDs this task depends on |
+| `parent_id` | FK | Parent task ID (sub-tasks) |
+| `estimated_minutes` | Integer | Time estimate for SLA tracking |
+| `started_at` | Datetime | When execution began |
 | `created_at` | Datetime | Creation timestamp |
 | `updated_at` | Datetime | Last update |
 | `completed_at` | Datetime | Completion timestamp |
@@ -831,6 +1104,40 @@ Flow tasks have a `flow_items` array, where each item is:
 3. The first step is auto-created
 4. Add additional steps with the **+ Add Step** button
 5. Assign different agents to different steps
+
+---
+
+### Task Dependencies
+
+Tasks can depend on other tasks via the `depends_on` field (JSON array of task IDs). When a task with unmet dependencies is moved to **Doing**, the system blocks the move and displays the names of the unmet dependency tasks. Dependencies form a DAG (Directed Acyclic Graph) — when a dependency completes, the next queued task with the highest priority auto-starts.
+
+---
+
+### Task Templates
+
+Save task blueprints as reusable templates via the `/api/templates` endpoint.
+
+**Template data model:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `id` | UUID | Template identifier |
+| `name` | Text | Template name |
+| `description` | Text | Default task description |
+| `priority` | Enum | Default priority |
+| `agent_id` | FK | Default agent |
+| `project_id` | FK | Default project |
+| `task_type` | Enum | `single` or `flow` |
+| `flow_items` | JSON | Default flow steps |
+| `tags` | Text | Default tags |
+
+Templates can be created from scratch or from an existing task (via `from_task_id`).
+
+---
+
+### Task Comments
+
+Each task has a separate comments thread (`task_comments` table), distinct from execution logs. Comments are for human discussion about the task and are not visible to the agent during execution.
 
 ---
 
@@ -884,21 +1191,73 @@ trigger_cron: "0 9 * * 1-5"    # Every weekday at 9am
 When a task moves to **Doing** with an assigned agent, the executor runs the following sequence:
 
 1. **Load context** — Fetch task, agent config, and project details from DB
-2. **Read memory** — Load all 4 agent memory files (SOUL, USER, AGENTS, MEMORY)
+2. **Read memory** — Load all 4 agent memory files (SOUL, USER, AGENTS, MEMORY) + TEAM.md
 3. **Read PROJECT.md** — Load the project's documentation file
-4. **Build prompt** — Construct the execution prompt combining task description + memory + project context
-5. **Choose backend** — Pick Claude Agent SDK, Codex SDK, or direct API call based on agent's `auth_type`
-6. **Execute** — Stream events back to Socket.io in real time:
+4. **RAG retrieval** — Search project files for context relevant to the task description
+5. **Build prompt** — Construct the execution prompt combining task description + memory + project context + RAG results
+6. **Git setup** — If git automation enabled: auto-init → sync from main → create feature branch
+7. **Choose backend** — Pick Claude Agent SDK, Codex SDK, or direct API call based on agent's `auth_type`
+8. **Execute** — Stream events back to Socket.io in real time:
    - `text` — Agent's written thoughts
    - `command` — Shell commands being run
    - `output` — Command output
    - `file_change` — Files created/modified
    - `error` — Errors encountered
-7. **Budget check** — After each event, verify spend is within limits
-8. **Completion** — Move task to **Done**, save completion output, update budget log
-9. **Blocked** — If agent calls `block_task()`, move to **Blocked** and notify user via chat and toast
+9. **Budget check** — After each event, verify spend is within limits (global + per-agent)
+10. **Completion** — Git commit + push + PR + merge → Move task to **Done** → Save completion output → Update budget log → Send notifications (email, platforms)
+11. **Blocked** — If agent calls `block_task()`, move to **Blocked** and notify user via chat, toast, and optionally create a GitHub issue
+12. **Next task** — Auto-start the next highest-priority queued task for the same agent
 
-The agent has full filesystem and bash access through the SDK's built-in tools. It can read files, write files, run commands, and even install packages — all within your project's directory.
+The agent has full filesystem and bash access through the SDK's built-in tools, plus any **custom tools** defined in the `custom_tools` table. It can read files, write files, run commands, and even install packages — all within your project's directory.
+
+---
+
+## Git Automation
+
+Git automation is enabled by default and manages the full branching workflow for each task.
+
+### Git Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `auto_git_init` | `true` | Initializes a git repo if the project directory doesn't have one |
+| `auto_git_sync` | `true` | Pulls latest from main/master before creating a task branch |
+| `auto_git_branch` | `true` | Creates `agentwork/<task-slug>-<id>` branches for tasks |
+| `auto_git_merge` | `true` | Squash-merges to main via PR (or local merge as fallback) |
+
+### Git Workflow
+
+The full git lifecycle for a task execution:
+
+```
+1. auto_git_init
+   └── If project directory has no .git → run `git init` + initial commit
+
+2. auto_git_sync
+   ├── Stash uncommitted changes
+   ├── Checkout main/master
+   ├── Pull latest (--ff-only, fallback to --rebase)
+   ├── Restore stash (auto-resolve conflicts: accept incoming)
+   └── Log sync status
+
+3. auto_git_branch
+   └── Create branch: `agentwork/<slugified-title>-<task-id-prefix>`
+
+4. [Agent executes task...]
+
+5. auto_git_branch (post-execution)
+   ├── Stage all changes: `git add -A`
+   ├── Commit: `feat: <task-title>\n\nCompleted by AgentWork task <id>`
+   ├── Push: `git push -u origin <branch>`
+   ├── Create PR via `gh pr create` (if gh CLI available)
+   └── If auto_git_merge:
+       ├── Try: `gh pr merge --squash --delete-branch`
+       └── Fallback: local `git merge` + `git branch -d`
+
+6. Return to main branch
+```
+
+If any git step fails, the executor logs a warning and continues. Git failures never block task execution.
 
 ---
 
@@ -948,12 +1307,91 @@ The file explorer in the Projects page lets you browse your project without leav
 - Recursive tree view (respects `ignore_patterns`)
 - Expand/collapse directories
 - Click any file to view contents
-- Files under 1MB are displayed inline with syntax-aware rendering
+- **Syntax-highlighted code viewer** (CodeViewer component) supporting JS, TS, Python, JSON, CSS, Markdown, and more
+- **In-line file editor** — Edit and save files directly from the browser
+- **Diff viewer** — See unified diffs with color-coded added/removed lines
+- Files under 1MB are displayed inline
 - Useful for reviewing agent-written code immediately after task completion
 
 ---
 
-## Platform Integrations
+## Plugin System
+
+The plugin system allows third-party extensions to add tools, hooks, and platform integrations.
+
+### Plugin Types
+
+| Type | Description | Export Format |
+|------|-------------|---------------|
+| `tool` | Custom tool available during agent execution | `{ name, description, parameters, handler(input, workDir) }` |
+| `hook` | Event-driven handler triggered by system events | `{ event, handler(data) }` |
+| `platform` | Additional chat platform integration | Platform-specific |
+
+### Plugin Directory Structure
+
+Plugins live in `~/.agentwork/plugins/`. Each plugin is a directory containing:
+
+```
+~/.agentwork/plugins/
+└── my-plugin/
+    ├── plugin.json     # Manifest (required)
+    └── index.js        # Entry point (required)
+```
+
+### Plugin Manifest
+
+The `plugin.json` file defines the plugin's metadata:
+
+```json
+{
+  "name": "my-custom-tool",
+  "version": "1.0.0",
+  "description": "A custom tool that does something useful",
+  "type": "tool"
+}
+```
+
+Required fields: `name`, `version`, `type`.
+
+Valid types: `tool`, `platform`, `hook`.
+
+**Tool plugin example (`index.js`):**
+
+```js
+module.exports = {
+  name: 'search_jira',
+  description: 'Search Jira issues by query',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: 'JQL query' }
+    },
+    required: ['query']
+  },
+  async handler(input, workDir) {
+    // Execute and return result
+    return { issues: [...] };
+  }
+};
+```
+
+**Hook plugin example (`index.js`):**
+
+```js
+module.exports = {
+  event: 'task:completed',
+  async handler(data) {
+    // data = { task, agent, project }
+    console.log(`Task ${data.task.title} completed!`);
+  }
+};
+```
+
+Plugins are loaded on server startup. Invalid plugins (missing manifest, bad JSON, unknown type) are skipped with a console warning.
+
+---
+
+## Integrations
 
 ### Telegram
 
@@ -1013,6 +1451,217 @@ If `chat_allowed_ids` is set, only users with those Slack user IDs receive respo
 
 ---
 
+### Discord
+
+Connect an agent to a Discord server.
+
+#### Setup
+
+1. Create a Discord Application at [discord.com/developers](https://discord.com/developers/applications)
+2. Create a Bot and copy the bot token
+3. Enable the **Message Content** privileged intent
+4. Install `discord.js`: `npm install discord.js`
+5. In AgentWork → Agents → select agent → Platform Chat tab
+6. Enable platform chat, choose Discord, paste the bot token
+7. Optionally whitelist specific Discord user IDs
+8. Save — the bot connects automatically
+
+#### Usage
+
+- DM the bot directly
+- Send messages in channels the bot can read
+
+#### Security
+
+If `chat_allowed_ids` is set, only users with those Discord user IDs receive responses. Bot messages are ignored.
+
+---
+
+### GitHub
+
+Integrates with GitHub to automatically create issues and pull requests.
+
+#### Configuration
+
+Set these in AgentWork settings:
+- `github_token` — Personal access token with `repo` scope
+- `github_repo` — Repository in `owner/repo` format
+
+#### Features
+
+- **Auto-create issues from blocked tasks** — When a task moves to Blocked, a GitHub issue is created with the `agentwork` and `blocked` labels
+- **Auto-create PRs from completed tasks** — The git automation flow pushes a branch and creates a PR via the GitHub REST API
+- **Close issues on completion** — When a task linked to an issue completes, the issue is closed
+
+---
+
+### Linear / Jira
+
+Bidirectional task sync with Linear and Jira project management tools.
+
+#### Linear Configuration
+
+| Setting | Description |
+|---------|-------------|
+| `linear_api_key` | Linear API key |
+| `linear_team_id` | Linear team ID |
+
+When a task is created in AgentWork, it can be synced to Linear as an issue via the GraphQL API.
+
+#### Jira Configuration
+
+| Setting | Description |
+|---------|-------------|
+| `jira_url` | Jira instance URL (e.g., `https://your-org.atlassian.net`) |
+| `jira_email` | Jira account email |
+| `jira_api_token` | Jira API token |
+| `jira_project_key` | Jira project key (e.g., `PROJ`) |
+
+Tasks sync as Jira issues via the REST API.
+
+---
+
+### Email Notifications
+
+SMTP-based email alerts for key events.
+
+#### Configuration
+
+Configure via settings: `smtp_host`, `smtp_port` (default 587), `smtp_user`, `smtp_pass`, `smtp_from`, `notification_email`.
+
+#### Events
+
+Emails are sent for:
+- Task completion (`notify_task_complete`)
+- Task blocked (`notify_task_blocked`)
+- Budget threshold reached (`notify_budget_threshold`)
+- Agent messages (`notify_agent_messages`)
+
+Each notification preference can be toggled independently.
+
+---
+
+### Webhooks
+
+External systems can trigger task creation via HTTP:
+
+```
+POST /api/webhooks/trigger
+Content-Type: application/json
+
+{
+  "title": "Deploy to staging",
+  "description": "Run the staging deployment pipeline",
+  "agent_id": "optional-agent-id",
+  "project_id": "optional-project-id"
+}
+```
+
+Use this for CI/CD pipelines, monitoring alerts, or any external automation.
+
+---
+
+### MCP Server
+
+AgentWork includes a standalone MCP (Model Context Protocol) server that exposes tasks, agents, and projects to compatible clients like Claude Desktop.
+
+#### Setup
+
+Add to your `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "agentwork": {
+      "command": "node",
+      "args": ["/path/to/agentwork/server/mcp.js"]
+    }
+  }
+}
+```
+
+#### Available Tools
+
+| MCP Tool | Description |
+|----------|-------------|
+| `agentwork_list_tasks` | List all tasks (optional status filter) |
+| `agentwork_create_task` | Create a new task |
+| `agentwork_list_agents` | List all agents |
+| `agentwork_list_projects` | List all projects |
+| `agentwork_get_status` | Get system status (agents, tasks, spend) |
+
+The MCP server communicates with the running AgentWork instance via its REST API (`http://localhost:1248` by default, configurable via `AGENTWORK_URL` env var).
+
+---
+
+### VS Code Extension
+
+A companion VS Code extension for interacting with AgentWork from your editor.
+
+#### Location
+
+```
+vscode-extension/
+├── extension.js     # Extension entry point
+└── package.json     # Extension manifest
+```
+
+#### Commands
+
+| Command | Description |
+|---------|-------------|
+| `AgentWork: Show Status` | Display active agents, running tasks, and daily spend |
+| `AgentWork: Create Task` | Create a new task with a title input |
+| `AgentWork: List Agents` | Show all agents in a quick-pick list |
+
+#### Configuration
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `agentwork.serverUrl` | `http://localhost:1248` | AgentWork server URL |
+
+Install by copying the `vscode-extension/` directory to your VS Code extensions folder or using `code --install-extension`.
+
+---
+
+## Security
+
+### API Key Encryption
+
+All sensitive settings (API keys, passwords, SMTP credentials) are encrypted at rest using **AES-256-GCM**.
+
+**How it works:**
+1. A 256-bit encryption key is derived from machine-specific data: hostname, data directory path, and OS username
+2. Each value is encrypted with a random 12-byte IV
+3. Encrypted values are stored with the prefix `enc:` followed by `<iv>:<auth-tag>:<ciphertext>` (all hex-encoded)
+4. Decryption is transparent — the system auto-decrypts when reading settings
+5. If decryption fails (e.g., migrated data from another machine), the raw value is returned
+
+**Encrypted keys:** `anthropic_api_key`, `openai_api_key`, `openrouter_api_key`, `deepseek_api_key`, `mistral_api_key`, `google_api_key`, `dashboard_password`, `smtp_pass`
+
+### Command Sandboxing
+
+When `require_confirmation_destructive` is enabled, the executor intercepts dangerous commands (`rm`, `drop`, `DELETE`, etc.) and pauses execution. The task moves to **Blocked** and the user must approve the command before it runs.
+
+All file API operations are restricted to project directories — path traversal attempts are blocked.
+
+### Dashboard Authentication
+
+Set a `dashboard_password` in settings to require authentication when accessing the dashboard. The password is encrypted at rest.
+
+### Audit Logging
+
+All CRUD operations are logged to the `audit_logs` table with:
+- Action type (create, update, delete)
+- Resource type (task, agent, project, etc.)
+- Resource ID
+- Details/metadata
+- Timestamp
+
+Query audit logs via `GET /api/settings/audit-logs`.
+
+---
+
 ## Budget Management
 
 AgentWork tracks every API call and enforces configurable spending limits.
@@ -1023,6 +1672,7 @@ AgentWork tracks every API call and enforces configurable spending limits.
 2. **Logging** — Each cost event is written to the `budget_logs` table with agent, provider, model, tokens, and cost
 3. **Enforcement** — Before and after each streaming event, the executor checks accumulated spend for the current day and month
 4. **Kill switch** — If the daily or monthly limit is exceeded, the current task execution is aborted and the task moves to **Blocked**
+5. **Per-agent limits** — Each agent has an optional `daily_budget_usd` field for individual spend caps
 
 ### Pricing Data
 
@@ -1085,14 +1735,21 @@ AgentWork uses Socket.io for all live updates between the server and dashboard.
 | `task:updated` | `{ task }` | Task state changed |
 | `task:log` | `{ taskId, entry }` | New execution log entry (streaming) |
 | `task:move_error` | `{ message }` | Move validation failed |
+| `task:comment` | `{ taskId, comment }` | New task comment added |
 | `chat:message` | `{ message }` | New chat message |
+| `chat:stream` | `{ agentId, token }` | Streaming token from agent response |
+| `chat:stream_end` | `{ agentId, messageId }` | Streaming response complete |
+| `room:message` | `{ roomId, message }` | New group chat room message |
+| `room:stream` | `{ roomId, agentId, token }` | Streaming token in group chat |
 | `agent:status_changed` | `{ agentId, status }` | Agent status updated |
+| `agent:message` | `{ fromAgentId, toAgentId, content }` | Agent-to-agent message |
 | `project:created` | `{ project }` | New project created |
 | `project:updated` | `{ project }` | Project modified |
 | `project:deleted` | `{ projectId }` | Project deleted |
 | `agent:created` | `{ agent }` | New agent hired |
 | `agent:updated` | `{ agent }` | Agent updated |
 | `agent:deleted` | `{ agentId }` | Agent fired |
+| `tools:updated` | — | Custom tools list changed |
 | `notification` | `{ message, type }` | Toast notification |
 | `budget:update` | `{ daily, monthly }` | Budget usage changed |
 
@@ -1100,19 +1757,20 @@ AgentWork uses Socket.io for all live updates between the server and dashboard.
 
 ## Database Schema
 
-The database lives at `~/.agentwork/db/agentwork.db` (SQLite via better-sqlite3, WAL mode).
+The database lives at `~/.agentwork/db/agentwork.db` (SQLite via better-sqlite3, WAL mode, foreign keys enabled).
 
 ### `projects`
 
 ```sql
 CREATE TABLE projects (
-  id          TEXT PRIMARY KEY,
-  name        TEXT NOT NULL,
-  description TEXT,
-  path        TEXT NOT NULL,          -- Absolute local path
-  ignore_patterns TEXT,               -- Comma-separated (e.g., "node_modules,.git")
-  created_at  DATETIME DEFAULT (datetime('now')),
-  updated_at  DATETIME DEFAULT (datetime('now'))
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL,
+  description       TEXT DEFAULT '',
+  path              TEXT NOT NULL,
+  ignore_patterns   TEXT DEFAULT 'node_modules,.git,dist,build,.next',
+  default_agent_id  TEXT DEFAULT NULL,
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 ```
 
@@ -1120,22 +1778,25 @@ CREATE TABLE projects (
 
 ```sql
 CREATE TABLE agents (
-  id             TEXT PRIMARY KEY,
-  name           TEXT NOT NULL,
-  avatar         TEXT,               -- Emoji
-  role           TEXT,               -- e.g., "Senior React Developer"
-  auth_type      TEXT DEFAULT 'api', -- 'api' or 'cli'
-  provider       TEXT,               -- 'anthropic', 'openai', 'openrouter', etc.
-  model          TEXT,               -- Model ID
-  status         TEXT DEFAULT 'offline',  -- 'idle', 'offline', 'working', 'thinking', 'executing'
-  personality    TEXT,               -- Additional system prompt
-  chat_enabled   INTEGER DEFAULT 0,
-  chat_platform  TEXT,               -- 'telegram' or 'slack'
-  chat_token     TEXT,               -- Bot token
-  chat_app_token TEXT,               -- Slack app-level token
-  chat_allowed_ids TEXT,             -- Comma-separated user IDs
-  created_at     DATETIME DEFAULT (datetime('now')),
-  updated_at     DATETIME DEFAULT (datetime('now'))
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL,
+  avatar           TEXT DEFAULT '🤖',
+  role             TEXT DEFAULT 'General Developer',
+  auth_type        TEXT DEFAULT 'api',
+  provider         TEXT DEFAULT 'anthropic',
+  model            TEXT DEFAULT 'claude-sonnet-4-20250514',
+  status           TEXT DEFAULT 'idle',
+  personality      TEXT DEFAULT '',
+  chat_enabled     INTEGER DEFAULT 0,
+  chat_platform    TEXT DEFAULT '',
+  chat_token       TEXT DEFAULT '',
+  chat_app_token   TEXT DEFAULT '',
+  chat_allowed_ids TEXT DEFAULT '',
+  daily_budget_usd REAL DEFAULT 0,
+  fallback_model   TEXT DEFAULT '',
+  allowed_tools    TEXT DEFAULT '',
+  created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 ```
 
@@ -1145,21 +1806,26 @@ CREATE TABLE agents (
 CREATE TABLE tasks (
   id                TEXT PRIMARY KEY,
   title             TEXT NOT NULL,
-  description       TEXT,
-  status            TEXT DEFAULT 'backlog',  -- 'backlog','todo','doing','blocked','done'
-  priority          TEXT DEFAULT 'medium',   -- 'low','medium','high'
-  agent_id          TEXT REFERENCES agents(id),
-  project_id        TEXT REFERENCES projects(id),
-  execution_logs    TEXT,            -- JSON array of log entries
-  attachments       TEXT,            -- JSON array of { name, path, type }
-  completion_output TEXT,            -- Final output summary
-  trigger_type      TEXT DEFAULT 'manual',   -- 'manual','schedule','cron'
-  trigger_at        TEXT,            -- ISO datetime for one-shot
-  trigger_cron      TEXT,            -- Cron expression
-  task_type         TEXT DEFAULT 'single',   -- 'single' or 'flow'
-  flow_items        TEXT,            -- JSON array of flow step objects
-  created_at        DATETIME DEFAULT (datetime('now')),
-  updated_at        DATETIME DEFAULT (datetime('now')),
+  description       TEXT DEFAULT '',
+  status            TEXT DEFAULT 'backlog',
+  priority          TEXT DEFAULT 'medium',
+  agent_id          TEXT REFERENCES agents(id) ON DELETE SET NULL,
+  project_id        TEXT REFERENCES projects(id) ON DELETE SET NULL,
+  execution_logs    TEXT DEFAULT '[]',
+  attachments       TEXT DEFAULT '[]',
+  completion_output TEXT DEFAULT '',
+  trigger_type      TEXT DEFAULT 'manual',
+  trigger_at        TEXT DEFAULT NULL,
+  trigger_cron      TEXT DEFAULT '',
+  task_type         TEXT DEFAULT 'single',
+  flow_items        TEXT DEFAULT '[]',
+  tags              TEXT DEFAULT '',
+  depends_on        TEXT DEFAULT '[]',
+  parent_id         TEXT DEFAULT NULL,
+  estimated_minutes INTEGER DEFAULT 0,
+  started_at        DATETIME DEFAULT NULL,
+  created_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at        DATETIME DEFAULT CURRENT_TIMESTAMP,
   completed_at      DATETIME
 )
 ```
@@ -1168,12 +1834,12 @@ CREATE TABLE tasks (
 
 ```sql
 CREATE TABLE messages (
-  id        TEXT PRIMARY KEY,
-  agent_id  TEXT NOT NULL REFERENCES agents(id),
-  sender    TEXT NOT NULL,    -- 'user' or 'agent'
-  content   TEXT NOT NULL,
-  task_id   TEXT,             -- Optional: links message to blocked task
-  created_at DATETIME DEFAULT (datetime('now'))
+  id         TEXT PRIMARY KEY,
+  agent_id   TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  sender     TEXT NOT NULL,
+  content    TEXT NOT NULL,
+  task_id    TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 ```
 
@@ -1182,7 +1848,7 @@ CREATE TABLE messages (
 ```sql
 CREATE TABLE settings (
   key   TEXT PRIMARY KEY,
-  value TEXT
+  value TEXT NOT NULL
 )
 ```
 
@@ -1190,33 +1856,181 @@ Recognized keys:
 
 | Key | Default | Description |
 |-----|---------|-------------|
-| `anthropic_api_key` | — | Anthropic API key |
-| `openai_api_key` | — | OpenAI API key |
-| `openrouter_api_key` | — | OpenRouter API key |
-| `deepseek_api_key` | — | DeepSeek API key |
-| `mistral_api_key` | — | Mistral API key |
+| `anthropic_api_key` | — | Anthropic API key (encrypted) |
+| `openai_api_key` | — | OpenAI API key (encrypted) |
+| `openrouter_api_key` | — | OpenRouter API key (encrypted) |
+| `deepseek_api_key` | — | DeepSeek API key (encrypted) |
+| `mistral_api_key` | — | Mistral API key (encrypted) |
+| `google_api_key` | — | Google API key (encrypted) |
 | `custom_base_url` | — | Custom OpenAI-compatible base URL |
 | `daily_budget_usd` | `10` | Daily spend limit |
 | `monthly_budget_usd` | `100` | Monthly spend limit |
-| `require_confirmation_destructive` | `false` | Confirm before rm/drop/DELETE |
-| `theme` | `dark` | `dark`, `light`, or `system` |
+| `require_confirmation_destructive` | `true` | Confirm before rm/drop/DELETE |
+| `theme` | `system` | `dark`, `light`, or `system` |
+| `accent_color` | `blue` | UI accent color preset |
 | `notification_sounds` | `true` | Audio notifications |
 | `default_workspace` | — | Default project path |
+| `max_iterations` | `30` | Max agent iterations per task |
+| `task_timeout_minutes` | `0` | Task timeout (0 = none) |
+| `rate_limit_ms` | `0` | Min ms between API calls |
+| `max_concurrent_executions` | `3` | Max parallel executions |
+| `dashboard_password` | — | Dashboard auth password (encrypted) |
+| `auto_git_branch` | `true` | Create feature branches |
+| `auto_git_sync` | `true` | Sync from main before tasks |
+| `auto_git_merge` | `true` | Auto-merge after completion |
+| `auto_git_init` | `true` | Auto-init git repos |
+| `verbose_ai_logging` | `false` | Log full API payloads |
+| `smtp_host` | — | SMTP server hostname |
+| `smtp_port` | `587` | SMTP port |
+| `smtp_user` | — | SMTP username |
+| `smtp_pass` | — | SMTP password (encrypted) |
+| `smtp_from` | — | Sender email address |
+| `notification_email` | — | Recipient email |
+| `notify_task_complete` | `true` | Email on task completion |
+| `notify_task_blocked` | `true` | Email on task blocked |
+| `notify_budget_threshold` | `true` | Email on budget warning |
+| `notify_agent_messages` | `true` | Email on agent messages |
+| `onboarding_complete` | `false` | Whether onboarding wizard was completed |
 
 ### `budget_logs`
 
 ```sql
 CREATE TABLE budget_logs (
   id            TEXT PRIMARY KEY,
-  agent_id      TEXT,
+  agent_id      TEXT REFERENCES agents(id) ON DELETE SET NULL,
   provider      TEXT,
   model         TEXT,
   input_tokens  INTEGER DEFAULT 0,
   output_tokens INTEGER DEFAULT 0,
   cost_usd      REAL DEFAULT 0,
-  created_at    DATETIME DEFAULT (datetime('now'))
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
 )
 ```
+
+### `task_templates`
+
+```sql
+CREATE TABLE task_templates (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  priority    TEXT DEFAULT 'medium',
+  agent_id    TEXT,
+  project_id  TEXT,
+  task_type   TEXT DEFAULT 'single',
+  flow_items  TEXT DEFAULT '[]',
+  tags        TEXT DEFAULT '',
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `task_comments`
+
+```sql
+CREATE TABLE task_comments (
+  id         TEXT PRIMARY KEY,
+  task_id    TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+  content    TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `custom_tools`
+
+```sql
+CREATE TABLE custom_tools (
+  id               TEXT PRIMARY KEY,
+  name             TEXT NOT NULL UNIQUE,
+  description      TEXT NOT NULL,
+  command_template  TEXT NOT NULL,
+  created_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `agent_messages`
+
+```sql
+CREATE TABLE agent_messages (
+  id            TEXT PRIMARY KEY,
+  from_agent_id TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  to_agent_id   TEXT NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+  content       TEXT NOT NULL,
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `chat_rooms`
+
+```sql
+CREATE TABLE chat_rooms (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  agent_ids  TEXT DEFAULT '[]',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `room_messages`
+
+```sql
+CREATE TABLE room_messages (
+  id          TEXT PRIMARY KEY,
+  room_id     TEXT NOT NULL REFERENCES chat_rooms(id) ON DELETE CASCADE,
+  sender_type TEXT NOT NULL,
+  sender_id   TEXT,
+  sender_name TEXT,
+  content     TEXT NOT NULL,
+  created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `pipelines`
+
+```sql
+CREATE TABLE pipelines (
+  id         TEXT PRIMARY KEY,
+  name       TEXT NOT NULL,
+  steps      TEXT DEFAULT '[]',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `agent_sessions`
+
+```sql
+CREATE TABLE agent_sessions (
+  agent_id   TEXT PRIMARY KEY REFERENCES agents(id) ON DELETE CASCADE,
+  session_id TEXT,
+  provider   TEXT,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `audit_logs`
+
+```sql
+CREATE TABLE audit_logs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  action        TEXT NOT NULL,
+  resource_type TEXT NOT NULL,
+  resource_id   TEXT,
+  details       TEXT DEFAULT '',
+  created_at    DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+### `schema_migrations`
+
+```sql
+CREATE TABLE schema_migrations (
+  version    INTEGER PRIMARY KEY,
+  name       TEXT NOT NULL,
+  applied_at DATETIME DEFAULT CURRENT_TIMESTAMP
+)
+```
+
+Migrations are stored as numbered JavaScript files in `server/migrations/` (e.g., `001_initial.js`, `002_add_feature.js`). Each migration exports an `up(db)` function. Applied migrations are tracked in this table to prevent re-execution.
 
 ---
 
@@ -1228,6 +2042,8 @@ CREATE TABLE budget_logs (
 | `PORT` | `1248` | HTTP server port |
 | `AGENTWORK_ROOT` | Auto-detected | Absolute path to the agentwork source directory |
 | `AGENTWORK_DATA` | `~/.agentwork` | User data directory (DB, logs, agent memory) |
+| `AGENTWORK_URL` | `http://localhost:1248` | Server URL (used by MCP server) |
+| `AGENTWORK_SETTING_*` | — | Override any setting (e.g., `AGENTWORK_SETTING_ANTHROPIC_API_KEY`) |
 
 ---
 
@@ -1238,7 +2054,7 @@ CREATE TABLE budget_logs (
 ```
 ~/.agentwork/
 ├── db/
-│   └── agentwork.db          # SQLite database
+│   └── agentwork.db          # SQLite database (encrypted API keys)
 ├── agents/
 │   ├── <agent-id>/
 │   │   ├── SOUL.md
@@ -1246,6 +2062,11 @@ CREATE TABLE budget_logs (
 │   │   ├── AGENTS.md
 │   │   └── MEMORY.md
 │   └── ...
+├── TEAM.md                   # Shared memory across all agents
+├── plugins/                  # Third-party plugins
+│   └── <plugin-name>/
+│       ├── plugin.json
+│       └── index.js
 ├── logs/
 │   └── agentwork.log         # Server logs
 └── agentwork.pid             # Daemon PID file
@@ -1282,6 +2103,7 @@ npm start       # Start in production mode
 | Script | Command | Description |
 |--------|---------|-------------|
 | `dev` | `node server/index.js` | Development server |
+| `dev:no-reload` | `node server/index.js` (no nodemon) | Dev without hot reload |
 | `build` | `next build` | Build Next.js |
 | `start` | `NODE_ENV=production node server/index.js` | Production server |
 | `lint` | `next lint` | Run ESLint |
@@ -1296,6 +2118,30 @@ All REST API responses follow the pattern:
 { "data": null, "error": "Error message" }
 ```
 
+### API Endpoints
+
+`GET /api/docs` returns a JSON listing of all 50+ API endpoints.
+
+Key route files:
+
+| Route File | Base Path | Description |
+|------------|-----------|-------------|
+| `routes/tasks.js` | `/api/tasks` | Task CRUD, bulk operations, subtasks, replay |
+| `routes/agents.js` | `/api/agents` | Agent CRUD, clone, metrics, prompt analysis, inbox |
+| `routes/projects.js` | `/api/projects` | Project CRUD, file search, git status, diff, health score |
+| `routes/chat.js` | `/api/chat` | Message history, unread count |
+| `routes/settings.js` | `/api/settings` | Settings, budget, cost breakdown, reports, export, audit logs |
+| `routes/templates.js` | `/api/templates` | Task template CRUD |
+| `routes/tools.js` | `/api/tools` | Custom tool CRUD |
+| `routes/rooms.js` | `/api/rooms` | Group chat room CRUD + messages |
+| `routes/pipelines.js` | `/api/pipelines` | Pipeline CRUD + execution |
+| `routes/files.js` | `/api/files` | File reader + folder picker |
+
+Additional endpoints:
+- `/api/webhooks/trigger` — External task trigger (POST)
+- `/api/health` — System health check (GET)
+- `/api/status` — System status (GET)
+
 ### Adding a New AI Provider
 
 1. Add pricing data in `server/services/ai.js` — `MODEL_PRICING` object
@@ -1306,9 +2152,16 @@ All REST API responses follow the pattern:
 
 ### Adding a New Platform Integration
 
-1. Create a handler in `server/services/platforms.js`
+1. Create a handler in `server/services/platforms.js` (or a dedicated service file like `discord.js`)
 2. Register it in the `initializePlatforms()` function
 3. Add the platform option to the agent chat setup UI in `src/app/agents/page.js`
+
+### Adding a New Plugin
+
+1. Create a directory under `~/.agentwork/plugins/`
+2. Add a `plugin.json` manifest with `name`, `version`, and `type`
+3. Add an `index.js` entry point exporting the required interface
+4. Restart the server to load the plugin
 
 ---
 
