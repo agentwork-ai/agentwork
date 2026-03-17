@@ -8,7 +8,7 @@ import { useTheme, useAuth } from '@/app/providers';
 import {
   Key, Globe, DollarSign, Shield, Palette, Bell,
   FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut, BarChart3,
-  FileText, Trash2, Copy,
+  FileText, Trash2, Copy, GitBranch,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -302,13 +302,19 @@ export default function SettingsPage() {
                     onChange={(v) => updateField('require_confirmation_destructive', v ? 'true' : 'false')}
                   />
                 </div>
+              </div>
+            </Section>
+
+            {/* Git Behavior */}
+            <Section icon={<GitBranch size={18} />} title="Git Behavior">
+              <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                       Auto Git Branch + PR
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Auto-create a branch before task, commit + push + PR when done
+                      Create a feature branch before each task, commit + push + open PR when done
                     </p>
                   </div>
                   <ToggleSwitch
@@ -336,7 +342,7 @@ export default function SettingsPage() {
                       Auto Merge to Main
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Automatically merge completed task branches back to main
+                      Merge completed task branches back to main (via PR or local merge)
                     </p>
                   </div>
                   <ToggleSwitch
@@ -347,10 +353,10 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Auto Init Git for New Projects
+                      Auto Init Git
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Automatically initialize a git repo if the project directory doesn't have one
+                      Initialize a git repo if the project directory doesn't have one
                     </p>
                   </div>
                   <ToggleSwitch
