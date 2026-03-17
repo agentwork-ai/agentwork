@@ -1,16 +1,48 @@
 {
   "name": "agentwork",
   "version": "1.0.0",
-  "description": "AgentWork - Autonomous AI Agent Orchestrator",
-  "private": true,
+  "description": "AgentWork - Autonomous AI Agent Orchestrator. Hire, manage, and collaborate with multiple AI agents through a real-time dashboard.",
+  "keywords": [
+    "ai",
+    "agent",
+    "orchestrator",
+    "claude",
+    "gpt",
+    "autonomous",
+    "kanban",
+    "dashboard"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/agentwork.git"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "bin": {
     "agentwork": "./bin/cli.js"
   },
+  "files": [
+    "bin/",
+    "server/",
+    "src/",
+    "public/",
+    "next.config.mjs",
+    "tailwind.config.js",
+    "postcss.config.js",
+    "jsconfig.json",
+    "nodemon.json",
+    "package.json",
+    "README.md"
+  ],
   "scripts": {
     "dev": "nodemon --watch server --ext js,json server/index.js",
     "dev:no-reload": "node server/index.js",
     "build": "next build",
     "start": "NODE_ENV=production node server/index.js",
+    "setup": "npm install && npm run build && echo '\\n✓ AgentWork ready! Run: npm start'",
+    "postinstall": "[ \"$npm_config_global\" = 'true' ] && npm run build || true",
     "lint": "next lint"
   },
   "dependencies": {

@@ -343,30 +343,62 @@ agentwork/
 ### Prerequisites
 
 - **Node.js** 18+ (LTS recommended)
-- **npm** or **yarn**
-- At least one AI provider credential (API key or local CLI auth)
+- **npm** 9+
+- At least one of: API key (Anthropic/OpenAI/OpenRouter) or local CLI auth (Claude Code/Codex)
 
-### Clone & Install
+### Quick Start (Development)
 
 ```bash
 git clone https://github.com/your-org/agentwork.git
 cd agentwork
 npm install
-```
-
-### Build
-
-```bash
 npm run build
+npm run dev
 ```
 
-### Link CLI (Optional)
+Open [http://localhost:1248](http://localhost:1248) — the onboarding wizard will guide you through initial setup.
 
-To use the `agentwork` command globally:
+### Install as CLI Tool
+
+Link the `agentwork` command globally after cloning:
 
 ```bash
+git clone https://github.com/your-org/agentwork.git
+cd agentwork
+npm install
+npm run build
 npm link
 ```
+
+Now use it from anywhere:
+
+```bash
+agentwork start          # Start the daemon in the background
+agentwork status         # Check if it's running
+agentwork task list      # List all tasks
+agentwork agent list     # List all agents
+agentwork stop           # Stop the daemon
+```
+
+### Production
+
+```bash
+git clone https://github.com/your-org/agentwork.git
+cd agentwork
+npm run setup            # Install dependencies + build in one command
+npm start                # Start in production mode
+```
+
+### npm Scripts Reference
+
+| Script | Command | Description |
+|--------|---------|-------------|
+| `dev` | `nodemon server/index.js` | Development with hot reload |
+| `dev:no-reload` | `node server/index.js` | Development without hot reload |
+| `build` | `next build` | Build Next.js for production (required before first run) |
+| `start` | `NODE_ENV=production node server/index.js` | Production server |
+| `setup` | `npm install && npm run build` | One-command install + build |
+| `lint` | `next lint` | Run ESLint |
 
 ---
 
