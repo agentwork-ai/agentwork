@@ -4,52 +4,25 @@ Autonomous AI agent orchestration platform. Hire, manage, and collaborate with m
 
 ## Installation
 
-### Quick Start (Development)
+Requires **Node.js 18+**.
+
+### Option 1: npm (recommended)
+
+```bash
+npm install -g agentwork
+agentwork start
+```
+
+### Option 2: From source
 
 ```bash
 git clone https://github.com/your-org/agentwork.git
 cd agentwork
-npm install
-npm run build
-npm run dev
+npm install && npm run build && npm link
+agentwork start
 ```
 
-Open [http://localhost:1248](http://localhost:1248) — the onboarding wizard will guide you through setup.
-
-### Install as CLI Tool
-
-After cloning and installing, link the CLI globally:
-
-```bash
-git clone https://github.com/your-org/agentwork.git
-cd agentwork
-npm install
-npm run build
-npm link
-```
-
-Now you can use `agentwork` from anywhere:
-
-```bash
-agentwork start          # Start the daemon in the background
-agentwork status         # Check if it's running
-agentwork stop           # Stop the daemon
-```
-
-### Production
-
-```bash
-git clone https://github.com/your-org/agentwork.git
-cd agentwork
-npm run setup            # Install deps + build in one command
-npm start                # Start in production mode
-```
-
-### Prerequisites
-
-- **Node.js 18+** (LTS recommended)
-- **npm** 9+
-- At least one of: API key (Anthropic/OpenAI/OpenRouter) or local CLI auth (Claude Code/Codex)
+Open **http://localhost:1248** — the onboarding wizard will guide you through setup.
 
 ## Features
 
@@ -231,13 +204,9 @@ To install the CLI globally: `npm link`
 ## Development
 
 ```bash
-npm run dev           # Dev server with nodemon hot reload
-npm run dev:no-reload # Dev server without hot reload
-npm run build         # Production build (required before first run)
-npm run setup         # Install + build in one command
+npm run dev           # Dev server with hot reload
+npm run build         # Production build
 npm start             # Production server
-npm run lint          # ESLint
-npm link              # Install CLI globally (agentwork command)
 ```
 
 ## API Documentation
