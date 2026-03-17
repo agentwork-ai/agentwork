@@ -640,7 +640,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
                     value={form.chat_token}
                     onChange={(e) => setForm({ ...form, chat_token: e.target.value })}
                     placeholder={form.chat_platform === 'telegram'
-                      ? '1234567890:AAHdqTcvCH1vGWJxfSeofSAs0K5PALDsaw'
+                      ? 'your-telegram-bot-token'
                       : 'xoxb-your-bot-token'}
                   />
                   {form.chat_platform === 'telegram' && (
