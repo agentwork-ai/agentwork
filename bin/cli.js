@@ -143,10 +143,12 @@ program
     if (!fs.existsSync(nextDir)) {
       console.log(chalk.yellow('First run — building dashboard (this may take a minute)...'));
       try {
-        execSync('npm run build', { cwd: ROOT, stdio: 'inherit', env });
+        const nextBin = path.join(ROOT, 'node_modules', '.bin', 'next');
+        execSync(`"${nextBin}" build`, { cwd: ROOT, stdio: 'inherit', env });
         console.log(chalk.green('✓ Build complete'));
       } catch (err) {
-        console.log(chalk.red('✗ Build failed. Try running manually: cd ' + ROOT + ' && npm run build'));
+        console.log(chalk.red('✗ Build failed. Try running manually:'));
+        console.log(chalk.gray(`  cd ${ROOT} && npx next build`));
         process.exit(1);
       }
     }
