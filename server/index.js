@@ -9,8 +9,9 @@ const PORT = parseInt(process.env.PORT || '1248', 10);
 const dev = process.env.NODE_ENV !== 'production';
 const ROOT = process.env.AGENTWORK_ROOT || path.resolve(__dirname, '..');
 
-// Set AGENTWORK_ROOT for other modules
+// Set AGENTWORK_ROOT for other modules and ensure cwd is correct for Next.js
 process.env.AGENTWORK_ROOT = ROOT;
+try { process.chdir(ROOT); } catch {}
 
 const app = next({ dev, dir: ROOT });
 const handle = app.getRequestHandler();

@@ -42,7 +42,6 @@
     "build": "next build",
     "start": "NODE_ENV=production node server/index.js",
     "setup": "npm install && npm run build && echo '\\n✓ AgentWork ready! Run: npm start'",
-    "postinstall": "[ \"$npm_config_global\" = 'true' ] && npm run build || true",
     "lint": "next lint"
   },
   "dependencies": {
