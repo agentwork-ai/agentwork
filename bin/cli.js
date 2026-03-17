@@ -118,7 +118,7 @@ function isRunning() {
 program
   .name('agentwork')
   .description('AgentWork - Autonomous AI Agent Orchestrator')
-  .version('1.0.0');
+  .version(require('../package.json').version);
 
 program
   .command('start')
