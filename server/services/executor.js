@@ -169,14 +169,13 @@ function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
     execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: workDir, stdio: 'pipe' });
     logFn(taskId, 'info', `Git: committed changes on ${branchName}`);
 
-    // Try to push
-    let pushed = false;
+    // Try to push and create PR
+    let prMerged = false;
     try {
       execSync(`git push -u origin "${branchName}"`, { cwd: workDir, stdio: 'pipe', timeout: 30000 });
       logFn(taskId, 'info', `Git: pushed branch ${branchName}`);
-      pushed = true;
 
-      // Try to create PR via gh CLI
+      // Try to create and merge PR via gh CLI
       try {
         const mainBranch = getMainBranch(workDir);
         const prUrl = execSync(
@@ -185,43 +184,43 @@ function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
         ).trim();
         logFn(taskId, 'success', `Git: PR created — ${prUrl}`);
 
-        // Auto-merge if enabled
+        // Auto-merge PR
         if (getSetting('auto_git_merge') === 'true') {
           try {
             execSync(`gh pr merge "${branchName}" --squash --delete-branch 2>&1`, { cwd: workDir, encoding: 'utf8', timeout: 15000 });
             logFn(taskId, 'success', 'Git: PR auto-merged and branch deleted');
-          } catch (mergeErr) {
-            logFn(taskId, 'info', `Git: could not auto-merge — ${mergeErr.message?.slice(0, 100)}`);
+            prMerged = true;
+          } catch {
+            logFn(taskId, 'info', 'Git: PR created but could not auto-merge via gh, will merge locally');
           }
         }
       } catch {
-        logFn(taskId, 'info', 'Git: pushed but could not create PR (gh CLI may not be installed)');
+        logFn(taskId, 'info', 'Git: pushed but gh CLI unavailable, will merge locally');
       }
     } catch {
-      logFn(taskId, 'info', 'Git: committed locally but could not push (no remote)');
+      logFn(taskId, 'info', 'Git: no remote configured, will merge locally');
     }
 
-    // If not pushed or not auto-merging, merge locally
-    if (!pushed || getSetting('auto_git_merge') !== 'true') {
+    // Always merge locally if PR wasn't merged remotely
+    if (!prMerged) {
       const mainBranch = getMainBranch(workDir);
       try {
         execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
         execSync(`git merge "${branchName}" --no-edit`, { cwd: workDir, stdio: 'pipe' });
         execSync(`git branch -d "${branchName}"`, { cwd: workDir, stdio: 'pipe' });
-        logFn(taskId, 'info', `Git: merged ${branchName} into ${mainBranch} locally`);
-      } catch (mergeErr) {
-        // Conflict during merge — auto-resolve by accepting the branch changes
+        logFn(taskId, 'info', `Git: merged ${branchName} into ${mainBranch}`);
+      } catch {
         logFn(taskId, 'warning', 'Git: merge conflict, auto-resolving');
         try {
           execSync('git add -A && git commit --no-edit', { cwd: workDir, stdio: 'pipe', shell: true });
           execSync(`git branch -D "${branchName}" 2>/dev/null || true`, { cwd: workDir, stdio: 'pipe', shell: true });
-          logFn(taskId, 'info', 'Git: merge conflict auto-resolved');
+          logFn(taskId, 'info', 'Git: conflict auto-resolved');
         } catch {
           logFn(taskId, 'warning', 'Git: could not auto-resolve merge conflict');
         }
       }
     } else {
-      // Switch back to main
+      // PR was merged remotely — just checkout main and pull
       try {
         const mainBranch = getMainBranch(workDir);
         execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
