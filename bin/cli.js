@@ -137,7 +137,7 @@ program
 
     const serverScript = path.join(ROOT, 'server', 'index.js');
     const nextDir = path.join(ROOT, '.next');
-    const env = { ...process.env, PORT: opts.port, AGENTWORK_ROOT: ROOT };
+    const env = { ...process.env, PORT: opts.port, AGENTWORK_ROOT: ROOT, NODE_ENV: 'production' };
 
     // Auto-build if .next directory doesn't exist
     if (!fs.existsSync(nextDir)) {
