@@ -2,6 +2,17 @@
 
 Autonomous AI agent orchestration platform. Hire, manage, and collaborate with multiple AI agents through a real-time dashboard — agents execute tasks, chat over Telegram/Slack/Discord, and run on schedules, all in the background.
 
+<table>
+  <tr>
+    <td align="center"><strong>Kanban Board</strong><br><img src="demo/board.png" width="600" /></td>
+    <td align="center"><strong>Task Detail</strong><br><img src="demo/task.png" width="600" /></td>
+  </tr>
+  <tr>
+    <td align="center"><strong>Agent Manager</strong><br><img src="demo/agent.png" width="600" /></td>
+    <td align="center"><strong>Agent Chat</strong><br><img src="demo/chat.png" width="600" /></td>
+  </tr>
+</table>
+
 ## Installation
 
 Requires **Node.js 18+**.
