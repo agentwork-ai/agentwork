@@ -32,6 +32,82 @@ function readFileCached(filePath) {
   try { return fs.existsSync(filePath) ? fs.readFileSync(filePath, 'utf8') : ''; } catch { return ''; }
 }
 
+// ─── Git Automation Helpers ───
+
+function isGitRepo(workDir) {
+  try {
+    execSync('git rev-parse --is-inside-work-tree', { cwd: workDir, stdio: 'pipe' });
+    return true;
+  } catch { return false; }
+}
+
+function slugify(text) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+}
+
+function gitCreateBranch(workDir, taskId, taskTitle, logFn) {
+  const autoGit = db.prepare("SELECT value FROM settings WHERE key = 'auto_git_branch'").get()?.value;
+  if (autoGit !== 'true') return null;
+  if (!isGitRepo(workDir)) return null;
+
+  try {
+    const branchName = `agentwork/${slugify(taskTitle)}-${taskId.slice(0, 8)}`;
+    execSync(`git checkout -b "${branchName}"`, { cwd: workDir, stdio: 'pipe' });
+    logFn(taskId, 'info', `Git: created branch ${branchName}`);
+    return branchName;
+  } catch (err) {
+    logFn(taskId, 'warning', `Git branch creation failed: ${err.message}`);
+    return null;
+  }
+}
+
+function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
+  const autoGit = db.prepare("SELECT value FROM settings WHERE key = 'auto_git_branch'").get()?.value;
+  if (autoGit !== 'true' || !branchName) return;
+  if (!isGitRepo(workDir)) return;
+
+  try {
+    // Check if there are changes to commit
+    const status = execSync('git status --porcelain', { cwd: workDir, encoding: 'utf8' }).trim();
+    if (!status) {
+      logFn(taskId, 'info', 'Git: no changes to commit');
+      return;
+    }
+
+    // Stage and commit all changes
+    execSync('git add -A', { cwd: workDir, stdio: 'pipe' });
+    const commitMsg = `feat: ${taskTitle}\n\nCompleted by AgentWork task ${taskId}`;
+    execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: workDir, stdio: 'pipe' });
+    logFn(taskId, 'info', `Git: committed changes on ${branchName}`);
+
+    // Try to push (may fail if no remote configured)
+    try {
+      execSync(`git push -u origin "${branchName}"`, { cwd: workDir, stdio: 'pipe', timeout: 30000 });
+      logFn(taskId, 'info', `Git: pushed branch ${branchName} to origin`);
+
+      // Try to create PR via gh CLI
+      try {
+        const prUrl = execSync(
+          `gh pr create --title "${taskTitle.replace(/"/g, '\\"')}" --body "Automated PR from AgentWork task \`${taskId}\`" --head "${branchName}" 2>&1`,
+          { cwd: workDir, encoding: 'utf8', timeout: 15000 }
+        ).trim();
+        logFn(taskId, 'success', `Git: PR created — ${prUrl}`);
+      } catch {
+        logFn(taskId, 'info', 'Git: pushed but could not create PR (gh CLI may not be installed)');
+      }
+    } catch {
+      logFn(taskId, 'info', 'Git: committed locally but could not push (no remote or auth issue)');
+    }
+
+    // Switch back to previous branch
+    try {
+      execSync('git checkout -', { cwd: workDir, stdio: 'pipe' });
+    } catch {}
+  } catch (err) {
+    logFn(taskId, 'warning', `Git commit failed: ${err.message}`);
+  }
+}
+
 // DB-backed session persistence for Claude CLI sessions
 function getPersistedSession(agentId) {
   const row = db.prepare('SELECT session_id, provider FROM agent_sessions WHERE agent_id = ?').get(agentId);
@@ -271,12 +347,19 @@ async function _executeTask(taskId, agentId) {
     addLog(taskId, 'info', `Flow task started: ${task.title}`);
   }
 
+  let gitBranch = null;
+
   try {
     const workDir = project?.path || process.cwd();
 
     if (!isFlow && !fs.existsSync(workDir)) {
       addLog(taskId, 'info', `Creating working directory: ${workDir}`);
       fs.mkdirSync(workDir, { recursive: true });
+    }
+
+    // Auto-create git branch before execution
+    if (!isFlow) {
+      gitBranch = gitCreateBranch(workDir, taskId, task.title, addLog);
     }
 
     if (isFlow) {
@@ -292,6 +375,13 @@ async function _executeTask(taskId, agentId) {
     sendMessage(agentId || 'system', 'agent', `An unexpected error occurred: ${err.message}`, taskId);
   } finally {
     if (timeoutTimer) clearTimeout(timeoutTimer);
+
+    // Auto-commit, push, and create PR after task completion
+    const finalTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId);
+    if (finalTask?.status === 'done' && gitBranch && project?.path) {
+      gitCommitAndPR(project.path, taskId, task.title, gitBranch, addLog);
+    }
+
     activeExecutions.delete(taskId);
     if (!isFlow && agent) {
       db.prepare("UPDATE agents SET status = 'idle', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
@@ -300,7 +390,6 @@ async function _executeTask(taskId, agentId) {
     io.emit('system:status_update');
 
     // Auto-queue next task for this agent
-    const finalTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId);
     if (finalTask?.status === 'done' && agentId) {
       autoQueueNextTask(agentId);
     }

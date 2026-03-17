@@ -228,6 +228,7 @@ const defaultSettings = {
   max_concurrent_executions: '3',
   dashboard_password: '',
   accent_color: 'blue',
+  auto_git_branch: 'false',
   verbose_ai_logging: 'false',
   google_api_key: '',
   smtp_host: '',

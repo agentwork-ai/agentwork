@@ -302,6 +302,20 @@ export default function SettingsPage() {
                     onChange={(v) => updateField('require_confirmation_destructive', v ? 'true' : 'false')}
                   />
                 </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Auto Git Branch + PR
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Auto-create a branch before task execution, then commit, push, and open a PR when done
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.auto_git_branch === 'true'}
+                    onChange={(v) => updateField('auto_git_branch', v ? 'true' : 'false')}
+                  />
+                </div>
               </div>
             </Section>
 
