@@ -1,6 +1,7 @@
 const { db, uuidv4, DATA_DIR } = require('../db');
 const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
 const { getPluginTools } = require('../plugins');
+const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt, ensureMemoryFiles } = require('./agent-context');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -364,15 +365,13 @@ async function handleApiChat(agent, userMessage, platformChatId) {
       throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${labels[agent.provider] || agent.provider} API key.`);
     }
 
-    const soul = readFile(path.join(agentDir, 'SOUL.md'));
-    const memory = readFile(path.join(agentDir, 'MEMORY.md'));
-    const userPrefs = readFile(path.join(agentDir, 'USER.md'));
+    const agentContext = buildAgentContext(agentId, agent, { includeMemory: true });
 
     const recentMsgs = db.prepare('SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20').all(agentId).reverse();
     const messages = [
       {
         role: 'system',
-        content: `You are ${agent.name}, a ${agent.role}. Be concise and friendly. ${agent.personality || ''}\n\n${soul ? `## Your Configuration\n${soul}` : ''}\n\n${userPrefs ? `## User Preferences\n${userPrefs}` : ''}\n\n${memory ? `## Your Memory\n${memory}` : ''}`.trim(),
+        content: buildChatSystemPrompt(agent, agentContext),
       },
       ...recentMsgs.map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
       { role: 'user', content: userMessage },
@@ -389,8 +388,8 @@ async function handleApiChat(agent, userMessage, platformChatId) {
     let response;
     try {
       response = await createStreamingCompletion(agent.provider, agent.model, messages, onChunk);
-    } catch {
-      // Fallback to non-streaming if streaming fails
+    } catch (streamErr) {
+      console.log(`[Chat API] Streaming failed for ${agent.name}, falling back:`, streamErr.message);
       response = await createCompletion(agent.provider, agent.model, messages);
     }
     logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
@@ -684,11 +683,8 @@ async function executeFlowTask(taskId, mainAgentId, task, project, execState) {
 }
 
 async function executeFlowStepApi(taskId, agentId, agent, task, flowItem, previousContext, project, workDir, execState, stepIdx, totalSteps) {
-  const agentDir = path.join(DATA_DIR, 'agents', agent.id);
-  const soul = readFile(path.join(agentDir, 'SOUL.md'));
-  const userPrefs = readFile(path.join(agentDir, 'USER.md'));
-  const rules = readFile(path.join(agentDir, 'AGENTS.md'));
-  const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+  // Flow steps use subagent context — skip MEMORY.md for token efficiency
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: false });
 
   let projectDoc = '';
   if (project?.path) {
@@ -706,32 +702,7 @@ async function executeFlowStepApi(taskId, agentId, agent, task, flowItem, previo
     ? '\n' + flowCustomToolDefs.map((t) => `- **${t.name}**: ${t.description}`).join('\n')
     : '';
 
-  const systemPrompt = `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
-
-${soul}
-
-## User Preferences
-${userPrefs}
-
-## Operational Rules
-${rules}
-
-## Your Memory
-${memory}
-
-${projectDoc ? `## Project Documentation\n${projectDoc}\n` : ''}## Available Tools
-- **read_file**: Read any file
-- **write_file**: Create or modify files
-- **delete_path**: Remove files or directories
-- **run_bash**: Execute shell commands
-- **list_directory**: Browse the file structure
-- **task_complete**: Call when your step is fully done (required)
-- **request_help**: Only if truly blocked${flowCustomToolsPrompt}
-
-## Rules
-1. ALWAYS proceed autonomously. Never ask for confirmation.
-2. Use tools to do the work, then call task_complete with a summary.
-3. ${project ? `Working directory: ${project.path}` : 'Use the provided working directory.'}`;
+  const systemPrompt = buildFlowStepSystemPrompt(agent, agentContext, { projectDoc, customToolsPrompt: flowCustomToolsPrompt, workDir, stepIdx, totalSteps });
 
   const userContent = `You are working on step ${stepIdx + 1} of ${totalSteps} in a multi-step flow task.
 
@@ -818,15 +789,14 @@ Complete your step using the tools. When done, call task_complete with a summary
 }
 
 async function executeFlowStepCli(taskId, agentId, agent, task, flowItem, previousContext, workDir, execState, stepIdx, totalSteps) {
-  const agentDir = path.join(DATA_DIR, 'agents', agent.id);
-  const memory = readFile(path.join(agentDir, 'MEMORY.md'));
-  const soul = readFile(path.join(agentDir, 'SOUL.md'));
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: false });
   const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
 
   if (isCodex) ensureGitRepo(workDir, taskId);
 
   const prompt = `You are ${agent.name}, a ${agent.role}.
-${soul ? `## Your Configuration\n${soul}\n` : ''}${memory ? `## Your Memory\n${memory}\n` : ''}
+${agentContext}
+
 ## Overall Task
 Title: ${task.title}
 ${task.description ? `Description: ${task.description}` : ''}
@@ -934,9 +904,7 @@ function ensureGitRepo(workDir, taskId) {
 }
 
 async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) {
-  const agentDir = path.join(DATA_DIR, 'agents', agent.id);
-  const memory = readFile(path.join(agentDir, 'MEMORY.md'));
-  const soul = readFile(path.join(agentDir, 'SOUL.md'));
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: true });
 
   const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
   const sdkName = isCodex ? 'Codex' : 'Claude';
@@ -951,8 +919,7 @@ async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) 
 
   const prompt = `You are ${agent.name}, a ${agent.role}.
 
-${soul ? `## Your Configuration\n${soul}\n` : ''}
-${memory ? `## Your Memory\n${memory}\n` : ''}
+${agentContext}
 
 ## Task
 Title: ${task.title}
@@ -1510,11 +1477,7 @@ function appendToolResults(messages, toolResults, provider) {
 // ─── API-mode task execution ───
 
 async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState) {
-  const agentDir = path.join(DATA_DIR, 'agents', agent.id);
-  const soul = readFile(path.join(agentDir, 'SOUL.md'));
-  const userPrefs = readFile(path.join(agentDir, 'USER.md'));
-  const rules = readFile(path.join(agentDir, 'AGENTS.md'));
-  const memory = readFile(path.join(agentDir, 'MEMORY.md'));
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: true });
 
   let projectDoc = '';
   if (project?.path) {
@@ -1565,37 +1528,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     ? '\n' + customToolDefs.map((t) => `- **${t.name}**: ${t.description}`).join('\n')
     : '';
 
-  const systemPrompt = `You are ${agent.name}, an autonomous AI agent working as a ${agent.role}.
-
-${soul}
-
-## User Preferences
-${userPrefs}
-
-## Operational Rules
-${rules}
-
-## Your Memory
-${memory}
-
-${projectDoc ? `## Project Documentation\n${projectDoc}\n` : ''}
-## Available Tools
-Use tools to complete your task — do NOT write explanations without acting:
-- **read_file**: Read any file
-- **write_file**: Create or modify files (auto-creates directories)
-- **delete_path**: Remove files or directories
-- **run_bash**: Execute shell commands (npm, git, mkdir, etc.)
-- **list_directory**: Browse the file structure
-- **task_complete**: Call when ALL work is done (required to finish the task)
-- **request_help**: Only if truly blocked (missing credentials, broken env)${customToolsPrompt}
-
-## Rules
-1. ALWAYS proceed autonomously. Never ask for confirmation or clarification.
-2. Make your best judgment on ambiguous requirements.
-3. Use tools to read code, make changes, and verify your work.
-4. When finished, call task_complete with a summary.
-5. ${project ? `Working directory: ${project.path}` : 'Use the provided working directory.'}
-${projectActivity}`;
+  const systemPrompt = buildTaskSystemPrompt(agent, agentContext, { projectDoc, projectActivity, customToolsPrompt, workDir: project?.path || workDir });
 
   const messages = [
     { role: 'system', content: systemPrompt },
