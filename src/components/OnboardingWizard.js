@@ -345,7 +345,8 @@ export default function OnboardingWizard({ onComplete }) {
       return;
     }
 
-    const fallback = configuredOauthOptions[0] || oauthOptions[0] || OAUTH_PROVIDERS[0];
+    const fallback = configuredOauthOptions[0] || oauthOptions[0];
+    if (!fallback) return;
     setAgent((current) => ({
       ...current,
       agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
@@ -617,7 +618,7 @@ export default function OnboardingWizard({ onComplete }) {
                       onClick={() => setAuthMode('oauth')}
                     >
                       <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Users size={12} /> OAuth / Provider Auth</div>
-                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses saved Anthropic, Gemini, or Codex auth profiles from Settings</span>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses saved provider sign-ins from Settings, including Anthropic, Gemini, and Codex</span>
                     </button>
                     <button
                       type="button"

@@ -296,9 +296,9 @@ export default function SettingsPage() {
                 <div className="pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>
-                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>OpenClaw-style auth profiles</p>
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Saved provider sign-ins</p>
                       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        Mirrors OpenClaw&apos;s real auth matrix: Anthropic setup-token, Codex OAuth, and Gemini CLI OAuth.
+                        Connect reusable provider authentication here, then assign it to OAuth-backed agents when you hire them.
                       </p>
                     </div>
                   </div>
@@ -309,7 +309,7 @@ export default function SettingsPage() {
                         <div>
                           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Anthropic setup-token</p>
                           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            OpenClaw uses setup-token or API key for Anthropic. This token is used in AgentWork&apos;s Anthropic API path.
+                            Save an Anthropic setup-token here if you want reusable sign-in based auth for Anthropic agents. AgentWork uses this token in the Anthropic API path.
                           </p>
                         </div>
                         <AuthMethodBadge method={getAuthMethod('anthropic', 'setup-token')} />
@@ -364,7 +364,7 @@ export default function SettingsPage() {
                         <div>
                           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>OpenAI Codex OAuth</p>
                           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            Mirrors OpenClaw&apos;s browser-based Codex OAuth flow. AgentWork stores the OAuth profile directly, then syncs it into local Codex auth for chat and task runs.
+                            Browser-based Codex sign-in. AgentWork stores the OAuth profile directly, then syncs it into local Codex auth for chat and task runs.
                           </p>
                         </div>
                         <AuthMethodBadge method={getAuthMethod('openai', 'openai-codex')} />
@@ -460,7 +460,7 @@ export default function SettingsPage() {
                         <div>
                           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gemini CLI OAuth</p>
                           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            OpenClaw treats Gemini CLI OAuth separately from Gemini API keys. Imported credentials can be used by AgentWork&apos;s Google provider.
+                            Import local Gemini CLI OAuth credentials here to reuse them for Google-backed agents.
                           </p>
                         </div>
                         <AuthMethodBadge method={getAuthMethod('google', 'google-gemini-cli')} />

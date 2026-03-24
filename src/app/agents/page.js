@@ -454,7 +454,8 @@ function AgentFormModal({ agent, onClose, onSaved }) {
       return;
     }
 
-    const fallback = configuredOauthOptions[0] || oauthOptions[0] || OAUTH_PROVIDERS[0];
+    const fallback = configuredOauthOptions[0] || oauthOptions[0];
+    if (!fallback) return;
     setForm((current) => ({
       ...current,
       agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,

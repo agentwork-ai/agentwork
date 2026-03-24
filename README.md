@@ -2,7 +2,7 @@
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/agentwork-ai/agentwork) [![Release](https://img.shields.io/npm/v/agentwork/latest?label=release&color=blue)](https://www.npmjs.com/package/agentwork) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-Autonomous AI agent orchestration platform for software teams. Hire role-based agents, give them OpenClaw-style workspace memory, let them collaborate in direct chat, mention-based group chat, and autonomous meetings, then turn decisions into project tasks and shipped code.
+Autonomous AI agent orchestration platform for software teams. Hire role-based agents, give them structured workspace memory, let them collaborate in direct chat, mention-based group chat, and autonomous meetings, then turn decisions into project tasks and shipped code.
 
 <table>
   <tr>
@@ -51,11 +51,11 @@ Open **http://localhost:1248** — the onboarding wizard will guide you through 
 ## Features
 
 ### Agent System
-- **OpenClaw-Style Workspaces** — Agents use `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `TOOLS.md`, `USER.md`, `HEARTBEAT.md`, `MEMORY.md`, and daily memory notes
+- **Structured Workspace Files** — Agents use `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `TOOLS.md`, `USER.md`, `HEARTBEAT.md`, `MEMORY.md`, and daily memory notes
 - **22 Built-In Software Roles** — Includes Assistant, CEO, CTO, Product Manager, Project Manager, Business Analyst, Engineering Manager, Tech Lead, Frontend/Backend/Full Stack/Mobile Developer, QA, UI/UX, DevOps, Security, Data, ML, Technical Writer, and more
 - **Role-Specific `ROLE.md`** — Every agent gets a dedicated role contract describing strengths, responsibilities, and expected behavior for that role
 - **Agent Types** — Smart Agents use the full workspace, Worker Agents use only `ROLE.md` + memory, and CLI Agents skip workspace markdown files
-- **OAuth / Provider Auth Agents** — Hire agents that use stored provider auth from Settings, including Codex OAuth and Gemini CLI OAuth, in addition to API key and CLI-auth agents
+- **OAuth / Provider Auth Agents** — Hire agents that use stored provider auth from Settings, including Anthropic setup-token, Gemini CLI OAuth, and Codex OAuth, in addition to API key and CLI-auth agents
 - **Multi-Agent** — Hire agents with distinct roles, models, auth methods, and persistent memory
 - **Agent Cloning** — Clone an agent's full configuration and workspace with one click
 - **Per-Agent Tool Restrictions** — Whitelist which tools each agent can use
