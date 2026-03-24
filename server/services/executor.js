@@ -4,6 +4,7 @@ const { getPluginTools } = require('../plugins');
 const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt } = require('./agent-context');
 const { execSync } = require('child_process');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 let io = null;
@@ -58,6 +59,25 @@ function readFileCached(filePath) {
 
 function getSetting(key) {
   return db.prepare("SELECT value FROM settings WHERE key = ?").get(key)?.value || '';
+}
+
+function resolveConfiguredWorkspaceDir() {
+  const configured = String(getSetting('default_workspace') || '').trim();
+  if (!configured) return '';
+
+  const resolved = path.resolve(configured);
+  try {
+    fs.mkdirSync(resolved, { recursive: true });
+  } catch {}
+  return resolved;
+}
+
+function resolveChatWorkingDirectory() {
+  return resolveConfiguredWorkspaceDir() || os.homedir() || process.cwd();
+}
+
+function resolveTaskWorkingDirectory(project) {
+  return project?.path || resolveConfiguredWorkspaceDir() || process.cwd();
 }
 
 function isGitRepo(workDir) {
@@ -324,6 +344,7 @@ async function handleDirectChat(agentId, content, platformChatId) {
 async function handleCliChat(agent, userMessage, platformChatId) {
   const agentId = agent.id;
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
+  const chatWorkDir = resolveChatWorkingDirectory();
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
@@ -337,7 +358,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
         throw new Error(`Failed to load Claude Agent SDK: ${importErr.message}. Is @anthropic-ai/claude-agent-sdk installed?`);
       }
       const session = getPersistedSession(agentId);
-      const result = await chatWithClaudeAgent(userMessage, session.session_id, process.cwd());
+      const result = await chatWithClaudeAgent(userMessage, session.session_id, chatWorkDir);
       persistSession(agentId, result.sessionId, 'anthropic');
       responseContent = result.content;
       if (!responseContent?.trim()) {
@@ -354,7 +375,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       let session = agentSessions.get(agentId);
       if (!session?.thread) {
         const client = createCodexClient(Codex);
-        const thread = client.startThread({ workingDirectory: process.cwd(), approvalPolicy: 'never', sandboxMode: 'read-only' });
+        const thread = client.startThread({ workingDirectory: chatWorkDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
         session = { thread };
         agentSessions.set(agentId, session);
       }
@@ -503,7 +524,7 @@ async function _executeTask(taskId, agentId) {
   let gitBranch = null;
 
   try {
-    const workDir = project?.path || process.cwd();
+    const workDir = resolveTaskWorkingDirectory(project);
 
     if (!isFlow && !fs.existsSync(workDir)) {
       addLog(taskId, 'info', `Creating working directory: ${workDir}`);
@@ -552,7 +573,7 @@ async function _executeTask(taskId, agentId) {
 // ─── Flow Task Execution ───
 
 async function executeFlowTask(taskId, mainAgentId, task, project, execState) {
-  const workDir = project?.path || process.cwd();
+  const workDir = resolveTaskWorkingDirectory(project);
 
   let flowItems = JSON.parse(task.flow_items || '[]');
   if (flowItems.length === 0) {
@@ -877,7 +898,7 @@ async function executeFlowStepWrapper(taskId, mainAgentId, task, project, execSt
   const agentId = item.agent_id || mainAgentId;
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
   if (!agent) throw new Error(`Agent not found for step ${stepIdx + 1}`);
-  const workDir = project?.path || process.cwd();
+  const workDir = resolveTaskWorkingDirectory(project);
   const previousContext = flowItems.slice(0, stepIdx).filter((i) => i.status === 'done' && i.output).map((i, idx) => `Step ${idx + 1}: ${i.output}`).join('\n');
 
   db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
@@ -1281,16 +1302,6 @@ function isCommandBlocked(command) {
   return null;
 }
 
-/**
- * Check whether a resolved target path is safely within the working directory.
- * Returns true if the path is inside workDir, false otherwise.
- */
-function isPathSafe(targetPath, workDir) {
-  const resolved = path.resolve(targetPath);
-  const resolvedWorkDir = path.resolve(workDir);
-  return resolved === resolvedWorkDir || resolved.startsWith(resolvedWorkDir + path.sep);
-}
-
 // Destructive command keywords that require confirmation when the setting is enabled
 const DESTRUCTIVE_KEYWORDS = ['rm', 'drop', 'delete', 'truncate', 'destroy'];
 
@@ -1308,10 +1319,6 @@ async function executeTool(name, input, workDir, taskId, agentId) {
     }
     case 'write_file': {
       const fullPath = path.resolve(workDir, input.path);
-      if (!isPathSafe(fullPath, workDir)) {
-        addLog(taskId, 'error', `Sandbox violation: write_file blocked — path "${input.path}" resolves outside working directory.`);
-        return `Error: Cannot write to path outside working directory. Resolved path "${fullPath}" is not within "${workDir}".`;
-      }
       try {
         fs.mkdirSync(path.dirname(fullPath), { recursive: true });
         fs.writeFileSync(fullPath, input.content);
@@ -1324,10 +1331,6 @@ async function executeTool(name, input, workDir, taskId, agentId) {
     }
     case 'delete_path': {
       const fullPath = path.resolve(workDir, input.path);
-      if (!isPathSafe(fullPath, workDir)) {
-        addLog(taskId, 'error', `Sandbox violation: delete_path blocked — path "${input.path}" resolves outside working directory.`);
-        return `Error: Cannot delete path outside working directory. Resolved path "${fullPath}" is not within "${workDir}".`;
-      }
       try {
         if (!fs.existsSync(fullPath)) return `Path does not exist: ${input.path}`;
         const stat = fs.statSync(fullPath);
@@ -1345,20 +1348,6 @@ async function executeTool(name, input, workDir, taskId, agentId) {
       if (blockedPattern) {
         addLog(taskId, 'error', `Sandbox violation: command blocked by pattern ${blockedPattern} — "${input.command}"`);
         return `Error: Command rejected — matches dangerous pattern ${blockedPattern}. This command is not allowed.`;
-      }
-
-      // --- Sandbox: working directory jail (detect cd escapes) ---
-      const cdEscapePattern = /\bcd\s+\/(?![\.\w])/;
-      if (cdEscapePattern.test(input.command)) {
-        // Check if the cd target is outside workDir
-        const cdMatch = input.command.match(/\bcd\s+(\/[^\s;&|]*)/);
-        if (cdMatch) {
-          const cdTarget = cdMatch[1];
-          if (!isPathSafe(cdTarget, workDir)) {
-            addLog(taskId, 'error', `Sandbox violation: command attempts to escape working directory with "cd ${cdTarget}".`);
-            return `Error: Command rejected — "cd ${cdTarget}" would escape the working directory "${workDir}". Stay within the project directory.`;
-          }
-        }
       }
 
       // --- Sandbox: destructive command confirmation ---
@@ -1402,7 +1391,6 @@ async function executeTool(name, input, workDir, taskId, agentId) {
     }
     case 'read_image': {
       const imgPath = path.resolve(workDir, input.path);
-      if (!isPathSafe(imgPath, workDir)) return 'Error: path is outside working directory';
       try {
         const ext = path.extname(imgPath).toLowerCase();
         const supported = ['.png', '.jpg', '.jpeg', '.gif', '.webp'];

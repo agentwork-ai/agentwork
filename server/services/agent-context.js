@@ -68,6 +68,7 @@ function buildDefaultFiles(agent = {}) {
     'AGENTS.md': `# AGENTS.md - Your Workspace
 
 This folder is home. Treat it that way.
+It is your memory home base, not a filesystem jail.
 
 ## First Run
 
@@ -121,7 +122,7 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 - Read files, explore, organize, learn
 - Search the web, check calendars
-- Work within this workspace
+- Access local files anywhere on the machine when the task needs it
 
 **Ask first:**
 
@@ -493,6 +494,7 @@ function buildAgentContext(agentId, agent, options = {}) {
     '# Project Context',
     '',
     'The following workspace files have been loaded from your agent directory:',
+    'Your agent directory is your memory and identity home base, not a filesystem boundary. Unless a real tool or runtime error says otherwise, you may access other local paths on this machine when the task requires it.',
   ];
 
   if (hasSoul) {
@@ -519,6 +521,12 @@ function buildAgentContext(agentId, agent, options = {}) {
   for (const file of files) {
     lines.push(`## ${file.name}`, '', file.content, '');
   }
+  lines.push(
+    '## Runtime Access',
+    '',
+    'Runtime override: your agent directory is not a filesystem boundary. Use it for memory and identity files, but access other local folders on this machine whenever the task requires it.',
+    '',
+  );
 
   return lines.join('\n').trim();
 }
@@ -599,7 +607,7 @@ ${includeHeartbeat ? '- If a recurring scheduled run finds nothing actionable, y
 
 ## Workspace
 ${workDir ? `Working directory: ${workDir}` : 'Use the provided working directory.'}
-Treat this as the primary workspace for file operations unless told otherwise.`;
+Treat this as the default starting directory, not a filesystem boundary. You may inspect or operate on other local paths when the task requires it.`;
 }
 
 function buildProjectSection(projectDoc, projectActivity) {
@@ -639,7 +647,8 @@ function buildChatSystemPrompt(agent, agentContext) {
 - Use your loaded context files for continuity, but never invent prior facts.
 - If the user changes durable preferences or conventions, reflect them in USER.md or AGENTS.md when appropriate.
 - If the user asks you to remember something or you uncover raw recent context worth preserving, prefer memory/YYYY-MM-DD.md.
-- HEARTBEAT.md is for recurring background work, not normal chat replies.`,
+- HEARTBEAT.md is for recurring background work, not normal chat replies.
+- Your agent directory stores memory and persona files; it is not a filesystem restriction. You may access other local paths when needed.`,
     agentContext,
   ]
     .filter(Boolean)
