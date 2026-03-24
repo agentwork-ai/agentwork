@@ -59,7 +59,7 @@ const OAUTH_PROVIDERS = [
     providerId: 'openai',
     methodId: 'openai-codex',
     label: 'OpenAI Codex OAuth',
-    description: 'Uses the imported Codex OAuth profile from Settings.',
+    description: 'Uses the saved Codex OAuth connection from Settings.',
     runtime: 'cli',
   },
 ];
@@ -674,12 +674,12 @@ export default function OnboardingWizard({ onComplete }) {
                     </div>
                     {!providerAuthLoading && configuredOauthOptions.length === 0 ? (
                       <p className="text-xs" style={{ color: 'var(--danger)' }}>
-                        No provider-auth methods are configured yet. Import one in Settings first.
+                        No provider-auth methods are configured yet. Connect one in Settings first.
                       </p>
                     ) : null}
                     {agent.provider === 'openai-codex' ? (
                       <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                        Codex OAuth uses the Codex SDK runtime, so model selection stays in your local Codex auth/config.
+                        Codex OAuth uses the Codex SDK runtime, so model selection stays in your local Codex auth/config after you connect it in Settings.
                       </div>
                     ) : (
                       <div>

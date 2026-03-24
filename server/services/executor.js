@@ -1,8 +1,7 @@
 const { db, uuidv4, DATA_DIR } = require('../db');
-const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
+const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent, createCodexClient } = require('./ai');
 const { getPluginTools } = require('../plugins');
 const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt } = require('./agent-context');
-const { ensureCodexCliAuthFromStoredProfile } = require('./provider-auth');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -340,7 +339,10 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       const session = getPersistedSession(agentId);
       const result = await chatWithClaudeAgent(userMessage, session.session_id, process.cwd());
       persistSession(agentId, result.sessionId, 'anthropic');
-      responseContent = result.content || '(Agent returned an empty response)';
+      responseContent = result.content;
+      if (!responseContent?.trim()) {
+        throw new Error('Claude completed without returning a response.');
+      }
     } else if (isCodexAgent(agent)) {
       let Codex, chatWithCodexAgent;
       try {
@@ -351,14 +353,16 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       }
       let session = agentSessions.get(agentId);
       if (!session?.thread) {
-        ensureCodexCliAuthFromStoredProfile();
-        const client = new Codex();
+        const client = createCodexClient(Codex);
         const thread = client.startThread({ workingDirectory: process.cwd(), approvalPolicy: 'never', sandboxMode: 'read-only' });
         session = { thread };
         agentSessions.set(agentId, session);
       }
       const result = await chatWithCodexAgent(userMessage, session.thread);
-      responseContent = result.content || '(Agent returned an empty response)';
+      responseContent = result.content;
+      if (!responseContent?.trim()) {
+        throw new Error('Codex completed without returning a response.');
+      }
     } else {
       throw new Error(`Unknown CLI provider: ${agent.provider}`);
     }
@@ -841,9 +845,8 @@ Complete your step autonomously.`;
   };
 
   if (isCodex) {
-    ensureCodexCliAuthFromStoredProfile();
     const { Codex } = await import('@openai/codex-sdk');
-    const client = new Codex();
+    const client = createCodexClient(Codex);
     const thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
     const streamedTurn = await thread.runStreamed(prompt, { signal: abortController.signal });
     for await (const event of streamedTurn.events) {
@@ -852,6 +855,11 @@ Complete your step autonomously.`;
         if (item.type === 'agent_message') onEvent({ type: 'text', content: item.text || '' });
         else if (item.type === 'command_execution') { onEvent({ type: 'command', content: `$ ${item.command || ''}` }); if (item.output) onEvent({ type: 'output', content: item.output.slice(0, 2000) }); }
         else if (item.type === 'reasoning') onEvent({ type: 'thinking', content: item.text || '' });
+        else if (item.type === 'error') onEvent({ type: 'error', content: item.message || 'Codex agent failed' });
+      } else if (event.type === 'error') {
+        onEvent({ type: 'error', content: event.message || 'Codex agent failed' });
+      } else if (event.type === 'turn.failed') {
+        onEvent({ type: 'error', content: event.error?.message || 'Codex agent failed' });
       } else if (event.type === 'turn.completed') {
         onEvent({ type: 'done', content: '' });
       }
@@ -1006,8 +1014,7 @@ ${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the li
       addLog(taskId, 'info', 'Creating Codex client and thread...');
       let client, thread;
       try {
-        ensureCodexCliAuthFromStoredProfile();
-        client = new Codex();
+        client = createCodexClient(Codex);
         thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
         addLog(taskId, 'info', 'Codex thread created');
       } catch (initErr) {
@@ -1053,9 +1060,16 @@ ${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the li
             const usage = event.usage || {};
             addLog(taskId, 'info', `Turn completed. Tokens: in=${usage.input_tokens || 0} out=${usage.output_tokens || 0}`);
             onEvent({ type: 'done', content: 'Agent finished.' });
+          } else if (event.type === 'error') {
+            const errMsg = event.message || 'Codex stream error';
+            addLog(taskId, 'error', `Stream error event: ${errMsg}`);
+            onEvent({ type: 'error', content: errMsg });
+            throw new Error(errMsg);
           } else if (event.type === 'turn.failed') {
             const errMsg = event.error?.message || JSON.stringify(event.error) || 'Turn failure';
             addLog(taskId, 'error', `Turn failed: ${errMsg}`);
+            onEvent({ type: 'error', content: errMsg });
+            throw new Error(errMsg);
           } else if (event.type === 'thread.started' || event.type === 'turn.started') {
             addLog(taskId, 'info', event.type);
           }

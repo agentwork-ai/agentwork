@@ -1,6 +1,7 @@
 const { db } = require('../db');
 const { decrypt, isSensitiveKey } = require('../crypto');
 const { ensureCodexCliAuthFromStoredProfile, resolveProviderRuntimeAuth } = require('./provider-auth');
+const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
 
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -383,8 +384,7 @@ async function runClaudeAgent(prompt, workDir, onEvent, abortController) {
 async function runCodexAgent(prompt, workDir, onEvent, abortController) {
   const { Codex } = await import('@openai/codex-sdk');
 
-  ensureCodexCliAuthFromStoredProfile();
-  const client = new Codex();
+  const client = createCodexClient(Codex);
   const thread = client.startThread({
     workingDirectory: workDir,
     approvalPolicy: 'never',
@@ -418,7 +418,13 @@ async function runCodexAgent(prompt, workDir, onEvent, abortController) {
         }
       } else if (item.type === 'reasoning') {
         onEvent({ type: 'thinking', content: item.text || '' });
+      } else if (item.type === 'error') {
+        onEvent({ type: 'error', content: item.message || 'Codex agent failed' });
       }
+    }
+
+    if (event.type === 'error') {
+      onEvent({ type: 'error', content: event.message || 'Codex agent failed' });
     }
 
     if (event.type === 'turn.completed') {
@@ -479,16 +485,37 @@ async function chatWithClaudeAgent(prompt, sessionId, workDir) {
  */
 async function chatWithCodexAgent(prompt, thread) {
   let responseText = '';
+  let lastError = '';
   const { events } = await thread.runStreamed(prompt);
 
   for await (const event of events) {
-    if (event.type === 'item.completed' && event.item.type === 'agent_message') {
-      responseText += event.item.text || '';
+    if (event.type === 'item.completed') {
+      if (event.item.type === 'agent_message') {
+        responseText += event.item.text || '';
+      } else if (event.item.type === 'error') {
+        lastError = event.item.message || lastError;
+      }
     }
-    if (event.type === 'turn.completed' || event.type === 'turn.failed') break;
+    if (event.type === 'error') {
+      lastError = event.message || lastError;
+    }
+    if (event.type === 'turn.failed') {
+      throw new Error(event.error?.message || lastError || 'Codex agent failed');
+    }
+    if (event.type === 'turn.completed') break;
+  }
+
+  if (!responseText.trim()) {
+    if (lastError) throw new Error(lastError);
+    throw new Error('Codex completed without returning an assistant message.');
   }
 
   return { content: responseText };
+}
+
+function createCodexClient(Codex) {
+  ensureCodexCliAuthFromStoredProfile();
+  return new Codex({ baseUrl: CODEX_BASE_URL });
 }
 
 // Static pricing table ($/M tokens)
@@ -607,4 +634,5 @@ module.exports = {
   runCodexAgent,
   chatWithClaudeAgent,
   chatWithCodexAgent,
+  createCodexClient,
 };

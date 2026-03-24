@@ -25,7 +25,17 @@ export default function SettingsPage() {
   const [authBusy, setAuthBusy] = useState({});
   const [anthropicSetupToken, setAnthropicSetupToken] = useState('');
   const [googleProjectId, setGoogleProjectId] = useState('');
+  const [codexOauthFlow, setCodexOauthFlow] = useState(null);
+  const [codexManualInput, setCodexManualInput] = useState('');
   const [templates, setTemplates] = useState([]);
+
+  const applyProviderAuthState = useCallback((auth) => {
+    setProviderAuth(auth);
+    const googleOauth = auth?.providers
+      ?.find((provider) => provider.id === 'google')
+      ?.methods?.find((method) => method.id === 'google-gemini-cli');
+    setGoogleProjectId(googleOauth?.profile?.projectId || '');
+  }, []);
 
   const load = useCallback(async () => {
     const [s, auth, b, history, byAgent] = await Promise.all([
@@ -36,16 +46,12 @@ export default function SettingsPage() {
       api.getBudgetByAgent(30).catch(() => []),
     ]);
     setSettings(s);
-    setProviderAuth(auth);
+    applyProviderAuthState(auth);
     setBudget(b);
     setBudgetHistory(history);
     setBudgetByAgent(byAgent);
-    const googleOauth = auth?.providers
-      ?.find((provider) => provider.id === 'google')
-      ?.methods?.find((method) => method.id === 'google-gemini-cli');
-    setGoogleProjectId(googleOauth?.profile?.projectId || '');
     api.getTemplates().then(setTemplates).catch(() => {});
-  }, []);
+  }, [applyProviderAuthState]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -84,13 +90,7 @@ export default function SettingsPage() {
     setAuthBusy((prev) => ({ ...prev, [key]: true }));
     try {
       const next = await action();
-      setProviderAuth(next);
-      const googleOauth = next?.providers
-        ?.find((provider) => provider.id === 'google')
-        ?.methods?.find((method) => method.id === 'google-gemini-cli');
-      if (googleOauth?.profile?.projectId) {
-        setGoogleProjectId(googleOauth.profile.projectId);
-      }
+      applyProviderAuthState(next);
       toast.success(successMessage);
     } catch (err) {
       toast.error(err.message);
@@ -98,6 +98,90 @@ export default function SettingsPage() {
       setAuthBusy((prev) => ({ ...prev, [key]: false }));
     }
   };
+
+  const startCodexOAuth = async () => {
+    setAuthBusy((prev) => ({ ...prev, codex_login: true }));
+    const popup = typeof window !== 'undefined' ? window.open('', '_blank') : null;
+
+    try {
+      const result = await api.startCodexOAuth();
+      const flow = result?.flow || null;
+      setCodexOauthFlow(flow);
+      setCodexManualInput('');
+
+      if (flow?.authUrl) {
+        if (popup) {
+          popup.location.href = flow.authUrl;
+        } else if (typeof window !== 'undefined') {
+          window.open(flow.authUrl, '_blank');
+        }
+      } else if (popup) {
+        popup.close();
+      }
+
+      toast.success(
+        flow?.callbackReady
+          ? 'Browser opened for Codex sign-in'
+          : 'Codex sign-in started. Finish in browser, then paste the redirect URL below.'
+      );
+    } catch (err) {
+      if (popup) popup.close();
+      toast.error(err.message);
+    } finally {
+      setAuthBusy((prev) => ({ ...prev, codex_login: false }));
+    }
+  };
+
+  const completeCodexOAuth = async () => {
+    if (!codexOauthFlow?.id || !codexManualInput.trim()) return;
+
+    setAuthBusy((prev) => ({ ...prev, codex_manual: true }));
+    try {
+      const result = await api.completeCodexOAuth(codexOauthFlow.id, codexManualInput.trim());
+      applyProviderAuthState(result?.overview || providerAuth);
+      setCodexOauthFlow(null);
+      setCodexManualInput('');
+      toast.success('Codex OAuth connected');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setAuthBusy((prev) => ({ ...prev, codex_manual: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (!codexOauthFlow?.id || codexOauthFlow.status !== 'pending') return undefined;
+
+    let disposed = false;
+    const poll = async () => {
+      try {
+        const result = await api.getCodexOAuthStatus(codexOauthFlow.id);
+        if (disposed) return;
+        const nextFlow = result?.flow || null;
+        if (nextFlow?.status === 'success') {
+          applyProviderAuthState(result?.overview || providerAuth);
+          setCodexOauthFlow(null);
+          setCodexManualInput('');
+          toast.success('Codex OAuth connected');
+          return;
+        }
+        setCodexOauthFlow(nextFlow);
+      } catch (err) {
+        if (!disposed) {
+          setCodexOauthFlow((prev) => (
+            prev ? { ...prev, error: err.message || 'Failed to refresh Codex OAuth status.' } : prev
+          ));
+        }
+      }
+    };
+
+    poll();
+    const timer = setInterval(poll, 1500);
+    return () => {
+      disposed = true;
+      clearInterval(timer);
+    };
+  }, [applyProviderAuthState, codexOauthFlow?.id, codexOauthFlow?.status, providerAuth]);
 
   return (
     <div className="flex h-screen">
@@ -280,7 +364,7 @@ export default function SettingsPage() {
                         <div>
                           <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>OpenAI Codex OAuth</p>
                           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            Mirrors OpenClaw&apos;s Codex OAuth profile. Imported credentials are synced into local Codex auth so existing `codex-cli` agents can use them.
+                            Mirrors OpenClaw&apos;s browser-based Codex OAuth flow. AgentWork stores the OAuth profile directly, then syncs it into local Codex auth for chat and task runs.
                           </p>
                         </div>
                         <AuthMethodBadge method={getAuthMethod('openai', 'openai-codex')} />
@@ -288,16 +372,23 @@ export default function SettingsPage() {
                       <div className="flex flex-wrap gap-2">
                         <button
                           className="btn btn-primary text-sm"
+                          disabled={authBusy.codex_login}
+                          onClick={startCodexOAuth}
+                        >
+                          {authBusy.codex_login ? 'Opening...' : 'Connect in browser'}
+                        </button>
+                        <button
+                          className="btn btn-ghost text-sm"
                           disabled={authBusy.codex_import}
                           onClick={() =>
                             runAuthAction(
                               'codex_import',
                               () => api.importCodexOAuth(),
-                              'Codex OAuth imported from local auth'
+                              'Codex OAuth imported from ~/.codex/auth.json'
                             )
                           }
                         >
-                          {authBusy.codex_import ? 'Importing...' : 'Import from ~/.codex'}
+                          {authBusy.codex_import ? 'Importing...' : 'Import existing auth.json'}
                         </button>
                         {getAuthMethod('openai', 'openai-codex')?.configured && (
                           <button
@@ -314,6 +405,53 @@ export default function SettingsPage() {
                           </button>
                         )}
                       </div>
+                      {codexOauthFlow?.id ? (
+                        <div
+                          className="mt-3 p-3 rounded-lg border space-y-3"
+                          style={{ borderColor: 'var(--border)', background: 'var(--bg-primary)' }}
+                        >
+                          <div className="space-y-1">
+                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                              {codexOauthFlow.callbackReady
+                                ? 'Finish the OpenAI sign-in in the browser tab that was opened. If the localhost callback does not complete, paste the full redirect URL or the authorization code below.'
+                                : 'The localhost callback on port 1455 is not available. Finish the OpenAI sign-in in the browser, then paste the full redirect URL or the authorization code below.'}
+                            </p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                              Expected callback: <code>http://localhost:1455/auth/callback</code>
+                            </p>
+                            {codexOauthFlow.error ? (
+                              <p className="text-[11px]" style={{ color: 'var(--danger)' }}>
+                                {codexOauthFlow.error}
+                              </p>
+                            ) : null}
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <input
+                              className="input font-mono text-sm min-w-[240px] flex-1"
+                              value={codexManualInput}
+                              onChange={(e) => setCodexManualInput(e.target.value)}
+                              placeholder="Paste redirect URL or authorization code"
+                            />
+                            <button
+                              className="btn btn-secondary text-sm"
+                              disabled={!codexManualInput.trim() || authBusy.codex_manual}
+                              onClick={completeCodexOAuth}
+                            >
+                              {authBusy.codex_manual ? 'Completing...' : 'Complete manually'}
+                            </button>
+                            <button
+                              className="btn btn-ghost text-sm"
+                              onClick={() => {
+                                if (codexOauthFlow?.authUrl && typeof window !== 'undefined') {
+                                  window.open(codexOauthFlow.authUrl, '_blank');
+                                }
+                              }}
+                            >
+                              Open sign-in again
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                       <AuthMethodMeta method={getAuthMethod('openai', 'openai-codex')} />
                     </div>
 

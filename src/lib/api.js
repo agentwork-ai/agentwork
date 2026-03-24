@@ -98,6 +98,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({}),
     }),
+  startCodexOAuth: () =>
+    request('/api/settings/provider-auth/openai-codex/login', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  getCodexOAuthStatus: (flowId) =>
+    request(`/api/settings/provider-auth/openai-codex/login/${encodeURIComponent(flowId)}`),
+  completeCodexOAuth: (flowId, authorizationResponse) =>
+    request(`/api/settings/provider-auth/openai-codex/login/${encodeURIComponent(flowId)}/complete`, {
+      method: 'POST',
+      body: JSON.stringify({ authorization_response: authorizationResponse }),
+    }),
   importGeminiOAuth: (projectId) =>
     request('/api/settings/provider-auth/google-gemini-cli/import', {
       method: 'POST',

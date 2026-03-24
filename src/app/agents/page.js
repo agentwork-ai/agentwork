@@ -118,7 +118,7 @@ const OAUTH_PROVIDERS = [
     providerId: 'openai',
     methodId: 'openai-codex',
     label: 'OpenAI Codex OAuth',
-    description: 'Uses the imported Codex OAuth profile from Settings.',
+    description: 'Uses the saved Codex OAuth connection from Settings.',
     runtime: 'cli',
   },
 ];
@@ -690,7 +690,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
               </div>
               {isOauthCodex ? (
                 <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
-                  Codex OAuth agents run through the Codex SDK. Model selection is handled by your local Codex auth/config, so no model picker is needed here.
+                  Codex OAuth agents run through the Codex SDK. Model selection is handled by your local Codex auth/config after you connect it in Settings, so no model picker is needed here.
                 </div>
               ) : (
                 <div>

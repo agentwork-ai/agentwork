@@ -4,10 +4,13 @@ const { db, logAudit } = require('../db');
 const { encrypt, decrypt, isSensitiveKey } = require('../crypto');
 const {
   buildAuthOverview,
+  completeCodexOAuthFlow,
   deleteProfile,
+  getCodexOAuthFlowStatus,
   importCodexCliProfile,
   importGeminiCliProfile,
   saveAnthropicSetupToken,
+  startCodexOAuthFlow,
 } = require('../services/provider-auth');
 
 // Get all settings (decrypt sensitive values)
@@ -39,6 +42,34 @@ router.post('/provider-auth/openai-codex/import', (req, res) => {
     importCodexCliProfile();
     logAudit('update', 'provider_auth', 'openai-codex', 'import-local');
     res.json(buildAuthOverview());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/provider-auth/openai-codex/login', async (req, res) => {
+  try {
+    const result = await startCodexOAuthFlow();
+    logAudit('update', 'provider_auth', 'openai-codex', 'oauth-start');
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.get('/provider-auth/openai-codex/login/:flowId', (req, res) => {
+  try {
+    res.json(getCodexOAuthFlowStatus(req.params.flowId));
+  } catch (err) {
+    res.status(404).json({ error: err.message });
+  }
+});
+
+router.post('/provider-auth/openai-codex/login/:flowId/complete', async (req, res) => {
+  try {
+    const result = await completeCodexOAuthFlow(req.params.flowId, req.body?.authorization_response);
+    logAudit('update', 'provider_auth', 'openai-codex', 'oauth-complete');
+    res.json(result);
   } catch (err) {
     res.status(400).json({ error: err.message });
   }
