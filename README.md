@@ -50,7 +50,8 @@ Open **http://localhost:1248** — the onboarding wizard will guide you through 
 - **Agent Warm-Up Cache** — Pre-loads memory files for faster task startup
 - **Vision / Image Support** — Agents can analyze images via the `read_image` tool
 - **Self-Improving Prompts** — Track success/failure rates with prompt improvement suggestions
-- **OpenClaw-Style Workspace Files** — Agents use `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `TOOLS.md`, `USER.md`, `HEARTBEAT.md`, and `MEMORY.md`
+- **OpenClaw-Style Workspace Files** — Agents use `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `TOOLS.md`, `USER.md`, `HEARTBEAT.md`, and `MEMORY.md`
+- **Agent Types** — Smart Agents use the full workspace, Worker Agents use only `ROLE.md` + memory, and CLI Agents skip workspace markdown files
 
 ### Task Management
 - **5-Column Kanban** — Drag tasks to "Doing" and agents execute autonomously
@@ -195,6 +196,7 @@ To install the CLI globally: `npm link`
 ├── db/agentwork.db           # SQLite database (encrypted API keys)
 ├── agents/<id>/              # Per-agent memory
 │   ├── AGENTS.md             # Operating rules and learned conventions
+│   ├── ROLE.md               # Role-specific skills, strengths, and default responsibilities
 │   ├── SOUL.md               # Persona, tone, and boundaries
 │   ├── IDENTITY.md           # Name, vibe, emoji, avatar, identity hints
 │   ├── TOOLS.md              # Local environment notes and setup specifics
@@ -208,6 +210,12 @@ To install the CLI globally: `npm link`
 ├── logs/agentwork.log        # Server logs
 └── agentwork.pid             # Daemon PID
 ```
+
+Agent type behavior:
+
+- `Smart Agent`: loads all workspace markdown files
+- `Worker Agent`: loads `ROLE.md`, `MEMORY.md`, and recent daily memory notes
+- `CLI Agent`: loads no workspace markdown files; only `PROJECT.md` is used when project context is attached
 
 ## Environment Variables
 

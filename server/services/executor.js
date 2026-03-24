@@ -1,7 +1,7 @@
 const { db, uuidv4, DATA_DIR } = require('../db');
 const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent, createCodexClient } = require('./ai');
 const { getPluginTools } = require('../plugins');
-const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt } = require('./agent-context');
+const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt, normalizeAgentType } = require('./agent-context');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -345,6 +345,8 @@ async function handleCliChat(agent, userMessage, platformChatId) {
   const agentId = agent.id;
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const chatWorkDir = resolveChatWorkingDirectory();
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: true, includeHeartbeat: false });
+  const prompt = `${buildChatSystemPrompt(agent, agentContext)}\n\n## Latest User Message\n${userMessage}`;
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
@@ -358,7 +360,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
         throw new Error(`Failed to load Claude Agent SDK: ${importErr.message}. Is @anthropic-ai/claude-agent-sdk installed?`);
       }
       const session = getPersistedSession(agentId);
-      const result = await chatWithClaudeAgent(userMessage, session.session_id, chatWorkDir);
+      const result = await chatWithClaudeAgent(prompt, session.session_id, chatWorkDir);
       persistSession(agentId, result.sessionId, 'anthropic');
       responseContent = result.content;
       if (!responseContent?.trim()) {
@@ -379,7 +381,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
         session = { thread };
         agentSessions.set(agentId, session);
       }
-      const result = await chatWithCodexAgent(userMessage, session.thread);
+      const result = await chatWithCodexAgent(prompt, session.thread);
       responseContent = result.content;
       if (!responseContent?.trim()) {
         throw new Error('Codex completed without returning a response.');
@@ -1918,6 +1920,9 @@ function appendMemoryEntry(agentDir, title, content) {
 
 // Full AI-powered reflection after task completion — async, fire-and-forget
 async function reflectAfterTask(agent, agentDir, taskTitle, taskSummary, project) {
+  const agentType = normalizeAgentType(agent?.agent_type);
+  if (agentType === 'cli') return;
+
   appendDailyMemoryEntry(agentDir, taskTitle, taskSummary);
   if (!supportsApiReflection(agent)) {
     appendMemoryEntry(agentDir, taskTitle, taskSummary);
@@ -1928,14 +1933,26 @@ async function reflectAfterTask(agent, agentDir, taskTitle, taskSummary, project
     const today = new Date().toISOString().split('T')[0];
 
     const memory = readFile(path.join(agentDir, 'MEMORY.md'));
-    const userPrefs = readFile(path.join(agentDir, 'USER.md'));
-    const agentRules = readFile(path.join(agentDir, 'AGENTS.md'));
-    const toolsNotes = readFile(path.join(agentDir, 'TOOLS.md'));
     let projectDoc = '';
     const projectDocPath = project?.path ? path.join(project.path, 'PROJECT.md') : null;
     if (projectDocPath && fs.existsSync(projectDocPath)) {
       projectDoc = fs.readFileSync(projectDocPath, 'utf8');
     }
+
+    const userPrefs = agentType === 'smart' ? readFile(path.join(agentDir, 'USER.md')) : '';
+    const agentRules = agentType === 'smart' ? readFile(path.join(agentDir, 'AGENTS.md')) : '';
+    const toolsNotes = agentType === 'smart' ? readFile(path.join(agentDir, 'TOOLS.md')) : '';
+    const workerJsonShape = `{
+  "MEMORY.md": "full updated content",
+  "PROJECT.md": "full updated content — only if project knowledge was gained"
+}`;
+    const smartJsonShape = `{
+  "MEMORY.md": "full updated content",
+  "USER.md": "full updated content — only if new user preferences/patterns were observed",
+  "AGENTS.md": "full updated content — only if new project conventions/tools/rules were learned",
+  "TOOLS.md": "full updated content — only if local environment notes or setup-specific shortcuts were learned",
+  "PROJECT.md": "full updated content — only if project knowledge was gained (tech stack, structure, commands, etc.)"
+}`;
 
     const response = await createCompletion(agent.provider, reflModel, [
       {
@@ -1953,7 +1970,7 @@ Summary: ${taskSummary}
 MEMORY.md:
 ${memory || '(empty)'}
 
-USER.md:
+${agentType === 'smart' ? `USER.md:
 ${userPrefs || '(empty)'}
 
 AGENTS.md:
@@ -1962,23 +1979,15 @@ ${agentRules || '(empty)'}
 TOOLS.md:
 ${toolsNotes || '(empty)'}
 
-${project ? `PROJECT.md (${project.path}/PROJECT.md):\n${projectDoc || '(empty - create it)'}` : ''}
+` : ''}${project ? `PROJECT.md (${project.path}/PROJECT.md):\n${projectDoc || '(empty - create it)'}` : ''}
 
 ## Instructions
 Analyze the completed task and return a JSON object with only the files that need updating:
-{
-  "MEMORY.md": "full updated content",
-  "USER.md": "full updated content — only if new user preferences/patterns were observed",
-  "AGENTS.md": "full updated content — only if new project conventions/tools/rules were learned",
-  "TOOLS.md": "full updated content — only if local environment notes or setup-specific shortcuts were learned",
-  "PROJECT.md": "full updated content — only if project knowledge was gained (tech stack, structure, commands, etc.)"
-}
+${agentType === 'smart' ? smartJsonShape : workerJsonShape}
 
 Rules:
 - MEMORY.md: Keep it curated and durable. Record decisions, preferences, or lessons worth carrying forward. The raw task log already lives in memory/YYYY-MM-DD.md.
-- USER.md: Update if the task revealed user preferences, coding style, or communication patterns.
-- AGENTS.md: Update if you learned project conventions (e.g. "uses yarn", "tests with Jest", "deploy with Vercel").
-- TOOLS.md: Update only for environment-specific notes such as aliases, scripts, hosts, devices, or local operational shortcuts.
+${agentType === 'smart' ? '- USER.md: Update if the task revealed user preferences, coding style, or communication patterns.\n- AGENTS.md: Update if you learned project conventions (e.g. "uses yarn", "tests with Jest", "deploy with Vercel").\n- TOOLS.md: Update only for environment-specific notes such as aliases, scripts, hosts, devices, or local operational shortcuts.' : '- Worker Agents only maintain memory plus project knowledge. Do not emit USER.md, AGENTS.md, TOOLS.md, ROLE.md, or any other file.'}
 - PROJECT.md: Document what the project does, tech stack, directory structure, key commands, recent changes. Very valuable — be detailed if this is new info.
 - Omit a key if that file genuinely needs no changes.`,
       },
@@ -1988,9 +1997,9 @@ Rules:
     const updates = parseJsonResponse(response.content);
 
     if (updates['MEMORY.md']) { fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), updates['MEMORY.md']); console.log(`[Reflect] MEMORY.md ← ${agent.name}`); }
-    if (updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name}`); }
-    if (updates['AGENTS.md']) { fs.writeFileSync(path.join(agentDir, 'AGENTS.md'), updates['AGENTS.md']); console.log(`[Reflect] AGENTS.md ← ${agent.name}`); }
-    if (updates['TOOLS.md']) { fs.writeFileSync(path.join(agentDir, 'TOOLS.md'), updates['TOOLS.md']); console.log(`[Reflect] TOOLS.md ← ${agent.name}`); }
+    if (agentType === 'smart' && updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name}`); }
+    if (agentType === 'smart' && updates['AGENTS.md']) { fs.writeFileSync(path.join(agentDir, 'AGENTS.md'), updates['AGENTS.md']); console.log(`[Reflect] AGENTS.md ← ${agent.name}`); }
+    if (agentType === 'smart' && updates['TOOLS.md']) { fs.writeFileSync(path.join(agentDir, 'TOOLS.md'), updates['TOOLS.md']); console.log(`[Reflect] TOOLS.md ← ${agent.name}`); }
     if (updates['PROJECT.md'] && project?.path) { fs.writeFileSync(path.join(project.path, 'PROJECT.md'), updates['PROJECT.md']); console.log(`[Reflect] PROJECT.md ← ${project.path}`); }
   } catch (err) {
     console.error(`[Reflect] Task reflection failed for ${agent.name}:`, err.message);
@@ -2000,6 +2009,9 @@ Rules:
 
 // Lightweight AI reflection after a chat exchange — async, fire-and-forget
 async function reflectAfterChat(agent, agentDir, userMessage, agentResponse) {
+  const agentType = normalizeAgentType(agent?.agent_type);
+  if (agentType === 'cli') return;
+
   if (!supportsApiReflection(agent)) {
     appendDailyMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 300)}\nAgent: ${agentResponse.slice(0, 300)}`);
     appendMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 150)}\nAgent: ${agentResponse.slice(0, 150)}`);
@@ -2010,7 +2022,14 @@ async function reflectAfterChat(agent, agentDir, userMessage, agentResponse) {
     const today = new Date().toISOString().split('T')[0];
 
     const memory = readFile(path.join(agentDir, 'MEMORY.md'));
-    const userPrefs = readFile(path.join(agentDir, 'USER.md'));
+    const userPrefs = agentType === 'smart' ? readFile(path.join(agentDir, 'USER.md')) : '';
+    const workerJsonShape = `{
+  "MEMORY.md": "full updated content"
+}`;
+    const smartJsonShape = `{
+  "MEMORY.md": "full updated content",
+  "USER.md": "full updated content — only if user preferences/patterns observed"
+}`;
 
     const response = await createCompletion(agent.provider, reflModel, [
       {
@@ -2028,19 +2047,16 @@ Agent: ${agentResponse.slice(0, 600)}
 MEMORY.md:
 ${memory || '(empty)'}
 
-USER.md:
+${agentType === 'smart' ? `USER.md:
 ${userPrefs || '(empty)'}
 
-## Instructions
+` : ''}## Instructions
 Return JSON with only files that need updating:
-{
-  "MEMORY.md": "full updated content",
-  "USER.md": "full updated content — only if user preferences/patterns observed"
-}
+${agentType === 'smart' ? smartJsonShape : workerJsonShape}
 
 Rules:
 - MEMORY.md: Add a brief entry only if something meaningful was discussed (skip trivial/greeting exchanges). Keep it curated, not chat-transcript-like.
-- USER.md: Update if the user expressed preferences, a working style, or communication patterns.
+${agentType === 'smart' ? '- USER.md: Update if the user expressed preferences, a working style, or communication patterns.' : '- Worker Agents do not update USER.md, AGENTS.md, TOOLS.md, ROLE.md, or other workspace files from chat reflection.'}
 - Return {} if nothing meaningful needs to be remembered.`,
       },
     ], { maxTokens: 1500 });
@@ -2049,7 +2065,7 @@ Rules:
     const updates = parseJsonResponse(response.content);
 
     if (updates['MEMORY.md']) { fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), updates['MEMORY.md']); console.log(`[Reflect] MEMORY.md ← ${agent.name} (chat)`); }
-    if (updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name} (chat)`); }
+    if (agentType === 'smart' && updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name} (chat)`); }
   } catch (err) {
     console.error(`[Reflect] Chat reflection failed for ${agent.name}:`, err.message);
     appendDailyMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 300)}\nAgent: ${agentResponse.slice(0, 300)}`);

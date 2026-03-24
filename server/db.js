@@ -50,7 +50,8 @@ db.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     avatar TEXT DEFAULT '🤖',
-    role TEXT DEFAULT 'General Developer',
+    role TEXT DEFAULT 'Assistant',
+    agent_type TEXT DEFAULT 'smart',
     auth_type TEXT DEFAULT 'api',
     provider TEXT DEFAULT 'anthropic',
     model TEXT DEFAULT 'claude-sonnet-4-20250514',
@@ -212,6 +213,9 @@ if (!agentCols.includes('fallback_model')) {
 }
 if (!agentCols.includes('allowed_tools')) {
   db.exec("ALTER TABLE agents ADD COLUMN allowed_tools TEXT DEFAULT ''");
+}
+if (!agentCols.includes('agent_type')) {
+  db.exec("ALTER TABLE agents ADD COLUMN agent_type TEXT DEFAULT 'smart'");
 }
 
 // Seed default settings if not present

@@ -1,0 +1,156 @@
+{
+  "agentTypes": [
+    {
+      "id": "smart",
+      "label": "Smart Agent",
+      "description": "Uses the full workspace context: AGENTS.md, ROLE.md, SOUL.md, IDENTITY.md, USER.md, TOOLS.md, HEARTBEAT.md, MEMORY.md, and recent daily memory.",
+      "recommendedFor": "assistant, CEO, CTO, PM, BA, and other strategic or generalist roles"
+    },
+    {
+      "id": "worker",
+      "label": "Worker Agent",
+      "description": "Uses only ROLE.md plus memory files. PROJECT.md can still be used when a project is attached.",
+      "recommendedFor": "developers, QA, designers, and implementation-focused specialists"
+    },
+    {
+      "id": "cli",
+      "label": "CLI Agent",
+      "description": "Does not load workspace markdown files. It only uses PROJECT.md when project context is provided.",
+      "recommendedFor": "bare CLI runners and low-context coding agents"
+    }
+  ],
+  "roles": [
+    {
+      "id": "assistant",
+      "label": "Assistant",
+      "defaultAgentType": "smart",
+      "summary": "High-context generalist who keeps work moving, tracks details, and helps the human think clearly."
+    },
+    {
+      "id": "ceo",
+      "label": "CEO",
+      "defaultAgentType": "smart",
+      "summary": "Company-level decision maker focused on strategy, priorities, risk, and business outcomes."
+    },
+    {
+      "id": "cto",
+      "label": "CTO",
+      "defaultAgentType": "smart",
+      "summary": "Technical strategist focused on architecture, platform direction, execution tradeoffs, and engineering leverage."
+    },
+    {
+      "id": "product-manager",
+      "label": "Product Manager",
+      "defaultAgentType": "smart",
+      "summary": "Owns product clarity, scope, prioritization, and outcome-driven delivery."
+    },
+    {
+      "id": "project-manager",
+      "label": "Project Manager",
+      "defaultAgentType": "smart",
+      "summary": "Drives timelines, dependencies, status tracking, execution rhythm, and stakeholder alignment."
+    },
+    {
+      "id": "business-analyst",
+      "label": "Business Analyst",
+      "defaultAgentType": "smart",
+      "summary": "Translates ambiguous business needs into concrete requirements, process changes, and decision-ready analysis."
+    },
+    {
+      "id": "engineering-manager",
+      "label": "Engineering Manager",
+      "defaultAgentType": "smart",
+      "summary": "Balances delivery, team health, staffing, execution process, and technical quality."
+    },
+    {
+      "id": "solutions-architect",
+      "label": "Solutions Architect",
+      "defaultAgentType": "smart",
+      "summary": "Designs end-to-end systems and integrations with strong attention to tradeoffs and long-term maintainability."
+    },
+    {
+      "id": "tech-lead",
+      "label": "Tech Lead",
+      "defaultAgentType": "worker",
+      "summary": "Guides implementation quality, technical direction, decomposition, and code-level execution."
+    },
+    {
+      "id": "frontend-developer",
+      "label": "Frontend Developer",
+      "defaultAgentType": "worker",
+      "summary": "Builds user-facing interfaces with strong attention to interaction quality, accessibility, and maintainable UI architecture."
+    },
+    {
+      "id": "backend-developer",
+      "label": "Backend Developer",
+      "defaultAgentType": "worker",
+      "summary": "Builds server-side systems, APIs, data flows, and operationally sound backend services."
+    },
+    {
+      "id": "full-stack-developer",
+      "label": "Full Stack Developer",
+      "defaultAgentType": "worker",
+      "summary": "Moves across frontend, backend, and integration layers to deliver complete features."
+    },
+    {
+      "id": "mobile-developer",
+      "label": "Mobile Developer",
+      "defaultAgentType": "worker",
+      "summary": "Builds native or cross-platform mobile experiences with attention to performance, UX, and release quality."
+    },
+    {
+      "id": "devops-engineer",
+      "label": "DevOps Engineer",
+      "defaultAgentType": "worker",
+      "summary": "Improves delivery pipelines, infra automation, reliability, observability, and deployment safety."
+    },
+    {
+      "id": "qa-engineer",
+      "label": "QA Engineer",
+      "defaultAgentType": "worker",
+      "summary": "Finds risk, validates behavior, designs test coverage, and protects release quality."
+    },
+    {
+      "id": "ui-ux-designer",
+      "label": "UI/UX Designer",
+      "defaultAgentType": "worker",
+      "summary": "Shapes flows, layouts, interaction patterns, and visual systems around user goals."
+    },
+    {
+      "id": "data-engineer",
+      "label": "Data Engineer",
+      "defaultAgentType": "worker",
+      "summary": "Builds reliable data pipelines, models, storage patterns, and analytics foundations."
+    },
+    {
+      "id": "machine-learning-engineer",
+      "label": "Machine Learning Engineer",
+      "defaultAgentType": "worker",
+      "summary": "Builds ML systems, evaluation loops, data preparation, and production model integrations."
+    },
+    {
+      "id": "security-engineer",
+      "label": "Security Engineer",
+      "defaultAgentType": "worker",
+      "summary": "Reduces security risk through threat modeling, hardening, review, and secure implementation guidance."
+    },
+    {
+      "id": "technical-writer",
+      "label": "Technical Writer",
+      "defaultAgentType": "worker",
+      "summary": "Turns complex systems and workflows into clear documentation, release notes, and decision records."
+    },
+    {
+      "id": "developer-relations",
+      "label": "Developer Relations",
+      "defaultAgentType": "smart",
+      "summary": "Bridges product, engineering, and developer audiences through examples, messaging, and ecosystem feedback."
+    },
+    {
+      "id": "support-engineer",
+      "label": "Support Engineer",
+      "defaultAgentType": "worker",
+      "summary": "Diagnoses customer issues, narrows root causes, and communicates fixes or workarounds clearly."
+    }
+  ]
+}

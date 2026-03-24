@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
+import agentMetadata from '../../shared/agent-metadata.json';
 import { toast } from 'react-hot-toast';
 import {
   Zap,
@@ -17,16 +18,8 @@ import {
   X,
 } from 'lucide-react';
 
-const ROLE_PRESETS = [
-  'General Developer',
-  'Senior React Developer',
-  'Backend Engineer',
-  'DevOps Engineer',
-  'Full-Stack Developer',
-  'UI/UX Developer',
-  'Data Engineer',
-  'QA / Test Engineer',
-];
+const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
+const AGENT_TYPE_PRESETS = agentMetadata.agentTypes;
 
 const PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic (Claude)' },
@@ -107,6 +100,12 @@ function getProviderAuthMethod(providerAuth, providerId, methodId) {
     ?.methods?.find((method) => method.id === methodId) || null;
 }
 
+function normalizeAgentType(agentType) {
+  if (agentType === 'worker') return 'worker';
+  if (agentType === 'cli') return 'cli';
+  return 'smart';
+}
+
 export default function OnboardingWizard({ onComplete }) {
   const [step, setStep] = useState(0);
   const [dontShowAgain, setDontShowAgain] = useState(true);
@@ -131,7 +130,8 @@ export default function OnboardingWizard({ onComplete }) {
   const [agentAuthType, setAgentAuthType] = useState('api'); // 'api' or 'cli'
   const [agent, setAgent] = useState({
     name: '',
-    role: 'General Developer',
+    role: 'Assistant',
+    agent_type: 'smart',
     provider: 'anthropic',
     model: 'claude-sonnet-4-6',
     customModel: '',
@@ -248,6 +248,7 @@ export default function OnboardingWizard({ onComplete }) {
       await api.createAgent({
         name: agent.name,
         role: agent.role,
+        agent_type: agent.agent_type,
         auth_type: agentAuthType,
         provider: agentAuthType === 'cli' ? 'claude-cli' : agent.provider,
         model: usesCliRuntime ? '' : modelId,
@@ -298,6 +299,7 @@ export default function OnboardingWizard({ onComplete }) {
     if (nextType === 'api') {
       setAgent((current) => ({
         ...current,
+        agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
         provider: 'anthropic',
         model: 'claude-sonnet-4-6',
         customModel: '',
@@ -308,6 +310,7 @@ export default function OnboardingWizard({ onComplete }) {
     if (nextType === 'cli') {
       setAgent((current) => ({
         ...current,
+        agent_type: 'cli',
         provider: 'claude-cli',
         model: '',
         customModel: '',
@@ -318,6 +321,7 @@ export default function OnboardingWizard({ onComplete }) {
     const fallback = configuredOauthOptions[0] || oauthOptions[0] || OAUTH_PROVIDERS[0];
     setAgent((current) => ({
       ...current,
+      agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
       provider: fallback.id,
       model: fallback.runtime === 'cli' ? '' : (MODELS[fallback.id]?.[0]?.id || ''),
       customModel: '',
@@ -628,6 +632,41 @@ export default function OnboardingWizard({ onComplete }) {
                   </div>
                 </div>
 
+                <div>
+                  <label className="label">Agent Type</label>
+                  <div className="space-y-2">
+                    {AGENT_TYPE_PRESETS.map((type) => (
+                      <label
+                        key={type.id}
+                        className="flex items-start gap-3 p-3 rounded-lg transition-colors"
+                        style={{
+                          background: agent.agent_type === type.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                          border: agent.agent_type === type.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                          cursor: 'pointer',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="onboarding-agent-type"
+                          className="mt-1"
+                          checked={agent.agent_type === type.id}
+                          onChange={() => setAgent({ ...agent, agent_type: type.id })}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{type.label}</span>
+                            {type.id === 'smart' ? (
+                              <span className="text-[10px]" style={{ color: '#5c7cfa' }}>Default</span>
+                            ) : null}
+                          </div>
+                          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{type.description}</p>
+                          <p className="text-[10px] mt-1" style={{ color: 'var(--text-secondary)' }}>Recommended for: {type.recommendedFor}</p>
+                        </div>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
                 {agentAuthType === 'cli' ? (
                   <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
                     The agent will use your locally installed <strong>Claude Code</strong> or <strong>Codex</strong> CLI.
@@ -759,7 +798,7 @@ export default function OnboardingWizard({ onComplete }) {
                 )}
 
                 <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                  Hired agents get `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md` automatically.
+                  Hired agents get `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md` automatically.
                 </p>
               </div>
             </div>

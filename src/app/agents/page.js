@@ -5,6 +5,7 @@ import Sidebar from '@/components/Sidebar';
 import BottomBar from '@/components/BottomBar';
 import { api } from '@/lib/api';
 import { useSocket } from '@/app/providers';
+import agentMetadata from '../../../shared/agent-metadata.json';
 import {
   Plus, Trash2, Edit2, Settings2, Brain, FileText, Copy,
   User, Shield, BookOpen, X, RotateCcw, Key, Terminal, MessageCircle,
@@ -13,18 +14,8 @@ import { toast } from 'react-hot-toast';
 
 const AVATARS = ['🤖', '🧠', '⚡', '🔧', '🎯', '🚀', '💡', '🛠️', '🔬', '🎨', '👾', '🦾'];
 
-const ROLE_PRESETS = [
-  'General Developer',
-  'Senior React Developer',
-  'Backend Engineer',
-  'DevOps Engineer',
-  'Full-Stack Developer',
-  'UI/UX Developer',
-  'Data Engineer',
-  'Security Engineer',
-  'QA / Test Engineer',
-  'Technical Writer',
-];
+const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
+const AGENT_TYPE_PRESETS = agentMetadata.agentTypes;
 
 const API_MODELS = {
   anthropic: [
@@ -139,6 +130,17 @@ const AUTH_MODE_META = {
 
 function getAuthModeMeta(authType) {
   return AUTH_MODE_META[authType] || AUTH_MODE_META.api;
+}
+
+function normalizeAgentType(agentType) {
+  if (agentType === 'worker') return 'worker';
+  if (agentType === 'cli') return 'cli';
+  return 'smart';
+}
+
+function getAgentTypeMeta(agentType) {
+  const normalized = normalizeAgentType(agentType);
+  return AGENT_TYPE_PRESETS.find((type) => type.id === normalized) || AGENT_TYPE_PRESETS[0];
 }
 
 function getProviderAuthMethod(providerAuth, providerId, methodId) {
@@ -258,6 +260,7 @@ export default function AgentsPage() {
                 <div key={agent.id} className="card p-5 group">
                   {(() => {
                     const authMode = getAuthModeMeta(agent.auth_type);
+                    const agentType = getAgentTypeMeta(agent.agent_type);
                     return (
                       <>
                   <div className="flex items-start gap-4">
@@ -280,6 +283,20 @@ export default function AgentsPage() {
                           color: authMode.color,
                         }}>
                           {authMode.label}
+                        </span>
+                        <span className="badge text-[10px]" style={{
+                          background: normalizeAgentType(agent.agent_type) === 'smart'
+                            ? '#4c6ef520'
+                            : normalizeAgentType(agent.agent_type) === 'worker'
+                            ? '#40c05720'
+                            : '#ff922b20',
+                          color: normalizeAgentType(agent.agent_type) === 'smart'
+                            ? '#5c7cfa'
+                            : normalizeAgentType(agent.agent_type) === 'worker'
+                            ? '#2f9e44'
+                            : '#f08c00',
+                        }}>
+                          {agentType.label}
                         </span>
                         <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                           {agent.provider}{agent.model ? ` / ${agent.model}` : ''}
@@ -341,7 +358,8 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   const [form, setForm] = useState({
     name: agent?.name || '',
     avatar: agent?.avatar || '🤖',
-    role: agent?.role || 'General Developer',
+    role: agent?.role || 'Assistant',
+    agent_type: normalizeAgentType(agent?.agent_type),
     auth_type: agent?.auth_type || 'api',
     provider: agent?.provider || 'anthropic',
     model: agent?.model || '',
@@ -409,6 +427,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     if (nextType === 'api') {
       setForm((current) => ({
         ...current,
+        agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
         auth_type: 'api',
         provider: 'anthropic',
         model: 'claude-sonnet-4-6',
@@ -419,6 +438,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     if (nextType === 'cli') {
       setForm((current) => ({
         ...current,
+        agent_type: 'cli',
         auth_type: 'cli',
         provider: 'claude-cli',
         model: '',
@@ -429,6 +449,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     const fallback = configuredOauthOptions[0] || oauthOptions[0] || OAUTH_PROVIDERS[0];
     setForm((current) => ({
       ...current,
+      agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
       auth_type: 'oauth',
       provider: fallback.id,
       model: fallback.runtime === 'cli' ? '' : (API_MODELS[fallback.id]?.[0]?.id || ''),
@@ -536,7 +557,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
           </div>
 
           <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>
-            Every hired agent is bootstrapped with `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md`.
+            Every hired agent is bootstrapped with `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md`.
           </p>
 
           <div className="flex justify-end mt-5">
@@ -552,6 +573,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   const isOauthCodex = isOauth && form.provider === 'openai-codex';
   const providerModels = !isCli && !isOauthCodex ? (API_MODELS[form.provider] || []) : [];
   const authMode = getAuthModeMeta(form.auth_type);
+  const roleOptions = ROLE_PRESETS.includes(form.role) ? ROLE_PRESETS : [form.role, ...ROLE_PRESETS];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
@@ -597,8 +619,42 @@ function AgentFormModal({ agent, onClose, onSaved }) {
           <div>
             <label className="label">Role</label>
             <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
-              {ROLE_PRESETS.map((r) => <option key={r} value={r}>{r}</option>)}
+              {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
+          </div>
+
+          <div>
+            <label className="label">Agent Type</label>
+            <div className="space-y-2">
+              {AGENT_TYPE_PRESETS.map((type) => (
+                <label
+                  key={type.id}
+                  className="flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                  style={{
+                    background: form.agent_type === type.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                    border: form.agent_type === type.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                  }}
+                >
+                  <input
+                    type="radio"
+                    name="agent-type"
+                    className="mt-1"
+                    checked={form.agent_type === type.id}
+                    onChange={() => setForm({ ...form, agent_type: type.id })}
+                  />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{type.label}</p>
+                      {type.id === 'smart' ? (
+                        <span className="badge text-[10px]" style={{ background: '#4c6ef520', color: '#5c7cfa' }}>Default</span>
+                      ) : null}
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{type.description}</p>
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>Recommended for: {type.recommendedFor}</p>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* Provider & Model */}
@@ -936,7 +992,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             </div>
           </div>
           <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-            Workspace files are created immediately when the agent is hired and are editable from the Memory drawer.
+            Workspace files are created immediately when the agent is hired and are editable from the Memory drawer, including role-specific guidance in `ROLE.md`.
           </p>
         </form>
       </div>
@@ -945,9 +1001,10 @@ function AgentFormModal({ agent, onClose, onSaved }) {
 }
 
 function MemoryModal({ agent, onClose }) {
-  const TABS = ['AGENTS.md', 'SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md'];
+  const TABS = ['AGENTS.md', 'ROLE.md', 'SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md'];
   const TAB_ICONS = {
     'AGENTS.md': Shield,
+    'ROLE.md': FileText,
     'SOUL.md': User,
     'IDENTITY.md': Key,
     'USER.md': Settings2,
