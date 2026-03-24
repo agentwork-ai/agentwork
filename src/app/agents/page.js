@@ -16,6 +16,13 @@ const AVATARS = ['🤖', '🧠', '⚡', '🔧', '🎯', '🚀', '💡', '🛠️
 
 const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
 const AGENT_TYPE_PRESETS = agentMetadata.agentTypes;
+const TOOL_RESTRICTION_OPTIONS = [
+  { name: 'read_file', label: 'Read File', desc: 'Read file contents' },
+  { name: 'write_file', label: 'Write File', desc: 'Create or overwrite files' },
+  { name: 'delete_path', label: 'Delete Path', desc: 'Delete files or directories' },
+  { name: 'run_bash', label: 'Run Bash', desc: 'Execute shell commands' },
+  { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
+];
 
 const API_MODELS = {
   anthropic: [
@@ -375,6 +382,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   const [saving, setSaving] = useState(false);
   const [providerAuth, setProviderAuth] = useState(null);
   const [providerAuthLoading, setProviderAuthLoading] = useState(false);
+  const [toolRestrictionsEnabled, setToolRestrictionsEnabled] = useState(Boolean(String(agent?.allowed_tools || '').trim()));
 
   // If editing, skip the type selection
   const showTypeSelector = !agent && !authType;
@@ -461,6 +469,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     setSaving(true);
     try {
       const data = { ...form };
+      data.allowed_tools = toolRestrictionsEnabled ? data.allowed_tools : '';
       if (data.auth_type === 'cli') {
         // CLI mode: model is optional
         if (!data.model) data.model = '';
@@ -572,8 +581,24 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   const isOauth = form.auth_type === 'oauth';
   const isOauthCodex = isOauth && form.provider === 'openai-codex';
   const providerModels = !isCli && !isOauthCodex ? (API_MODELS[form.provider] || []) : [];
+  const allowedToolSet = new Set(
+    (form.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
+  );
   const authMode = getAuthModeMeta(form.auth_type);
   const roleOptions = ROLE_PRESETS.includes(form.role) ? ROLE_PRESETS : [form.role, ...ROLE_PRESETS];
+  const toggleTool = (toolName) => {
+    setForm((current) => {
+      const next = new Set(
+        (current.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
+      );
+      if (next.has(toolName)) {
+        next.delete(toolName);
+      } else {
+        next.add(toolName);
+      }
+      return { ...current, allowed_tools: Array.from(next).join(',') };
+    });
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
@@ -829,54 +854,61 @@ function AgentFormModal({ agent, onClose, onSaved }) {
 
           {/* Tool Restrictions */}
           <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
-            <div className="flex items-center gap-2 mb-2">
-              <Shield size={16} style={{ color: 'var(--text-secondary)' }} />
-              <label className="label mb-0" style={{ marginBottom: 0 }}>Tool Restrictions</label>
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Shield size={16} style={{ color: 'var(--text-secondary)' }} />
+                <label className="label mb-0" style={{ marginBottom: 0 }}>Tool Restrictions</label>
+              </div>
+              <button
+                type="button"
+                className="flex items-center gap-2 cursor-pointer"
+                onClick={() => setToolRestrictionsEnabled((current) => !current)}
+              >
+                <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                  {toolRestrictionsEnabled ? 'Enabled' : 'Disabled'}
+                </span>
+                <span
+                  className="relative w-10 h-5 rounded-full transition-colors"
+                  style={{ background: toolRestrictionsEnabled ? 'var(--accent)' : 'var(--border)' }}
+                >
+                  <span
+                    className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                    style={{ left: toolRestrictionsEnabled ? '22px' : '2px' }}
+                  />
+                </span>
+              </button>
             </div>
-            <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-              Limit which tools this agent can use during task execution. Unchecked tools will not be available. Leave all unchecked to allow all tools.
-            </p>
-            <div className="space-y-2">
-              {[
-                { name: 'read_file', label: 'Read File', desc: 'Read file contents' },
-                { name: 'write_file', label: 'Write File', desc: 'Create or overwrite files' },
-                { name: 'delete_path', label: 'Delete Path', desc: 'Delete files or directories' },
-                { name: 'run_bash', label: 'Run Bash', desc: 'Execute shell commands' },
-                { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
-              ].map((tool) => {
-                const allowedSet = new Set(
-                  (form.allowed_tools || '').split(',').map((t) => t.trim()).filter(Boolean)
-                );
-                const checked = allowedSet.has(tool.name);
-                const toggleTool = () => {
-                  const next = new Set(allowedSet);
-                  if (checked) {
-                    next.delete(tool.name);
-                  } else {
-                    next.add(tool.name);
-                  }
-                  setForm({ ...form, allowed_tools: Array.from(next).join(',') });
-                };
-                return (
-                  <label key={tool.name}
-                    className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
-                    style={{
-                      background: checked ? 'var(--accent-light)' : 'var(--bg-secondary)',
-                      border: checked ? '1px solid var(--accent)' : '1px solid var(--border)',
-                    }}
-                  >
-                    <input type="checkbox" checked={checked} onChange={toggleTool} />
-                    <div className="flex-1 min-w-0">
-                      <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{tool.label}</span>
-                      <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>{tool.desc}</span>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-            <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
-              task_complete and request_help are always available regardless of restrictions.
-            </p>
+
+            {toolRestrictionsEnabled && (
+              <>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  Limit which tools this agent can use during task execution. Leave all unchecked to allow all tools.
+                </p>
+                <div className="space-y-2">
+                  {TOOL_RESTRICTION_OPTIONS.map((tool) => {
+                    const checked = allowedToolSet.has(tool.name);
+                    return (
+                      <label key={tool.name}
+                        className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                        style={{
+                          background: checked ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                          border: checked ? '1px solid var(--accent)' : '1px solid var(--border)',
+                        }}
+                      >
+                        <input type="checkbox" checked={checked} onChange={() => toggleTool(tool.name)} />
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{tool.label}</span>
+                          <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>{tool.desc}</span>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                  task_complete and request_help are always available regardless of restrictions.
+                </p>
+              </>
+            )}
           </div>
 
           {/* Chat Platform Integration */}

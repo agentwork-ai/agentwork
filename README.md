@@ -1,10 +1,14 @@
 # AgentWork
 
-[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/agentwork-ai/agentwork) [![Release](https://img.shields.io/badge/release-v1.0.0-blue)](https://github.com/agentwork-ai/agentwork/releases) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+[![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/agentwork-ai/agentwork) [![Release](https://img.shields.io/npm/v/agentwork/latest?label=release&color=blue)](https://www.npmjs.com/package/agentwork) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
 Autonomous AI agent orchestration platform for software teams. Hire role-based agents, give them OpenClaw-style workspace memory, let them collaborate in direct chat, mention-based group chat, and autonomous meetings, then turn decisions into project tasks and shipped code.
 
 <table>
+  <tr>
+    <td align="center"><strong>Dashboard</strong><br><img src="demo/dashboard.png" width="600" /></td>
+    <td align="center"><strong>Agent Planning Meeting</strong><br><img src="demo/meeting.png" width="600" /></td>
+  </tr>
   <tr>
     <td align="center"><strong>Kanban Board</strong><br><img src="demo/board.png" width="600" /></td>
     <td align="center"><strong>Task Detail</strong><br><img src="demo/task.png" width="600" /></td>

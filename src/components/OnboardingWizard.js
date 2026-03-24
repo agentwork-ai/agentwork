@@ -9,6 +9,7 @@ import {
   Key,
   FolderOpen,
   Users,
+  Shield,
   ChevronRight,
   ChevronLeft,
   Check,
@@ -20,6 +21,13 @@ import {
 
 const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
 const AGENT_TYPE_PRESETS = agentMetadata.agentTypes;
+const TOOL_RESTRICTION_OPTIONS = [
+  { name: 'read_file', label: 'Read File', desc: 'Read file contents' },
+  { name: 'write_file', label: 'Write File', desc: 'Create or overwrite files' },
+  { name: 'delete_path', label: 'Delete Path', desc: 'Delete files or directories' },
+  { name: 'run_bash', label: 'Run Bash', desc: 'Execute shell commands' },
+  { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
+];
 
 const PROVIDERS = [
   { id: 'anthropic', label: 'Anthropic (Claude)' },
@@ -135,7 +143,9 @@ export default function OnboardingWizard({ onComplete }) {
     provider: 'anthropic',
     model: 'claude-sonnet-4-6',
     customModel: '',
+    allowed_tools: '',
   });
+  const [toolRestrictionsEnabled, setToolRestrictionsEnabled] = useState(false);
 
   const currentStep = STEPS[step];
   const isLast = step === STEPS.length - 1;
@@ -252,6 +262,7 @@ export default function OnboardingWizard({ onComplete }) {
         auth_type: agentAuthType,
         provider: agentAuthType === 'cli' ? 'claude-cli' : agent.provider,
         model: usesCliRuntime ? '' : modelId,
+        allowed_tools: toolRestrictionsEnabled ? agent.allowed_tools : '',
       });
       toast.success('Agent hired!');
       handleNext();
@@ -283,6 +294,9 @@ export default function OnboardingWizard({ onComplete }) {
   };
 
   const providerModels = MODELS[agent.provider] || [];
+  const allowedToolSet = new Set(
+    (agent.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
+  );
   const oauthOptions = OAUTH_PROVIDERS.map((option) => {
     const method = getProviderAuthMethod(providerAuth, option.providerId, option.methodId);
     return {
@@ -292,6 +306,19 @@ export default function OnboardingWizard({ onComplete }) {
     };
   });
   const configuredOauthOptions = oauthOptions.filter((option) => option.configured);
+  const toggleAgentTool = (toolName) => {
+    setAgent((current) => {
+      const next = new Set(
+        (current.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
+      );
+      if (next.has(toolName)) {
+        next.delete(toolName);
+      } else {
+        next.add(toolName);
+      }
+      return { ...current, allowed_tools: Array.from(next).join(',') };
+    });
+  };
 
   const setAuthMode = (nextType) => {
     setAgentAuthType(nextType);
@@ -329,9 +356,9 @@ export default function OnboardingWizard({ onComplete }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.6)' }}>
       <div
-        className="card w-full max-w-lg animate-fade-in"
+        className="card w-full max-w-lg max-h-[88vh] overflow-hidden flex flex-col animate-fade-in"
         style={{ background: 'var(--bg-elevated)' }}
       >
         {/* Progress indicator */}
@@ -383,7 +410,7 @@ export default function OnboardingWizard({ onComplete }) {
         </div>
 
         {/* Step Content */}
-        <div className="px-6 pb-4" style={{ minHeight: '260px' }}>
+        <div className="px-6 pb-4 flex-1 overflow-y-auto" style={{ minHeight: '260px' }}>
           {/* Step 1: Welcome */}
           {currentStep.key === 'welcome' && (
             <div className="text-center py-6">
@@ -796,6 +823,69 @@ export default function OnboardingWizard({ onComplete }) {
                     </div>
                   </div>
                 )}
+
+                <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-2">
+                      <Shield size={16} style={{ color: 'var(--text-secondary)' }} />
+                      <label className="label mb-0" style={{ marginBottom: 0 }}>Tool Restrictions</label>
+                    </div>
+                    <button
+                      type="button"
+                      className="flex items-center gap-2 cursor-pointer"
+                      onClick={() => setToolRestrictionsEnabled((current) => !current)}
+                    >
+                      <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        {toolRestrictionsEnabled ? 'Enabled' : 'Disabled'}
+                      </span>
+                      <span
+                        className="relative w-10 h-5 rounded-full transition-colors"
+                        style={{ background: toolRestrictionsEnabled ? 'var(--accent)' : 'var(--border)' }}
+                      >
+                        <span
+                          className="absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform"
+                          style={{ left: toolRestrictionsEnabled ? '22px' : '2px' }}
+                        />
+                      </span>
+                    </button>
+                  </div>
+
+                  {toolRestrictionsEnabled && (
+                    <div className="space-y-3">
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        Limit which tools this agent can use during task execution. Leave all unchecked to allow all tools.
+                      </p>
+                      <div className="space-y-2">
+                        {TOOL_RESTRICTION_OPTIONS.map((tool) => {
+                          const checked = allowedToolSet.has(tool.name);
+                          return (
+                            <label
+                              key={tool.name}
+                              className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                              style={{
+                                background: checked ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                                border: checked ? '1px solid var(--accent)' : '1px solid var(--border)',
+                              }}
+                            >
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleAgentTool(tool.name)}
+                              />
+                              <div className="flex-1 min-w-0">
+                                <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{tool.label}</span>
+                                <span className="text-xs ml-2" style={{ color: 'var(--text-tertiary)' }}>{tool.desc}</span>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        `task_complete` and `request_help` stay available even when restrictions are enabled.
+                      </p>
+                    </div>
+                  )}
+                </div>
 
                 <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
                   Hired agents get `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md` automatically.
