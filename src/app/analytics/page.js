@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import { api } from '@/lib/api';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import { api } from '../../lib/api';
 import {
   BarChart3,
   TrendingUp,

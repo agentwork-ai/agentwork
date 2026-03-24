@@ -4,8 +4,8 @@ import { createContext, useContext, useEffect, useState, useCallback } from 'rea
 import { io } from 'socket.io-client';
 import { Toaster, toast } from 'react-hot-toast';
 import { X, Lock, Eye, EyeOff } from 'lucide-react';
-import KeyboardShortcuts from '@/components/KeyboardShortcuts';
-import { api } from '@/lib/api';
+import KeyboardShortcuts from '../components/KeyboardShortcuts';
+import { api } from '../lib/api';
 
 // Socket context
 const SocketContext = createContext(null);

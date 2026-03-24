@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import { api } from '@/lib/api';
-import { useSocket } from '@/app/providers';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import { api } from '../../lib/api';
+import { useSocket } from '../providers';
 import agentMetadata from '../../../shared/agent-metadata.json';
 import {
   Plus, Trash2, Edit2, Settings2, Brain, FileText, Copy,

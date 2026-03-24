@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import MarkdownContent from '@/components/MarkdownContent';
-import { api } from '@/lib/api';
-import { useSocket } from '@/app/providers';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import MarkdownContent from '../../components/MarkdownContent';
+import { api } from '../../lib/api';
+import { useSocket } from '../providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
   Layers, ChevronRight, ChevronDown, Clock, RefreshCw, Play, Lock,

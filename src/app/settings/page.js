@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import { api } from '@/lib/api';
-import { useTheme, useAuth } from '@/app/providers';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import { api } from '../../lib/api';
+import { useTheme, useAuth } from '../providers';
 import {
   Key, Globe, DollarSign, Shield, Palette, Bell,
   FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut, BarChart3,

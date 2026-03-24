@@ -1,11 +1,11 @@
 'use client';
 
 import { useEffect, useState, useRef, useCallback } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import OnboardingWizard from '@/components/OnboardingWizard';
-import { api } from '@/lib/api';
-import { useStatus, useSocket } from '@/app/providers';
+import Sidebar from '../components/Sidebar';
+import BottomBar from '../components/BottomBar';
+import OnboardingWizard from '../components/OnboardingWizard';
+import { api } from '../lib/api';
+import { useStatus, useSocket } from './providers';
 import {
   FolderKanban,
   Users,

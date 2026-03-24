@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { api } from '@/lib/api';
+import { api } from '../lib/api';
 import agentMetadata from '../../shared/agent-metadata.json';
 import { toast } from 'react-hot-toast';
 import {

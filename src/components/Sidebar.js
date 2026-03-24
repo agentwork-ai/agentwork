@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { useTheme, useUnread } from '@/app/providers';
+import { useTheme, useUnread } from '../app/providers';
 import {
   LayoutDashboard,
   FolderKanban,

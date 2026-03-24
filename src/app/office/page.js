@@ -1,10 +1,10 @@
 'use client';
 
 import { useEffect, useState, useRef } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import { api } from '@/lib/api';
-import { useSocket } from '@/app/providers';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import { api } from '../../lib/api';
+import { useSocket } from '../providers';
 import { X, Terminal, Cpu, BookOpen, Keyboard, Moon as SleepIcon, Cog, Clock } from 'lucide-react';
 
 const STATUS_CONFIG = {

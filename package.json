@@ -24,8 +24,10 @@
     "agentwork": "./bin/cli.js"
   },
   "files": [
+    ".next/",
     "bin/",
     "server/",
+    "shared/",
     "src/",
     "public/",
     "next.config.mjs",
@@ -40,6 +42,7 @@
     "dev": "nodemon --watch server --ext js,json server/index.js",
     "dev:no-reload": "node server/index.js",
     "build": "next build",
+    "prepack": "next build",
     "start": "NODE_ENV=production node server/index.js",
     "setup": "npm install && npm run build && echo '\\n✓ AgentWork ready! Run: npm start'",
     "lint": "next lint"
@@ -63,19 +66,19 @@
     "next": "^14.2.0",
     "node-cron": "^4.2.1",
     "openai": "^4.73.0",
+    "postcss": "^8.4.47",
     "pm2": "^5.4.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "react-hot-toast": "^2.4.1",
     "socket.io": "^4.8.0",
     "socket.io-client": "^4.8.0",
+    "tailwindcss": "^3.4.14",
     "telegraf": "^4.16.3",
+    "autoprefixer": "^10.4.20",
     "uuid": "^10.0.0"
   },
   "devDependencies": {
-    "autoprefixer": "^10.4.20",
-    "nodemon": "^3.1.0",
-    "postcss": "^8.4.47",
-    "tailwindcss": "^3.4.14"
+    "nodemon": "^3.1.0"
   }
 }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useStatus } from '@/app/providers';
+import { useStatus } from '../app/providers';
 import { Activity, Cpu, DollarSign, Coins, Wifi, WifiOff } from 'lucide-react';
 
 export default function BottomBar() {

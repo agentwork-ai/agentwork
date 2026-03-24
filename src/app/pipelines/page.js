@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, useMemo } from 'react';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import { api } from '@/lib/api';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import { api } from '../../lib/api';
 import {
   Plus, Save, Play, Trash2, X, ChevronDown,
   GitBranch, GripVertical, ArrowRight, List,

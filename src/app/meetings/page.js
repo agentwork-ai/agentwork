@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { toast } from 'react-hot-toast';
-import Sidebar from '@/components/Sidebar';
-import BottomBar from '@/components/BottomBar';
-import MarkdownContent from '@/components/MarkdownContent';
-import { api } from '@/lib/api';
-import { useSocket } from '@/app/providers';
+import Sidebar from '../../components/Sidebar';
+import BottomBar from '../../components/BottomBar';
+import MarkdownContent from '../../components/MarkdownContent';
+import { api } from '../../lib/api';
+import { useSocket } from '../providers';
 import {
   Plus,
   FolderOpen,
