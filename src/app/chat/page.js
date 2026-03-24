@@ -20,6 +20,7 @@ import {
   Plus,
   Trash2,
   Hash,
+  Pencil,
 } from 'lucide-react';
 
 const AUTH_MODE_META = {
@@ -104,7 +105,33 @@ function formatRoomHandles(room, agents) {
   return buildMentionEntries(roomAgents);
 }
 
-function GroupChatComposer({ agents, draft, setDraft, onClose, onSubmit }) {
+function getActiveMention(text, selectionStart) {
+  const beforeCaret = String(text || '').slice(0, selectionStart);
+  const match = beforeCaret.match(/(^|\s)@([a-zA-Z0-9._-]*)$/);
+  if (!match) return null;
+
+  const query = match[2] || '';
+  return {
+    query,
+    start: beforeCaret.length - query.length - 1,
+    end: selectionStart,
+  };
+}
+
+function filterMentionEntries(entries, query) {
+  const normalized = String(query || '').trim().toLowerCase();
+  if (!normalized) return entries.slice(0, 6);
+
+  return entries
+    .filter((entry) =>
+      entry.handle.toLowerCase().includes(normalized)
+      || entry.name.toLowerCase().includes(normalized)
+      || entry.role?.toLowerCase().includes(normalized)
+    )
+    .slice(0, 6);
+}
+
+function GroupChatComposer({ agents, draft, setDraft, onClose, onSubmit, mode = 'create' }) {
   const toggleAgent = (agentId) => {
     setDraft((current) => ({
       ...current,
@@ -119,9 +146,13 @@ function GroupChatComposer({ agents, draft, setDraft, onClose, onSubmit }) {
       <div className="w-full max-w-lg rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <div>
-            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Create Group Chat</h2>
+            <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              {mode === 'edit' ? 'Edit Group Chat' : 'Create Group Chat'}
+            </h2>
             <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-              Pick the agents that can be mentioned in this room.
+              {mode === 'edit'
+                ? 'Rename the room or update which agents can be mentioned in it.'
+                : 'Pick the agents that can be mentioned in this room.'}
             </p>
           </div>
           <button className="p-2 rounded-lg" onClick={onClose} style={{ color: 'var(--text-tertiary)' }}>
@@ -185,7 +216,7 @@ function GroupChatComposer({ agents, draft, setDraft, onClose, onSubmit }) {
             onClick={onSubmit}
             disabled={!draft.name.trim() || draft.agentIds.length === 0}
           >
-            Create Room
+            {mode === 'edit' ? 'Save Changes' : 'Create Room'}
           </button>
         </div>
       </div>
@@ -206,9 +237,12 @@ export default function ChatPage() {
   const [roomTypingAgents, setRoomTypingAgents] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState(null);
-  const [showCreateRoom, setShowCreateRoom] = useState(false);
+  const [roomEditorMode, setRoomEditorMode] = useState(null);
   const [roomDraft, setRoomDraft] = useState({ name: '', agentIds: [] });
+  const [mentionState, setMentionState] = useState(null);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const messagesEndRef = useRef(null);
+  const groupTextareaRef = useRef(null);
 
   const selectedAgent = selectedChat?.kind === 'agent'
     ? agents.find((agent) => agent.id === selectedChat.id) || null
@@ -217,6 +251,9 @@ export default function ChatPage() {
     ? rooms.find((room) => room.id === selectedChat.id) || null
     : null;
   const selectedRoomHandles = selectedRoom ? formatRoomHandles(selectedRoom, agents) : [];
+  const mentionSuggestions = selectedRoom && mentionState
+    ? filterMentionEntries(selectedRoomHandles, mentionState.query)
+    : [];
 
   const loadAgents = useCallback(async () => {
     try {
@@ -236,6 +273,18 @@ export default function ChatPage() {
     loadAgents();
     loadRooms();
   }, [loadAgents, loadRooms]);
+
+  useEffect(() => {
+    setActiveMentionIndex(0);
+  }, [mentionState?.query, selectedRoom?.id]);
+
+  useEffect(() => {
+    if (!mentionSuggestions.length && mentionState) {
+      setActiveMentionIndex(0);
+    } else if (activeMentionIndex >= mentionSuggestions.length && mentionSuggestions.length > 0) {
+      setActiveMentionIndex(mentionSuggestions.length - 1);
+    }
+  }, [mentionSuggestions.length, activeMentionIndex, mentionState]);
 
   useEffect(() => {
     if (!socket) return;
@@ -265,6 +314,10 @@ export default function ChatPage() {
         }
         return [room, ...current];
       });
+    };
+
+    const onRoomUpdated = (room) => {
+      setRooms((current) => current.map((item) => (item.id === room.id ? room : item)));
     };
 
     const onRoomDeleted = ({ id }) => {
@@ -300,6 +353,7 @@ export default function ChatPage() {
     socket.on('chat:message', onMessage);
     socket.on('room:message', onRoomMessage);
     socket.on('room:created', onRoomCreated);
+    socket.on('room:updated', onRoomUpdated);
     socket.on('room:deleted', onRoomDeleted);
     socket.on('room:typing', onRoomTyping);
     socket.on('room:typing_end', onRoomTypingEnd);
@@ -309,6 +363,7 @@ export default function ChatPage() {
       socket.off('chat:message', onMessage);
       socket.off('room:message', onRoomMessage);
       socket.off('room:created', onRoomCreated);
+      socket.off('room:updated', onRoomUpdated);
       socket.off('room:deleted', onRoomDeleted);
       socket.off('room:typing', onRoomTyping);
       socket.off('room:typing_end', onRoomTypingEnd);
@@ -329,6 +384,7 @@ export default function ChatPage() {
     setSearchQuery('');
     setRoomTypingAgents([]);
     setIsTyping(false);
+    setMentionState(null);
     clearUnread(agent.id);
     try {
       const loaded = await api.getMessages(agent.id);
@@ -347,6 +403,7 @@ export default function ChatPage() {
     setSearchQuery('');
     setRoomTypingAgents([]);
     setIsTyping(false);
+    setMentionState(null);
     try {
       const loaded = await api.getRoomMessages(room.id);
       setMessages(loaded);
@@ -362,20 +419,39 @@ export default function ChatPage() {
       name: firstNames ? `${firstNames} Room` : 'New Group Chat',
       agentIds: defaultAgentIds,
     });
-    setShowCreateRoom(true);
+    setRoomEditorMode('create');
   };
 
-  const createRoom = async () => {
+  const openEditRoomModal = () => {
+    if (!selectedRoom) return;
+    setRoomDraft({
+      name: selectedRoom.name || '',
+      agentIds: selectedRoom.agent_ids || [],
+    });
+    setRoomEditorMode('edit');
+  };
+
+  const saveRoomDraft = async () => {
     try {
-      const room = await api.createRoom({
+      const payload = {
         name: roomDraft.name.trim(),
         agent_ids: roomDraft.agentIds,
-      });
-      setShowCreateRoom(false);
+      };
+
+      if (roomEditorMode === 'edit' && selectedRoom) {
+        const updatedRoom = await api.updateRoom(selectedRoom.id, payload);
+        setRoomEditorMode(null);
+        setRooms((current) => current.map((item) => (item.id === updatedRoom.id ? updatedRoom : item)));
+        await selectRoom(updatedRoom);
+        return;
+      }
+
+      const room = await api.createRoom(payload);
+      setRoomEditorMode(null);
       setRooms((current) => [room, ...current.filter((item) => item.id !== room.id)]);
       await selectRoom(room);
     } catch (err) {
-      toast.error(err.message || 'Failed to create room');
+      toast.error(err.message || `Failed to ${roomEditorMode === 'edit' ? 'update' : 'create'} room`);
     }
   };
 
@@ -387,16 +463,71 @@ export default function ChatPage() {
       setSelectedChat(null);
       setMessages([]);
       setRoomTypingAgents([]);
+      setMentionState(null);
     } catch (err) {
       toast.error(err.message || 'Failed to delete room');
     }
   };
 
-  const insertMention = (handle) => {
-    setInput((current) => {
-      const prefix = current && !/\s$/.test(current) ? `${current} ` : current;
-      return `${prefix}@${handle} `;
+  const syncMentionState = useCallback((value, selectionStart) => {
+    if (!selectedRoom) {
+      setMentionState(null);
+      return;
+    }
+    setMentionState(getActiveMention(value, selectionStart));
+  }, [selectedRoom]);
+
+  const replaceMention = useCallback((handle, override = null) => {
+    const activeMention = override || mentionState;
+    const textarea = groupTextareaRef.current;
+
+    if (!textarea) {
+      setInput((current) => {
+        const prefix = current && !/\s$/.test(current) ? `${current} ` : current;
+        return `${prefix}@${handle} `;
+      });
+      return;
+    }
+
+    if (!activeMention) {
+      const selectionStart = textarea.selectionStart ?? input.length;
+      const selectionEnd = textarea.selectionEnd ?? selectionStart;
+      const before = input.slice(0, selectionStart);
+      const after = input.slice(selectionEnd);
+      const insertion = `${before && !/\s$/.test(before) ? ' ' : ''}@${handle} `;
+      const nextValue = `${before}${insertion}${after}`;
+      const cursorPos = before.length + insertion.length;
+      setInput(nextValue);
+      setMentionState(null);
+      requestAnimationFrame(() => {
+        textarea.focus();
+        textarea.setSelectionRange(cursorPos, cursorPos);
+      });
+      return;
+    }
+
+    const nextValue = `${input.slice(0, activeMention.start)}@${handle} ${input.slice(activeMention.end)}`;
+    const cursorPos = activeMention.start + handle.length + 2;
+    setInput(nextValue);
+    setMentionState(null);
+    requestAnimationFrame(() => {
+      textarea.focus();
+      textarea.setSelectionRange(cursorPos, cursorPos);
     });
+  }, [input, mentionState]);
+
+  const insertMention = (handle) => {
+    replaceMention(handle);
+  };
+
+  const handleGroupInputChange = (e) => {
+    const nextValue = e.target.value;
+    setInput(nextValue);
+    syncMentionState(nextValue, e.target.selectionStart ?? nextValue.length);
+  };
+
+  const handleGroupSelection = (e) => {
+    syncMentionState(e.target.value, e.target.selectionStart ?? e.target.value.length);
   };
 
   const sendMessage = async () => {
@@ -411,12 +542,14 @@ export default function ChatPage() {
       });
       setInput('');
       setIsTyping(true);
+      setMentionState(null);
       return;
     }
 
     if (!selectedRoom) return;
 
     setInput('');
+    setMentionState(null);
     try {
       const result = await api.sendRoomMessage(selectedRoom.id, content);
       if (!result?.mentionedAgentIds?.length) {
@@ -429,6 +562,29 @@ export default function ChatPage() {
   };
 
   const handleKeyDown = (e) => {
+    if (selectedRoom && mentionSuggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setActiveMentionIndex((current) => (current + 1) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setActiveMentionIndex((current) => (current - 1 + mentionSuggestions.length) % mentionSuggestions.length);
+        return;
+      }
+      if (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey)) {
+        e.preventDefault();
+        insertMention(mentionSuggestions[activeMentionIndex]?.handle || mentionSuggestions[0].handle);
+        return;
+      }
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionState(null);
+        return;
+      }
+    }
+
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       sendMessage();
@@ -758,6 +914,10 @@ export default function ChatPage() {
                       <Plus size={14} />
                       New Room
                     </button>
+                    <button className="btn btn-ghost !px-3 !py-2 !text-xs" onClick={openEditRoomModal}>
+                      <Pencil size={14} />
+                      Edit
+                    </button>
                     <button className="btn btn-ghost !px-3 !py-2 !text-xs" onClick={deleteSelectedRoom}>
                       <Trash2 size={14} />
                       Delete
@@ -881,15 +1041,63 @@ export default function ChatPage() {
 
                 <div className="p-4 border-t" style={{ borderColor: 'var(--border)' }}>
                   <div className="flex items-end gap-2">
-                    <textarea
-                      className="input flex-1 resize-none"
-                      rows={1}
-                      placeholder={selectedRoomHandles.length ? `Message room and mention agents like @${selectedRoomHandles[0].handle}...` : 'Message room...'}
-                      value={input}
-                      onChange={(e) => setInput(e.target.value)}
-                      onKeyDown={handleKeyDown}
-                      style={{ minHeight: '42px', maxHeight: '120px' }}
-                    />
+                    <div className="relative flex-1">
+                      {mentionState ? (
+                        <div
+                          className="absolute left-0 right-0 bottom-full mb-2 rounded-2xl border overflow-hidden shadow-xl"
+                          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border)' }}
+                        >
+                          {mentionSuggestions.length > 0 ? (
+                            <>
+                              <div className="px-3 py-2 text-[11px] border-b" style={{ color: 'var(--text-tertiary)', borderColor: 'var(--border)' }}>
+                                Mention an agent. Use <span style={{ color: 'var(--text-secondary)' }}>↑ ↓</span> to navigate and <span style={{ color: 'var(--text-secondary)' }}>Enter</span> to insert.
+                              </div>
+                              <div className="max-h-64 overflow-auto">
+                                {mentionSuggestions.map((entry, index) => (
+                                  <button
+                                    key={entry.id}
+                                    className="w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors"
+                                    style={{
+                                      background: index === activeMentionIndex ? 'var(--accent-light)' : 'transparent',
+                                      color: 'var(--text-primary)',
+                                    }}
+                                    onMouseDown={(e) => {
+                                      e.preventDefault();
+                                      insertMention(entry.handle);
+                                    }}
+                                    onMouseEnter={() => setActiveMentionIndex(index)}
+                                  >
+                                    <span className="text-lg shrink-0">{entry.avatar}</span>
+                                    <div className="min-w-0 flex-1">
+                                      <p className="text-sm font-medium truncate">{entry.name}</p>
+                                      <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+                                        @{entry.handle}{entry.role ? ` · ${entry.role}` : ''}
+                                      </p>
+                                    </div>
+                                  </button>
+                                ))}
+                              </div>
+                            </>
+                          ) : (
+                            <div className="px-3 py-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                              No matching agents in this room.
+                            </div>
+                          )}
+                        </div>
+                      ) : null}
+                      <textarea
+                        ref={groupTextareaRef}
+                        className="input flex-1 resize-none w-full"
+                        rows={1}
+                        placeholder={selectedRoomHandles.length ? `Message room and mention agents like @${selectedRoomHandles[0].handle}...` : 'Message room...'}
+                        value={input}
+                        onChange={handleGroupInputChange}
+                        onSelect={handleGroupSelection}
+                        onClick={handleGroupSelection}
+                        onKeyDown={handleKeyDown}
+                        style={{ minHeight: '42px', maxHeight: '120px' }}
+                      />
+                    </div>
                     <button className="btn btn-primary h-[42px] px-4" onClick={sendMessage} disabled={!input.trim()}>
                       <Send size={16} />
                     </button>
@@ -916,13 +1124,14 @@ export default function ChatPage() {
         <BottomBar />
       </div>
 
-      {showCreateRoom ? (
+      {roomEditorMode ? (
         <GroupChatComposer
           agents={agents}
           draft={roomDraft}
           setDraft={setRoomDraft}
-          onClose={() => setShowCreateRoom(false)}
-          onSubmit={createRoom}
+          mode={roomEditorMode}
+          onClose={() => setRoomEditorMode(null)}
+          onSubmit={saveRoomDraft}
         />
       ) : null}
     </div>

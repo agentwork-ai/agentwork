@@ -319,6 +319,37 @@ router.post('/', (req, res) => {
   res.status(201).json(room);
 });
 
+// ─── PUT /:id — Update a room ───
+router.put('/:id', (req, res) => {
+  const room = db.prepare('SELECT * FROM chat_rooms WHERE id = ?').get(req.params.id);
+  if (!room) return res.status(404).json({ error: 'Room not found' });
+
+  const nextName = String(req.body.name || '').trim();
+  if (!nextName) return res.status(400).json({ error: 'name is required' });
+
+  const nextAgentIds = Array.from(new Set(
+    Array.isArray(req.body.agent_ids)
+      ? req.body.agent_ids.filter(Boolean)
+      : JSON.parse(room.agent_ids || '[]')
+  ));
+
+  db.prepare('UPDATE chat_rooms SET name = ?, agent_ids = ? WHERE id = ?').run(
+    nextName,
+    JSON.stringify(nextAgentIds),
+    req.params.id,
+  );
+
+  const updatedRoom = db.prepare('SELECT * FROM chat_rooms WHERE id = ?').get(req.params.id);
+  updatedRoom.agent_ids = JSON.parse(updatedRoom.agent_ids || '[]');
+
+  logAudit('update', 'chat_room', req.params.id, { name: nextName, agent_ids: nextAgentIds });
+
+  const io = req.app.get('io');
+  if (io) io.emit('room:updated', updatedRoom);
+
+  res.json(updatedRoom);
+});
+
 // ─── GET /:id/messages — Get messages for a room ───
 router.get('/:id/messages', (req, res) => {
   const room = db.prepare('SELECT * FROM chat_rooms WHERE id = ?').get(req.params.id);
