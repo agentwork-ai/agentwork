@@ -3,10 +3,64 @@ const router = express.Router();
 const { db, uuidv4, DATA_DIR, logAudit } = require('../db');
 const fs = require('fs');
 const path = require('path');
+const {
+  STANDARD_AGENT_FILES,
+  ensureMemoryFiles,
+  getDefaultFileContent,
+} = require('../services/agent-context');
 
 // Lazy-load platforms to avoid circular deps
 function getPlatforms() {
   try { return require('../services/platforms'); } catch { return null; }
+}
+
+function listMarkdownFiles(dir, baseDir = dir) {
+  if (!fs.existsSync(dir)) return [];
+
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    const fullPath = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...listMarkdownFiles(fullPath, baseDir));
+      continue;
+    }
+    if (!entry.name.endsWith('.md')) continue;
+    files.push(path.relative(baseDir, fullPath));
+  }
+  return files.sort();
+}
+
+function copyMarkdownTree(srcDir, destDir, transform) {
+  for (const relPath of listMarkdownFiles(srcDir)) {
+    const srcPath = path.join(srcDir, relPath);
+    const destPath = path.join(destDir, relPath);
+    let content = fs.readFileSync(srcPath, 'utf8');
+    if (transform) content = transform(relPath, content);
+    fs.mkdirSync(path.dirname(destPath), { recursive: true });
+    fs.writeFileSync(destPath, content);
+  }
+}
+
+function replaceIdentityField(content, label, value) {
+  const lines = String(content || '').split(/\r?\n/);
+  let replaced = false;
+
+  const updated = lines.map((line) => {
+    const trimmed = line.trim().replace(/^\s*-\s*/, '').replace(/\*/g, '');
+    const colonIndex = trimmed.indexOf(':');
+    if (colonIndex === -1) return line;
+
+    const lineLabel = trimmed.slice(0, colonIndex).trim().toLowerCase();
+    if (lineLabel !== label.toLowerCase()) return line;
+
+    replaced = true;
+    const prefix = line.match(/^\s*-\s*/) ? '- ' : '';
+    return `${prefix}${label}: ${value}`;
+  });
+
+  if (!replaced) updated.push(`- ${label}: ${value}`);
+  return `${updated.join('\n').trimEnd()}\n`;
 }
 
 // Get all agents
@@ -103,16 +157,14 @@ router.get('/:id', (req, res) => {
 
   // Load all .md memory files from agent directory
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
+  ensureMemoryFiles(agent.id, agent);
   agent.memory = {};
-  if (fs.existsSync(agentDir)) {
-    const files = fs.readdirSync(agentDir).filter((f) => f.endsWith('.md'));
-    for (const file of files) {
-      agent.memory[file] = fs.readFileSync(path.join(agentDir, file), 'utf8');
-    }
+  for (const file of listMarkdownFiles(agentDir)) {
+    agent.memory[file] = fs.readFileSync(path.join(agentDir, file), 'utf8');
   }
   // Ensure standard files exist in response
-  for (const std of ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md']) {
-    if (!agent.memory[std]) agent.memory[std] = '';
+  for (const std of STANDARD_AGENT_FILES) {
+    if (!agent.memory[std]) agent.memory[std] = getDefaultFileContent(std, agent);
   }
   // Load shared TEAM.md
   const teamPath = path.join(DATA_DIR, 'TEAM.md');
@@ -153,57 +205,8 @@ router.post('/', async (req, res) => {
     allowed_tools || ''
   );
 
-  // Create memory directory with OpenClaw architecture
-  const agentDir = path.join(DATA_DIR, 'agents', id);
-  fs.mkdirSync(agentDir, { recursive: true });
-
-  const soulContent = `# ${name} - Soul Configuration
-## Role: ${role || 'General Developer'}
-## Personality
-${personality || 'Professional, thorough, and proactive. Writes clean, well-documented code.'}
-
-## Behavioral Rules
-- ALWAYS proceed autonomously — never ask the user for confirmation or clarification
-- Make reasonable assumptions and pick the best approach yourself
-- Follow existing code patterns and conventions
-- Test your changes when possible
-`;
-
-  const userContent = `# User Preferences
-## Code Style
-- Follow the project's existing conventions
-- Write clear, readable code
-- Add comments for complex logic
-
-## Communication
-- Be concise but thorough
-- Proactively report blockers
-- Summarize changes after completion
-`;
-
-  const agentsContent = `# Operational Rules
-## Autonomy
-- ALWAYS proceed with the task without asking the user for permission or confirmation
-- Make your best judgment on ambiguous requirements — do not stop to ask
-- If multiple approaches are possible, pick the most reasonable one and go
-
-## Workflow
-- Read PROJECT.md before starting any task if it exists
-- Log all significant actions to execution logs
-- Only use [NEED_HELP] if something is truly impossible (e.g. missing credentials, broken environment)
-`;
-
-  const memoryContent = `# ${name} - Long-term Memory
-## Initialized: ${new Date().toISOString()}
-No memories recorded yet.
-`;
-
-  fs.writeFileSync(path.join(agentDir, 'SOUL.md'), soulContent);
-  fs.writeFileSync(path.join(agentDir, 'USER.md'), userContent);
-  fs.writeFileSync(path.join(agentDir, 'AGENTS.md'), agentsContent);
-  fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), memoryContent);
-
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+  ensureMemoryFiles(id, agent);
   logAudit('create', 'agent', id, { name, role: role || 'General Developer' });
   const io = req.app.get('io');
   if (io) io.emit('agent:created', agent);
@@ -254,6 +257,7 @@ router.put('/:id', async (req, res) => {
   );
 
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  ensureMemoryFiles(req.params.id, agent);
   const io = req.app.get('io');
   if (io) io.emit('agent:updated', agent);
 
@@ -276,9 +280,9 @@ router.put('/:id/memory/:filename', (req, res) => {
   if (!agent) return res.status(404).json({ error: 'Agent not found' });
 
   const filename = req.params.filename;
-  // Allow standard files + any custom .md file (no path traversal)
-  if (!filename.endsWith('.md') || filename.includes('/') || filename.includes('..')) {
-    return res.status(400).json({ error: 'Invalid memory file. Must be a .md file with no path separators.' });
+  // Allow standard files + nested .md files under the agent directory (no path traversal)
+  if (!filename.endsWith('.md') || filename.includes('..') || path.isAbsolute(filename)) {
+    return res.status(400).json({ error: 'Invalid memory file. Must stay within the agent directory.' });
   }
 
   // TEAM.md is shared — stored at DATA_DIR level, not per-agent
@@ -288,7 +292,9 @@ router.put('/:id/memory/:filename', (req, res) => {
   }
 
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
+  ensureMemoryFiles(agent.id, agent);
   const filePath = path.join(agentDir, req.params.filename);
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
   fs.writeFileSync(filePath, req.body.content || '');
 
   res.json({ success: true });
@@ -375,24 +381,29 @@ router.post('/:id/clone', (req, res) => {
   ).run(id, cloneName, source.avatar, source.role, source.auth_type, source.provider,
     source.model, 'idle', source.personality, 0, '', '', '', '');
 
-  // Clone memory files
+  const cloneAgent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+  ensureMemoryFiles(id, cloneAgent);
+
+  // Clone workspace files
   const srcDir = path.join(DATA_DIR, 'agents', source.id);
   const destDir = path.join(DATA_DIR, 'agents', id);
   fs.mkdirSync(destDir, { recursive: true });
-  for (const file of ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md']) {
-    const srcPath = path.join(srcDir, file);
-    if (fs.existsSync(srcPath)) {
-      let content = fs.readFileSync(srcPath, 'utf8');
-      if (file === 'SOUL.md') content = content.replace(source.name, cloneName);
-      if (file === 'MEMORY.md') content = `# ${cloneName} - Long-term Memory\n## Cloned from: ${source.name}\n## ${new Date().toISOString()}\nNo new memories recorded yet.\n`;
-      fs.writeFileSync(path.join(destDir, file), content);
+  copyMarkdownTree(srcDir, destDir, (file, originalContent) => {
+    let content = originalContent;
+    if (file === 'SOUL.md') content = content.replace(source.name, cloneName);
+    if (file === 'IDENTITY.md') {
+      content = replaceIdentityField(content, 'Name', cloneName);
+      content = replaceIdentityField(content, 'Emoji', source.avatar || '🤖');
     }
-  }
+    if (file === 'MEMORY.md') {
+      content = `${getDefaultFileContent('MEMORY.md', cloneAgent)}\n## Clone Provenance\nCloned from: ${source.name}\nCloned at: ${new Date().toISOString()}\n`;
+    }
+    return content;
+  });
 
-  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
   const io = req.app.get('io');
-  if (io) io.emit('agent:created', agent);
-  res.status(201).json(agent);
+  if (io) io.emit('agent:created', cloneAgent);
+  res.status(201).json(cloneAgent);
 });
 
 // Send a message to an agent from another agent
@@ -454,7 +465,8 @@ router.post('/:id/clear-memory', (req, res) => {
 
   const agentDir = path.join(DATA_DIR, 'agents', agent.id);
   const memoryPath = path.join(agentDir, 'MEMORY.md');
-  fs.writeFileSync(memoryPath, `# ${agent.name} - Long-term Memory\n## Cleared: ${new Date().toISOString()}\nNo memories recorded yet.\n`);
+  ensureMemoryFiles(agent.id, agent);
+  fs.writeFileSync(memoryPath, `${getDefaultFileContent('MEMORY.md', agent)}\n## Reset\nCleared at: ${new Date().toISOString()}\n`);
 
   res.json({ success: true });
 });

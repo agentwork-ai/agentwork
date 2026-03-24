@@ -1,7 +1,7 @@
 const { db, uuidv4, DATA_DIR } = require('../db');
 const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
 const { getPluginTools } = require('../plugins');
-const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt, ensureMemoryFiles } = require('./agent-context');
+const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt } = require('./agent-context');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -19,9 +19,12 @@ function getAgentContext(agentId) {
   if (cached && Date.now() - cached.timestamp < CONTEXT_CACHE_TTL) return cached;
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const ctx = {
+    identity: readFileCached(path.join(agentDir, 'IDENTITY.md')),
     soul: readFileCached(path.join(agentDir, 'SOUL.md')),
+    tools: readFileCached(path.join(agentDir, 'TOOLS.md')),
     userPrefs: readFileCached(path.join(agentDir, 'USER.md')),
     rules: readFileCached(path.join(agentDir, 'AGENTS.md')),
+    heartbeat: readFileCached(path.join(agentDir, 'HEARTBEAT.md')),
     memory: readFileCached(path.join(agentDir, 'MEMORY.md')),
     timestamp: Date.now(),
   };
@@ -365,7 +368,7 @@ async function handleApiChat(agent, userMessage, platformChatId) {
       throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${labels[agent.provider] || agent.provider} API key.`);
     }
 
-    const agentContext = buildAgentContext(agentId, agent, { includeMemory: true });
+    const agentContext = buildAgentContext(agentId, agent, { includeMemory: true, includeHeartbeat: false });
 
     const recentMsgs = db.prepare('SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20').all(agentId).reverse();
     const messages = [
@@ -499,7 +502,7 @@ async function _executeTask(taskId, agentId) {
     if (isFlow) {
       await executeFlowTask(taskId, agentId, task, project, execState);
     } else if (agent.auth_type === 'cli') {
-      await executeTaskCli(taskId, agentId, agent, task, workDir, execState);
+      await executeTaskCli(taskId, agentId, agent, task, project, workDir, execState);
     } else {
       await executeTaskApi(taskId, agentId, agent, task, project, workDir, execState);
     }
@@ -684,7 +687,7 @@ async function executeFlowTask(taskId, mainAgentId, task, project, execState) {
 
 async function executeFlowStepApi(taskId, agentId, agent, task, flowItem, previousContext, project, workDir, execState, stepIdx, totalSteps) {
   // Flow steps use subagent context — skip MEMORY.md for token efficiency
-  const agentContext = buildAgentContext(agentId, agent, { includeMemory: false });
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: false, includeHeartbeat: false });
 
   let projectDoc = '';
   if (project?.path) {
@@ -789,7 +792,7 @@ Complete your step using the tools. When done, call task_complete with a summary
 }
 
 async function executeFlowStepCli(taskId, agentId, agent, task, flowItem, previousContext, workDir, execState, stepIdx, totalSteps) {
-  const agentContext = buildAgentContext(agentId, agent, { includeMemory: false });
+  const agentContext = buildAgentContext(agentId, agent, { includeMemory: false, includeHeartbeat: false });
   const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
 
   if (isCodex) ensureGitRepo(workDir, taskId);
@@ -903,8 +906,13 @@ function ensureGitRepo(workDir, taskId) {
   }
 }
 
-async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) {
-  const agentContext = buildAgentContext(agentId, agent, { includeMemory: true });
+async function executeTaskCli(taskId, agentId, agent, task, project, workDir, execState) {
+  const agentDir = path.join(DATA_DIR, 'agents', agentId);
+  const isRecurring = task.trigger_type === 'cron';
+  const agentContext = buildAgentContext(agentId, agent, {
+    includeMemory: !isRecurring,
+    includeHeartbeat: isRecurring,
+  });
 
   const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
   const sdkName = isCodex ? 'Codex' : 'Claude';
@@ -917,17 +925,23 @@ async function executeTaskCli(taskId, agentId, agent, task, workDir, execState) 
     ensureGitRepo(workDir, taskId);
   }
 
+  let projectDoc = '';
+  if (project?.path) {
+    const projDocPath = path.join(project.path, 'PROJECT.md');
+    if (fs.existsSync(projDocPath)) projectDoc = fs.readFileSync(projDocPath, 'utf8');
+  }
+
   const prompt = `You are ${agent.name}, a ${agent.role}.
 
 ${agentContext}
 
-## Task
+${projectDoc ? `## Project Documentation\n${projectDoc}\n\n` : ''}## Task
 Title: ${task.title}
 Description: ${task.description || 'No description provided.'}
 
 Working directory: ${workDir}
 
-Please complete this task autonomously. Analyze the codebase, plan your approach, make the necessary changes, and verify they work.`;
+${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the live checklist and ignore stale work if that file is empty.\n\n' : ''}Please complete this task autonomously. Analyze the codebase, plan your approach, make the necessary changes, and verify they work.`;
 
   addLog(taskId, 'info', `Prompt length: ${prompt.length} chars`);
 
@@ -1477,7 +1491,11 @@ function appendToolResults(messages, toolResults, provider) {
 // ─── API-mode task execution ───
 
 async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState) {
-  const agentContext = buildAgentContext(agentId, agent, { includeMemory: true });
+  const isRecurring = task.trigger_type === 'cron';
+  const agentContext = buildAgentContext(agentId, agent, {
+    includeMemory: !isRecurring,
+    includeHeartbeat: isRecurring,
+  });
 
   let projectDoc = '';
   if (project?.path) {
@@ -1528,7 +1546,13 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     ? '\n' + customToolDefs.map((t) => `- **${t.name}**: ${t.description}`).join('\n')
     : '';
 
-  const systemPrompt = buildTaskSystemPrompt(agent, agentContext, { projectDoc, projectActivity, customToolsPrompt, workDir: project?.path || workDir });
+  const systemPrompt = buildTaskSystemPrompt(agent, agentContext, {
+    projectDoc,
+    projectActivity,
+    customToolsPrompt,
+    workDir: project?.path || workDir,
+    includeHeartbeat: isRecurring,
+  });
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -1606,12 +1630,18 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
       }
 
       if (taskDone) {
-        addLog(taskId, 'success', 'Task completed!');
-        const completionMsg = `I've completed the task: ${task.title}\n\n${summary}`;
         const doneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
-        moveTask(taskId, doneStatus, completionMsg);
-        sendMessage(agentId, 'agent', completionMsg, taskId);
-        reflectAfterTask(agent, agentDir, task.title, summary, project);
+        const heartbeatAck = task.trigger_type === 'cron' && String(summary || '').trim() === 'HEARTBEAT_OK';
+        if (heartbeatAck) {
+          addLog(taskId, 'info', 'Recurring run completed with HEARTBEAT_OK.');
+          moveTask(taskId, doneStatus, 'HEARTBEAT_OK');
+        } else {
+          addLog(taskId, 'success', 'Task completed!');
+          const completionMsg = `I've completed the task: ${task.title}\n\n${summary}`;
+          moveTask(taskId, doneStatus, completionMsg);
+          sendMessage(agentId, 'agent', completionMsg, taskId);
+          reflectAfterTask(agent, agentDir, task.title, summary, project);
+        }
         try { require('./scheduler').onTaskCompleted(task); } catch {}
         break;
       }
@@ -1640,13 +1670,20 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
 
       // Legacy text signals (fallback)
       if (response.content?.includes('[TASK_COMPLETE]')) {
-        addLog(taskId, 'success', 'Task completed (text signal)!');
         const textSummary = extractSummary(response.content);
-        const textCompletionMsg = `I've completed the task: ${task.title}\n\n${textSummary}`;
         const textDoneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
-        moveTask(taskId, textDoneStatus, textCompletionMsg);
-        sendMessage(agentId, 'agent', textCompletionMsg, taskId);
-        reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);
+        const heartbeatAck = task.trigger_type === 'cron' && textSummary.trim() === 'HEARTBEAT_OK';
+        if (heartbeatAck) {
+          addLog(taskId, 'info', 'Recurring run completed with HEARTBEAT_OK.');
+          moveTask(taskId, textDoneStatus, 'HEARTBEAT_OK');
+        } else {
+          addLog(taskId, 'success', 'Task completed (text signal)!');
+          const textCompletionMsg = `I've completed the task: ${task.title}\n\n${textSummary}`;
+          moveTask(taskId, textDoneStatus, textCompletionMsg);
+          sendMessage(agentId, 'agent', textCompletionMsg, taskId);
+          reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);
+        }
+        try { require('./scheduler').onTaskCompleted(task); } catch {}
         break;
       }
 
@@ -1831,10 +1868,27 @@ function parseJsonResponse(content) {
   } catch { return {}; }
 }
 
+function formatLocalDate(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function appendDailyMemoryEntry(agentDir, title, content) {
+  const dailyDir = path.join(agentDir, 'memory');
+  fs.mkdirSync(dailyDir, { recursive: true });
+  const dailyPath = path.join(dailyDir, `${formatLocalDate()}.md`);
+  const existing = readFile(dailyPath) || `# ${formatLocalDate()}\n`;
+  const timestamp = new Date().toISOString();
+  const next = `${existing.trimEnd()}\n\n## ${timestamp} - ${title}\n${content}\n`;
+  fs.writeFileSync(dailyPath, next);
+}
+
 function appendMemoryEntry(agentDir, title, content) {
   const memPath = path.join(agentDir, 'MEMORY.md');
   const existing = readFile(memPath) || '';
-  const today = new Date().toISOString().split('T')[0];
+  const today = formatLocalDate();
   const updated = existing + `\n## ${today} - ${title}\n${content}\n`;
   if (updated.length > 8000) {
     const lines = updated.split('\n');
@@ -1848,6 +1902,7 @@ function appendMemoryEntry(agentDir, title, content) {
 
 // Full AI-powered reflection after task completion — async, fire-and-forget
 async function reflectAfterTask(agent, agentDir, taskTitle, taskSummary, project) {
+  appendDailyMemoryEntry(agentDir, taskTitle, taskSummary);
   if (agent.auth_type !== 'api') {
     appendMemoryEntry(agentDir, taskTitle, taskSummary);
     return;
@@ -1859,6 +1914,7 @@ async function reflectAfterTask(agent, agentDir, taskTitle, taskSummary, project
     const memory = readFile(path.join(agentDir, 'MEMORY.md'));
     const userPrefs = readFile(path.join(agentDir, 'USER.md'));
     const agentRules = readFile(path.join(agentDir, 'AGENTS.md'));
+    const toolsNotes = readFile(path.join(agentDir, 'TOOLS.md'));
     let projectDoc = '';
     const projectDocPath = project?.path ? path.join(project.path, 'PROJECT.md') : null;
     if (projectDocPath && fs.existsSync(projectDocPath)) {
@@ -1887,6 +1943,9 @@ ${userPrefs || '(empty)'}
 AGENTS.md:
 ${agentRules || '(empty)'}
 
+TOOLS.md:
+${toolsNotes || '(empty)'}
+
 ${project ? `PROJECT.md (${project.path}/PROJECT.md):\n${projectDoc || '(empty - create it)'}` : ''}
 
 ## Instructions
@@ -1895,13 +1954,15 @@ Analyze the completed task and return a JSON object with only the files that nee
   "MEMORY.md": "full updated content",
   "USER.md": "full updated content — only if new user preferences/patterns were observed",
   "AGENTS.md": "full updated content — only if new project conventions/tools/rules were learned",
+  "TOOLS.md": "full updated content — only if local environment notes or setup-specific shortcuts were learned",
   "PROJECT.md": "full updated content — only if project knowledge was gained (tech stack, structure, commands, etc.)"
 }
 
 Rules:
-- MEMORY.md: Always add a concise dated entry. Keep full history, trim oldest 40% if >8000 chars.
+- MEMORY.md: Keep it curated and durable. Record decisions, preferences, or lessons worth carrying forward. The raw task log already lives in memory/YYYY-MM-DD.md.
 - USER.md: Update if the task revealed user preferences, coding style, or communication patterns.
 - AGENTS.md: Update if you learned project conventions (e.g. "uses yarn", "tests with Jest", "deploy with Vercel").
+- TOOLS.md: Update only for environment-specific notes such as aliases, scripts, hosts, devices, or local operational shortcuts.
 - PROJECT.md: Document what the project does, tech stack, directory structure, key commands, recent changes. Very valuable — be detailed if this is new info.
 - Omit a key if that file genuinely needs no changes.`,
       },
@@ -1913,6 +1974,7 @@ Rules:
     if (updates['MEMORY.md']) { fs.writeFileSync(path.join(agentDir, 'MEMORY.md'), updates['MEMORY.md']); console.log(`[Reflect] MEMORY.md ← ${agent.name}`); }
     if (updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name}`); }
     if (updates['AGENTS.md']) { fs.writeFileSync(path.join(agentDir, 'AGENTS.md'), updates['AGENTS.md']); console.log(`[Reflect] AGENTS.md ← ${agent.name}`); }
+    if (updates['TOOLS.md']) { fs.writeFileSync(path.join(agentDir, 'TOOLS.md'), updates['TOOLS.md']); console.log(`[Reflect] TOOLS.md ← ${agent.name}`); }
     if (updates['PROJECT.md'] && project?.path) { fs.writeFileSync(path.join(project.path, 'PROJECT.md'), updates['PROJECT.md']); console.log(`[Reflect] PROJECT.md ← ${project.path}`); }
   } catch (err) {
     console.error(`[Reflect] Task reflection failed for ${agent.name}:`, err.message);
@@ -1923,7 +1985,7 @@ Rules:
 // Lightweight AI reflection after a chat exchange — async, fire-and-forget
 async function reflectAfterChat(agent, agentDir, userMessage, agentResponse) {
   if (agent.auth_type !== 'api') {
-    const today = new Date().toISOString().split('T')[0];
+    appendDailyMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 300)}\nAgent: ${agentResponse.slice(0, 300)}`);
     appendMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 150)}\nAgent: ${agentResponse.slice(0, 150)}`);
     return;
   }
@@ -1961,7 +2023,7 @@ Return JSON with only files that need updating:
 }
 
 Rules:
-- MEMORY.md: Add a brief entry only if something meaningful was discussed (skip trivial/greeting exchanges).
+- MEMORY.md: Add a brief entry only if something meaningful was discussed (skip trivial/greeting exchanges). Keep it curated, not chat-transcript-like.
 - USER.md: Update if the user expressed preferences, a working style, or communication patterns.
 - Return {} if nothing meaningful needs to be remembered.`,
       },
@@ -1974,6 +2036,7 @@ Rules:
     if (updates['USER.md']) { fs.writeFileSync(path.join(agentDir, 'USER.md'), updates['USER.md']); console.log(`[Reflect] USER.md ← ${agent.name} (chat)`); }
   } catch (err) {
     console.error(`[Reflect] Chat reflection failed for ${agent.name}:`, err.message);
+    appendDailyMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 300)}\nAgent: ${agentResponse.slice(0, 300)}`);
   }
 }
 

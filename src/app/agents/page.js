@@ -701,10 +701,18 @@ function AgentFormModal({ agent, onClose, onSaved }) {
 }
 
 function MemoryModal({ agent, onClose }) {
-  const TABS = ['SOUL.md', 'USER.md', 'AGENTS.md', 'MEMORY.md'];
-  const TAB_ICONS = { 'SOUL.md': User, 'USER.md': Settings2, 'AGENTS.md': Shield, 'MEMORY.md': BookOpen };
-  const [activeTab, setActiveTab] = useState('SOUL.md');
-  const [content, setContent] = useState(agent.memory?.['SOUL.md'] || '');
+  const TABS = ['AGENTS.md', 'SOUL.md', 'IDENTITY.md', 'USER.md', 'TOOLS.md', 'HEARTBEAT.md', 'MEMORY.md'];
+  const TAB_ICONS = {
+    'AGENTS.md': Shield,
+    'SOUL.md': User,
+    'IDENTITY.md': Key,
+    'USER.md': Settings2,
+    'TOOLS.md': Terminal,
+    'HEARTBEAT.md': MessageCircle,
+    'MEMORY.md': BookOpen,
+  };
+  const [activeTab, setActiveTab] = useState('AGENTS.md');
+  const [content, setContent] = useState(agent.memory?.['AGENTS.md'] || '');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -728,7 +736,7 @@ function MemoryModal({ agent, onClose }) {
     try {
       await api.clearAgentMemory(agent.id);
       if (activeTab === 'MEMORY.md') {
-        setContent(`# ${agent.name} - Long-term Memory\n## Cleared: ${new Date().toISOString()}\nNo memories recorded yet.\n`);
+        setContent(`# MEMORY.md - Long-Term Memory\n\nUse this file for durable, curated memory: decisions, preferences, project context, and things worth remembering across sessions.\n\n## Reset\nCleared at: ${new Date().toISOString()}\n`);
       }
       toast.success('Memory cleared');
     } catch (err) {
@@ -742,17 +750,17 @@ function MemoryModal({ agent, onClose }) {
         <div className="flex items-center justify-between p-4 border-b" style={{ borderColor: 'var(--border)' }}>
           <div className="flex items-center gap-2">
             <span className="text-xl">{agent.avatar}</span>
-            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{agent.name} — Memory Files</span>
+            <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{agent.name} — Workspace Files</span>
           </div>
           <button onClick={onClose} className="p-1" style={{ color: 'var(--text-tertiary)' }}><X size={18} /></button>
         </div>
 
-        <div className="flex border-b px-4" style={{ borderColor: 'var(--border)' }}>
+        <div className="flex border-b px-4 overflow-x-auto" style={{ borderColor: 'var(--border)' }}>
           {TABS.map((tab) => {
             const Icon = TAB_ICONS[tab];
             return (
               <button key={tab}
-                className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors"
+                className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 transition-colors whitespace-nowrap"
                 style={{
                   borderColor: activeTab === tab ? 'var(--accent)' : 'transparent',
                   color: activeTab === tab ? 'var(--accent)' : 'var(--text-tertiary)',

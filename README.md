@@ -50,6 +50,7 @@ Open **http://localhost:1248** — the onboarding wizard will guide you through 
 - **Agent Warm-Up Cache** — Pre-loads memory files for faster task startup
 - **Vision / Image Support** — Agents can analyze images via the `read_image` tool
 - **Self-Improving Prompts** — Track success/failure rates with prompt improvement suggestions
+- **OpenClaw-Style Workspace Files** — Agents use `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `TOOLS.md`, `USER.md`, `HEARTBEAT.md`, and `MEMORY.md`
 
 ### Task Management
 - **5-Column Kanban** — Drag tasks to "Doing" and agents execute autonomously
@@ -193,10 +194,14 @@ To install the CLI globally: `npm link`
 ~/.agentwork/
 ├── db/agentwork.db           # SQLite database (encrypted API keys)
 ├── agents/<id>/              # Per-agent memory
-│   ├── SOUL.md               # Personality and behavioral rules
-│   ├── USER.md               # User code style preferences
-│   ├── AGENTS.md             # Operational safety rules
-│   ├── MEMORY.md             # Auto-summarized long-term memory
+│   ├── AGENTS.md             # Operating rules and learned conventions
+│   ├── SOUL.md               # Persona, tone, and boundaries
+│   ├── IDENTITY.md           # Name, vibe, emoji, avatar, identity hints
+│   ├── TOOLS.md              # Local environment notes and setup specifics
+│   ├── USER.md               # User preferences and profile
+│   ├── HEARTBEAT.md          # Checklist for recurring scheduled work
+│   ├── MEMORY.md             # Curated long-term memory
+│   ├── memory/YYYY-MM-DD.md  # Daily raw notes and recent context
 │   └── *.md                  # Custom memory files
 ├── TEAM.md                   # Shared memory across all agents
 ├── plugins/                  # Third-party plugins
