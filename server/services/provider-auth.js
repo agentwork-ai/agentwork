@@ -596,7 +596,11 @@ async function completeCodexOAuthFlow(flowId, authorizationResponse) {
 
 function ensureCodexCliAuthFromStoredProfile() {
   let profile = loadProfile(CODEX_PROVIDER);
-  if (!profile?.access || !profile?.refresh) return false;
+  if (!profile?.access || !profile?.refresh) {
+    const localProfile = readCodexFileCredentials();
+    if (!localProfile?.access || !localProfile?.refresh) return false;
+    profile = saveProfile(CODEX_PROVIDER, localProfile);
+  }
 
   const codexHome = computeCodexHome();
   const authPath = path.join(codexHome, 'auth.json');
@@ -619,12 +623,19 @@ function ensureCodexCliAuthFromStoredProfile() {
 
   const existingTokens = existing?.tokens && typeof existing.tokens === 'object' ? existing.tokens : {};
   const profileTokens = profile?.tokens && typeof profile.tokens === 'object' ? profile.tokens : {};
+  const nextTokens = {
+    ...existingTokens,
+    ...profileTokens,
+  };
+  delete nextTokens.api_key;
+  delete nextTokens.OPENAI_API_KEY;
+  delete nextTokens.openai_api_key;
+  delete nextTokens.apiKey;
+
   const payload = {
     ...existing,
-    OPENAI_API_KEY: 'oauth',
     tokens: {
-      ...existingTokens,
-      ...profileTokens,
+      ...nextTokens,
       access_token: profile.access,
       refresh_token: profile.refresh,
       ...(profile.accountId ? { account_id: profile.accountId } : {}),
@@ -632,6 +643,10 @@ function ensureCodexCliAuthFromStoredProfile() {
     },
     last_refresh: normalizeLastRefresh(profile.lastRefresh),
   };
+  delete payload.OPENAI_API_KEY;
+  delete payload.api_key;
+  delete payload.openai_api_key;
+  delete payload.apiKey;
 
   fs.mkdirSync(codexHome, { recursive: true });
   fs.writeFileSync(authPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 });
