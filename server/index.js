@@ -125,6 +125,7 @@ app.prepare().then(() => {
   server.use('/api/agents', require('./routes/agents'));
   server.use('/api/settings', require('./routes/settings'));
   server.use('/api/chat', require('./routes/chat'));
+  server.use('/api/meetings', require('./routes/meetings'));
   server.use('/api/files', require('./routes/files'));
   server.use('/api/templates', require('./routes/templates'));
   server.use('/api/rooms', require('./routes/rooms'));
@@ -212,6 +213,13 @@ app.prepare().then(() => {
         { method: 'GET', path: '/api/chat/:agentId', description: 'Get messages' },
         { method: 'GET', path: '/api/chat/:agentId/search', description: 'Search messages', query: 'q' },
         { method: 'GET', path: '/api/chat/:agentId/export', description: 'Export chat as Markdown' },
+        { method: 'GET', path: '/api/meetings', description: 'List meetings', query: 'project_id' },
+        { method: 'POST', path: '/api/meetings', description: 'Create meeting draft', body: '{ project_id, topic, goal?, agent_ids, mode, auto_apply_tasks }' },
+        { method: 'GET', path: '/api/meetings/:id', description: 'Get meeting detail with transcript and proposed tasks' },
+        { method: 'PUT', path: '/api/meetings/:id', description: 'Update meeting draft' },
+        { method: 'POST', path: '/api/meetings/:id/start', description: 'Start running the meeting' },
+        { method: 'POST', path: '/api/meetings/:id/apply-tasks', description: 'Apply proposed tasks to the project board' },
+        { method: 'DELETE', path: '/api/meetings/:id', description: 'Delete meeting draft/history' },
         { method: 'GET', path: '/api/settings', description: 'Get all settings' },
         { method: 'PUT', path: '/api/settings', description: 'Update settings' },
         { method: 'GET', path: '/api/settings/provider-auth', description: 'Get provider auth overview' },

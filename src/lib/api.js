@@ -84,6 +84,16 @@ export const api = {
   getMessages: (agentId, limit) => request(`/api/chat/${agentId}?limit=${limit || 100}`),
   searchMessages: (agentId, query) => request(`/api/chat/${agentId}/search?q=${encodeURIComponent(query)}`),
 
+  // Meetings
+  getMeetingModes: () => request('/api/meetings/modes'),
+  getMeetings: (projectId) => request(`/api/meetings${projectId ? `?project_id=${encodeURIComponent(projectId)}` : ''}`),
+  getMeeting: (id) => request(`/api/meetings/${id}`),
+  createMeeting: (data) => request('/api/meetings', { method: 'POST', body: JSON.stringify(data) }),
+  updateMeeting: (id, data) => request(`/api/meetings/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  startMeeting: (id) => request(`/api/meetings/${id}/start`, { method: 'POST', body: JSON.stringify({}) }),
+  applyMeetingTasks: (id) => request(`/api/meetings/${id}/apply-tasks`, { method: 'POST', body: JSON.stringify({}) }),
+  deleteMeeting: (id) => request(`/api/meetings/${id}`, { method: 'DELETE' }),
+
   // Settings
   getSettings: () => request('/api/settings'),
   updateSettings: (data) => request('/api/settings', { method: 'PUT', body: JSON.stringify(data) }),

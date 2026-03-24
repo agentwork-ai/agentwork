@@ -11,6 +11,18 @@ function getExecuteTask() {
   return _executeTask;
 }
 
+function getProjectById(projectId) {
+  const id = String(projectId || '').trim();
+  if (!id) return null;
+  return db.prepare('SELECT * FROM projects WHERE id = ?').get(id) || null;
+}
+
+function resolveDefaultTaskAgentId(projectId, providedAgentId) {
+  if (providedAgentId !== undefined) return providedAgentId;
+  const project = getProjectById(projectId);
+  return project?.main_developer_agent_id || null;
+}
+
 // Bulk operations on multiple tasks
 router.post('/bulk', (req, res) => {
   const { action, task_ids, data } = req.body;
@@ -175,6 +187,7 @@ router.post('/', (req, res) => {
           trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on } = req.body;
 
   if (!title) return res.status(400).json({ error: 'Title is required' });
+  const resolvedAgentId = resolveDefaultTaskAgentId(project_id, agent_id);
 
   const id = uuidv4();
   db.prepare(
@@ -184,7 +197,7 @@ router.post('/', (req, res) => {
   ).run(
     id, title, description || '',
     status || 'backlog', priority || 'medium',
-    agent_id || null, project_id || null,
+    resolvedAgentId || null, project_id || null,
     trigger_type || 'manual',
     trigger_at || null,
     trigger_cron || '',

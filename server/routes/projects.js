@@ -5,6 +5,13 @@ const { generateProjectDoc } = require('../services/project-doc');
 const fs = require('fs');
 const path = require('path');
 
+function resolveAgentId(value) {
+  const agentId = String(value || '').trim();
+  if (!agentId) return null;
+  const exists = db.prepare('SELECT 1 FROM agents WHERE id = ?').get(agentId);
+  return exists ? agentId : null;
+}
+
 // Get all projects
 router.get('/', (req, res) => {
   const projects = db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all();
@@ -20,7 +27,15 @@ router.get('/:id', (req, res) => {
 
 // Create project
 router.post('/', (req, res) => {
-  const { name, description, path: projectPath, ignore_patterns, default_agent_id } = req.body;
+  const {
+    name,
+    description,
+    path: projectPath,
+    ignore_patterns,
+    default_agent_id,
+    project_manager_agent_id,
+    main_developer_agent_id,
+  } = req.body;
 
   if (!name || !projectPath) {
     return res.status(400).json({ error: 'Name and path are required' });
@@ -30,10 +45,26 @@ router.post('/', (req, res) => {
     return res.status(400).json({ error: 'Path does not exist' });
   }
 
+  const projectManagerAgentId = resolveAgentId(
+    project_manager_agent_id !== undefined ? project_manager_agent_id : default_agent_id
+  );
+  const mainDeveloperAgentId = resolveAgentId(main_developer_agent_id);
+
   const id = uuidv4();
   db.prepare(
-    'INSERT INTO projects (id, name, description, path, ignore_patterns, default_agent_id) VALUES (?, ?, ?, ?, ?, ?)'
-  ).run(id, name, description || '', projectPath, ignore_patterns || 'node_modules,.git,dist,build,.next', default_agent_id || null);
+    `INSERT INTO projects
+      (id, name, description, path, ignore_patterns, default_agent_id, project_manager_agent_id, main_developer_agent_id)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    name,
+    description || '',
+    projectPath,
+    ignore_patterns || 'node_modules,.git,dist,build,.next',
+    projectManagerAgentId,
+    projectManagerAgentId,
+    mainDeveloperAgentId,
+  );
 
   // Auto-generate PROJECT.md
   try {
@@ -54,16 +85,39 @@ router.put('/:id', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
-  const { name, description, path: projectPath, ignore_patterns, default_agent_id } = req.body;
+  const {
+    name,
+    description,
+    path: projectPath,
+    ignore_patterns,
+    default_agent_id,
+    project_manager_agent_id,
+    main_developer_agent_id,
+  } = req.body;
+
+  const projectManagerAgentId = project_manager_agent_id !== undefined
+    ? resolveAgentId(project_manager_agent_id)
+    : default_agent_id !== undefined
+      ? resolveAgentId(default_agent_id)
+      : project.project_manager_agent_id || project.default_agent_id || null;
+
+  const mainDeveloperAgentId = main_developer_agent_id !== undefined
+    ? resolveAgentId(main_developer_agent_id)
+    : project.main_developer_agent_id || null;
 
   db.prepare(
-    'UPDATE projects SET name = ?, description = ?, path = ?, ignore_patterns = ?, default_agent_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?'
+    `UPDATE projects
+     SET name = ?, description = ?, path = ?, ignore_patterns = ?, default_agent_id = ?,
+         project_manager_agent_id = ?, main_developer_agent_id = ?, updated_at = CURRENT_TIMESTAMP
+     WHERE id = ?`
   ).run(
     name || project.name,
     description !== undefined ? description : project.description,
     projectPath || project.path,
     ignore_patterns !== undefined ? ignore_patterns : project.ignore_patterns,
-    default_agent_id !== undefined ? default_agent_id : project.default_agent_id,
+    projectManagerAgentId,
+    projectManagerAgentId,
+    mainDeveloperAgentId,
     req.params.id
   );
 

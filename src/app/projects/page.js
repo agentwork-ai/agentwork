@@ -398,7 +398,8 @@ function ProjectFormModal({ project, onClose, onSaved }) {
     description: project?.description || '',
     path: project?.path || '',
     ignore_patterns: project?.ignore_patterns || 'node_modules,.git,dist,build,.next',
-    default_agent_id: project?.default_agent_id || '',
+    project_manager_agent_id: project?.project_manager_agent_id || project?.default_agent_id || '',
+    main_developer_agent_id: project?.main_developer_agent_id || '',
   });
   const [saving, setSaving] = useState(false);
   const [browsing, setBrowsing] = useState(false);
@@ -475,15 +476,30 @@ function ProjectFormModal({ project, onClose, onSaved }) {
             <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} />
           </div>
           <div>
-            <label className="label">Default Agent</label>
-            <select className="input" value={form.default_agent_id}
-              onChange={(e) => setForm({ ...form, default_agent_id: e.target.value })}>
+            <label className="label">Project Manager</label>
+            <select className="input" value={form.project_manager_agent_id}
+              onChange={(e) => setForm({ ...form, project_manager_agent_id: e.target.value })}>
               <option value="">None</option>
               {agents.map((a) => (
                 <option key={a.id} value={a.id}>{a.avatar} {a.name} — {a.role}</option>
               ))}
             </select>
-            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>Auto-assign this agent to new tasks for this project</p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Used as the planning owner for the project. Meeting-generated tasks fall back to this agent when no specific owner is suggested.
+            </p>
+          </div>
+          <div>
+            <label className="label">Main Developer</label>
+            <select className="input" value={form.main_developer_agent_id}
+              onChange={(e) => setForm({ ...form, main_developer_agent_id: e.target.value })}>
+              <option value="">None</option>
+              {agents.map((a) => (
+                <option key={a.id} value={a.id}>{a.avatar} {a.name} — {a.role}</option>
+              ))}
+            </select>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              New tasks default to this agent for the project, unless you explicitly choose someone else.
+            </p>
           </div>
           <div>
             <label className="label">Ignore Patterns (comma-separated)</label>

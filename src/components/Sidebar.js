@@ -10,6 +10,7 @@ import {
   Columns3,
   MessageSquare,
   Building2,
+  Presentation,
   BarChart3,
   Users,
   Settings,
@@ -28,6 +29,7 @@ const navItems = [
   { href: '/projects', label: 'Projects', icon: FolderKanban },
   { href: '/kanban', label: 'Tasks', icon: Columns3 },
   { href: '/chat', label: 'Chat', icon: MessageSquare },
+  { href: '/meetings', label: 'Meetings', icon: Presentation },
   { href: '/office', label: 'Office', icon: Building2 },
   // { href: '/pipelines', label: 'Pipelines', icon: GitBranch }, // temporarily hidden — canvas z-index issue
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },

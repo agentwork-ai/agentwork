@@ -166,6 +166,10 @@ export default function KanbanPage() {
 
   const clearSelection = () => setSelectedTasks(new Set());
 
+  const getProjectMainDeveloperId = (projectId) => (
+    projects.find((project) => project.id === projectId)?.main_developer_agent_id || ''
+  );
+
   const handleBulkAction = async (action, data) => {
     const ids = Array.from(selectedTasks);
     if (ids.length === 0) return;
@@ -205,10 +209,11 @@ export default function KanbanPage() {
   }, [quickAddCol]);
 
   const openQuickAdd = (colId) => {
+    const nextProjectId = selectedProjectId || '';
     setQuickAddTitle('');
     setQuickAddPriority('medium');
-    setQuickAddAgentId('');
-    setQuickAddProjectId(selectedProjectId || '');
+    setQuickAddProjectId(nextProjectId);
+    setQuickAddAgentId(getProjectMainDeveloperId(nextProjectId));
     setQuickAddCol(colId);
   };
 
@@ -495,7 +500,15 @@ export default function KanbanPage() {
                               className="text-[10px] rounded px-1.5 py-0.5 outline-none cursor-pointer flex-1 min-w-0"
                               style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)', border: 'none' }}
                               value={quickAddProjectId}
-                              onChange={(e) => setQuickAddProjectId(e.target.value)}
+                              onChange={(e) => {
+                                const nextProjectId = e.target.value;
+                                const previousDefaultAgentId = getProjectMainDeveloperId(quickAddProjectId);
+                                const nextDefaultAgentId = getProjectMainDeveloperId(nextProjectId);
+                                setQuickAddProjectId(nextProjectId);
+                                setQuickAddAgentId((current) => (
+                                  !current || current === previousDefaultAgentId ? nextDefaultAgentId : current
+                                ));
+                              }}
                             >
                               <option value="">No project</option>
                               {projects.map((p) => (
@@ -1663,12 +1676,15 @@ const CRON_PRESETS = [
 function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onClose, onSaved }) {
   const [depSearch, setDepSearch] = useState('');
   const [templates, setTemplates] = useState([]);
+  const getProjectMainDeveloperId = (projectId) => (
+    projects.find((project) => project.id === projectId)?.main_developer_agent_id || ''
+  );
   const [form, setForm] = useState({
     title: task?.title || '',
     description: task?.description || '',
     status: task?.status || 'backlog',
     priority: task?.priority || 'medium',
-    agent_id: task?.agent_id || '',
+    agent_id: task?.agent_id || getProjectMainDeveloperId(task?.project_id || defaultProjectId || ''),
     project_id: task?.project_id || defaultProjectId || '',
     trigger_type: task?.trigger_type || 'manual',
     trigger_at: task?.trigger_at ? task.trigger_at.slice(0, 16) : '',
@@ -1689,6 +1705,18 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
       api.getTemplates().then(setTemplates).catch(() => {});
     }
   }, [task]);
+
+  useEffect(() => {
+    if (task) return;
+    if (form.agent_id || !form.project_id) return;
+    const defaultAgentId = getProjectMainDeveloperId(form.project_id);
+    if (!defaultAgentId) return;
+    setForm((current) => (
+      current.agent_id || current.project_id !== form.project_id
+        ? current
+        : { ...current, agent_id: defaultAgentId }
+    ));
+  }, [task, form.agent_id, form.project_id, projects]);
 
   const applyTemplate = (templateId) => {
     if (!templateId) return;
@@ -1900,7 +1928,22 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
           )}
           <div>
             <label className="label">Project</label>
-            <select className="input" value={form.project_id} onChange={(e) => setForm({ ...form, project_id: e.target.value })}>
+            <select
+              className="input"
+              value={form.project_id}
+              onChange={(e) => {
+                const nextProjectId = e.target.value;
+                const previousDefaultAgentId = getProjectMainDeveloperId(form.project_id);
+                const nextDefaultAgentId = getProjectMainDeveloperId(nextProjectId);
+                setForm((current) => ({
+                  ...current,
+                  project_id: nextProjectId,
+                  agent_id: !task && current.task_type !== 'flow' && (!current.agent_id || current.agent_id === previousDefaultAgentId)
+                    ? nextDefaultAgentId
+                    : current.agent_id,
+                }));
+              }}
+            >
               <option value="">No Project</option>
               {projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
             </select>
