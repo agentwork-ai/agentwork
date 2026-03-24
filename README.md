@@ -1,4 +1,4 @@
-# AgentWork
+# AgentWork — Autonomous AI Workbench
 
 [![Build](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/agentwork-ai/agentwork) [![Release](https://img.shields.io/npm/v/agentwork/latest?label=release&color=blue)](https://www.npmjs.com/package/agentwork) [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
@@ -6,16 +6,16 @@ Autonomous AI agent orchestration platform for software teams. Hire role-based a
 
 <table>
   <tr>
-    <td align="center"><strong>Dashboard</strong><br><img src="demo/dashboard.png" width="600" /></td>
-    <td align="center"><strong>Agent Planning Meeting</strong><br><img src="demo/meeting.png" width="600" /></td>
+    <td align="center" valign="top"><strong>Dashboard</strong><br><img src="demo/dashboard.png" width="600" /></td>
+    <td align="center" valign="top"><strong>Agent Planning Meeting</strong><br><img src="demo/meeting.png" width="600" /></td>
   </tr>
   <tr>
-    <td align="center"><strong>Kanban Board</strong><br><img src="demo/board.png" width="600" /></td>
-    <td align="center"><strong>Task Detail</strong><br><img src="demo/task.png" width="600" /></td>
+    <td align="center" valign="top"><strong>Kanban Board</strong><br><img src="demo/board.png" width="600" /></td>
+    <td align="center" valign="top"><strong>Task Detail</strong><br><img src="demo/task.png" width="600" /></td>
   </tr>
   <tr>
-    <td align="center"><strong>Agent Manager</strong><br><img src="demo/agent.png" width="600" /></td>
-    <td align="center"><strong>Agent Chat</strong><br><img src="demo/chat.png" width="600" /></td>
+    <td align="center" valign="top"><strong>Agent Manager</strong><br><img src="demo/agent.png" width="600" /></td>
+    <td align="center" valign="top"><strong>Agent Chat</strong><br><img src="demo/chat.png" width="600" /></td>
   </tr>
 </table>
 
