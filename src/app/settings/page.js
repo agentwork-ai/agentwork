@@ -16,24 +16,34 @@ export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
   const { logout } = useAuth();
   const [settings, setSettings] = useState({});
+  const [providerAuth, setProviderAuth] = useState(null);
   const [budget, setBudget] = useState(null);
   const [budgetHistory, setBudgetHistory] = useState([]);
   const [budgetByAgent, setBudgetByAgent] = useState([]);
   const [showKeys, setShowKeys] = useState({});
   const [saving, setSaving] = useState(false);
+  const [authBusy, setAuthBusy] = useState({});
+  const [anthropicSetupToken, setAnthropicSetupToken] = useState('');
+  const [googleProjectId, setGoogleProjectId] = useState('');
   const [templates, setTemplates] = useState([]);
 
   const load = useCallback(async () => {
-    const [s, b, history, byAgent] = await Promise.all([
+    const [s, auth, b, history, byAgent] = await Promise.all([
       api.getSettings(),
+      api.getProviderAuth().catch(() => null),
       api.getBudget(),
       api.getBudgetHistory(30).catch(() => []),
       api.getBudgetByAgent(30).catch(() => []),
     ]);
     setSettings(s);
+    setProviderAuth(auth);
     setBudget(b);
     setBudgetHistory(history);
     setBudgetByAgent(byAgent);
+    const googleOauth = auth?.providers
+      ?.find((provider) => provider.id === 'google')
+      ?.methods?.find((method) => method.id === 'google-gemini-cli');
+    setGoogleProjectId(googleOauth?.profile?.projectId || '');
     api.getTemplates().then(setTemplates).catch(() => {});
   }, []);
 
@@ -62,6 +72,30 @@ export default function SettingsPage() {
       toast.error(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const getAuthMethod = (providerId, methodId) =>
+    providerAuth?.providers
+      ?.find((provider) => provider.id === providerId)
+      ?.methods?.find((method) => method.id === methodId);
+
+  const runAuthAction = async (key, action, successMessage) => {
+    setAuthBusy((prev) => ({ ...prev, [key]: true }));
+    try {
+      const next = await action();
+      setProviderAuth(next);
+      const googleOauth = next?.providers
+        ?.find((provider) => provider.id === 'google')
+        ?.methods?.find((method) => method.id === 'google-gemini-cli');
+      if (googleOauth?.profile?.projectId) {
+        setGoogleProjectId(googleOauth.profile.projectId);
+      }
+      toast.success(successMessage);
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setAuthBusy((prev) => ({ ...prev, [key]: false }));
     }
   };
 
@@ -113,6 +147,21 @@ export default function SettingsPage() {
                   </div>
                 </div>
                 <div>
+                  <label className="label">Google Gemini API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.google ? 'text' : 'password'}
+                      value={settings.google_api_key || ''}
+                      onChange={(e) => updateField('google_api_key', e.target.value)}
+                      placeholder="AIza..."
+                    />
+                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, google: !p.google }))}>
+                      {showKeys.google ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
                   <label className="label">DeepSeek API Key</label>
                   <div className="flex gap-2">
                     <input
@@ -159,6 +208,163 @@ export default function SettingsPage() {
                   <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
                     Access 200+ models through a single key. Get one at openrouter.ai
                   </p>
+                </div>
+                <div className="pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center justify-between gap-3 mb-3">
+                    <div>
+                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>OpenClaw-style auth profiles</p>
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        Mirrors OpenClaw&apos;s real auth matrix: Anthropic setup-token, Codex OAuth, and Gemini CLI OAuth.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="space-y-3">
+                    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Anthropic setup-token</p>
+                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                            OpenClaw uses setup-token or API key for Anthropic. This token is used in AgentWork&apos;s Anthropic API path.
+                          </p>
+                        </div>
+                        <AuthMethodBadge method={getAuthMethod('anthropic', 'setup-token')} />
+                      </div>
+                      <div className="flex gap-2">
+                        <input
+                          className="input flex-1 font-mono text-sm"
+                          type={showKeys.anthropic_setup_token ? 'text' : 'password'}
+                          value={anthropicSetupToken}
+                          onChange={(e) => setAnthropicSetupToken(e.target.value)}
+                          placeholder="Paste token from claude setup-token"
+                        />
+                        <button
+                          className="btn btn-ghost"
+                          onClick={() => setShowKeys((p) => ({ ...p, anthropic_setup_token: !p.anthropic_setup_token }))}
+                        >
+                          {showKeys.anthropic_setup_token ? <EyeOff size={16} /> : <Eye size={16} />}
+                        </button>
+                        <button
+                          className="btn btn-primary text-sm"
+                          disabled={authBusy.anthropic_token}
+                          onClick={() =>
+                            runAuthAction(
+                              'anthropic_token',
+                              () => api.saveAnthropicSetupToken(anthropicSetupToken),
+                              'Anthropic setup-token saved'
+                            )
+                          }
+                        >
+                          {authBusy.anthropic_token ? 'Saving...' : 'Save token'}
+                        </button>
+                        {getAuthMethod('anthropic', 'setup-token')?.configured && (
+                          <button
+                            className="btn btn-ghost text-sm"
+                            onClick={() =>
+                              runAuthAction(
+                                'anthropic_clear',
+                                () => api.clearProviderAuth('anthropic'),
+                                'Anthropic setup-token cleared'
+                              )
+                            }
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <AuthMethodMeta method={getAuthMethod('anthropic', 'setup-token')} />
+                    </div>
+
+                    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>OpenAI Codex OAuth</p>
+                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                            Mirrors OpenClaw&apos;s Codex OAuth profile. Imported credentials are synced into local Codex auth so existing `codex-cli` agents can use them.
+                          </p>
+                        </div>
+                        <AuthMethodBadge method={getAuthMethod('openai', 'openai-codex')} />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          className="btn btn-primary text-sm"
+                          disabled={authBusy.codex_import}
+                          onClick={() =>
+                            runAuthAction(
+                              'codex_import',
+                              () => api.importCodexOAuth(),
+                              'Codex OAuth imported from local auth'
+                            )
+                          }
+                        >
+                          {authBusy.codex_import ? 'Importing...' : 'Import from ~/.codex'}
+                        </button>
+                        {getAuthMethod('openai', 'openai-codex')?.configured && (
+                          <button
+                            className="btn btn-ghost text-sm"
+                            onClick={() =>
+                              runAuthAction(
+                                'codex_clear',
+                                () => api.clearProviderAuth('openai-codex'),
+                                'Codex OAuth profile cleared'
+                              )
+                            }
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <AuthMethodMeta method={getAuthMethod('openai', 'openai-codex')} />
+                    </div>
+
+                    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
+                      <div className="flex items-start justify-between gap-3 mb-2">
+                        <div>
+                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gemini CLI OAuth</p>
+                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                            OpenClaw treats Gemini CLI OAuth separately from Gemini API keys. Imported credentials can be used by AgentWork&apos;s Google provider.
+                          </p>
+                        </div>
+                        <AuthMethodBadge method={getAuthMethod('google', 'google-gemini-cli')} />
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <input
+                          className="input font-mono text-sm min-w-[220px] flex-1"
+                          value={googleProjectId}
+                          onChange={(e) => setGoogleProjectId(e.target.value)}
+                          placeholder="Optional GOOGLE_CLOUD_PROJECT"
+                        />
+                        <button
+                          className="btn btn-primary text-sm"
+                          disabled={authBusy.gemini_import}
+                          onClick={() =>
+                            runAuthAction(
+                              'gemini_import',
+                              () => api.importGeminiOAuth(googleProjectId),
+                              'Gemini OAuth imported from local auth'
+                            )
+                          }
+                        >
+                          {authBusy.gemini_import ? 'Importing...' : 'Import from ~/.gemini'}
+                        </button>
+                        {getAuthMethod('google', 'google-gemini-cli')?.configured && (
+                          <button
+                            className="btn btn-ghost text-sm"
+                            onClick={() =>
+                              runAuthAction(
+                                'gemini_clear',
+                                () => api.clearProviderAuth('google-gemini-cli'),
+                                'Gemini OAuth profile cleared'
+                              )
+                            }
+                          >
+                            Clear
+                          </button>
+                        )}
+                      </div>
+                      <AuthMethodMeta method={getAuthMethod('google', 'google-gemini-cli')} />
+                    </div>
+                  </div>
                 </div>
                 <div>
                   <label className="label">Custom Base URL (for local LLMs like Ollama/LMStudio)</label>
@@ -470,6 +676,41 @@ function ToggleSwitch({ checked, onChange }) {
         style={{ left: checked ? '24px' : '4px' }}
       />
     </button>
+  );
+}
+
+function AuthMethodBadge({ method }) {
+  const configured = Boolean(method?.configured);
+  return (
+    <span
+      className="px-2 py-1 rounded-full text-[11px] font-medium shrink-0"
+      style={{
+        background: configured ? '#2f9e4420' : 'var(--bg-tertiary)',
+        color: configured ? '#2f9e44' : 'var(--text-tertiary)',
+      }}
+    >
+      {configured ? 'Configured' : 'Not configured'}
+    </span>
+  );
+}
+
+function AuthMethodMeta({ method }) {
+  if (!method?.profile) return null;
+
+  const parts = [];
+  if (method.profile.email) parts.push(method.profile.email);
+  if (method.profile.source) parts.push(method.profile.source);
+  if (method.profile.projectId) parts.push(`project ${method.profile.projectId}`);
+  if (method.profile.expiresAt) {
+    parts.push(`${method.profile.expired ? 'expired' : 'expires'} ${new Date(method.profile.expiresAt).toLocaleString()}`);
+  }
+
+  if (parts.length === 0) return null;
+
+  return (
+    <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+      {parts.join(' · ')}
+    </p>
   );
 }
 

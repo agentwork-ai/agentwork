@@ -214,6 +214,11 @@ app.prepare().then(() => {
         { method: 'GET', path: '/api/chat/:agentId/export', description: 'Export chat as Markdown' },
         { method: 'GET', path: '/api/settings', description: 'Get all settings' },
         { method: 'PUT', path: '/api/settings', description: 'Update settings' },
+        { method: 'GET', path: '/api/settings/provider-auth', description: 'Get provider auth overview' },
+        { method: 'POST', path: '/api/settings/provider-auth/anthropic/setup-token', description: 'Save Anthropic setup-token', body: '{ token }' },
+        { method: 'POST', path: '/api/settings/provider-auth/openai-codex/import', description: 'Import local Codex OAuth credentials' },
+        { method: 'POST', path: '/api/settings/provider-auth/google-gemini-cli/import', description: 'Import local Gemini OAuth credentials', body: '{ project_id? }' },
+        { method: 'DELETE', path: '/api/settings/provider-auth/:provider', description: 'Clear stored provider auth profile' },
         { method: 'GET', path: '/api/settings/budget', description: 'Budget summary' },
         { method: 'GET', path: '/api/settings/budget/history', description: 'Budget history', query: 'days' },
         { method: 'GET', path: '/api/settings/budget/by-agent', description: 'Cost by agent', query: 'days' },
@@ -294,6 +299,19 @@ app.prepare().then(() => {
   if (orphaned.length > 0) {
     dbRecover.prepare("UPDATE tasks SET status = 'todo', updated_at = CURRENT_TIMESTAMP WHERE status = 'doing'").run();
     console.log(`[AgentWork] Recovered ${orphaned.length} orphaned task(s) from 'doing' → 'todo'`);
+  }
+
+  try {
+    const { ensureMemoryFiles } = require('./services/agent-context');
+    const existingAgents = dbRecover.prepare('SELECT * FROM agents').all();
+    for (const agent of existingAgents) {
+      ensureMemoryFiles(agent.id, agent);
+    }
+    if (existingAgents.length > 0) {
+      console.log(`[AgentWork] Ensured workspace files for ${existingAgents.length} agent(s)`);
+    }
+  } catch (err) {
+    console.error('[AgentWork] Failed to backfill agent workspace files:', err.message);
   }
 
   // Initialize task scheduler

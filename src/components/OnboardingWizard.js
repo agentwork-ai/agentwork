@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { toast } from 'react-hot-toast';
 import {
@@ -35,6 +35,33 @@ const PROVIDERS = [
   { id: 'deepseek', label: 'DeepSeek' },
   { id: 'mistral', label: 'Mistral AI' },
   { id: 'openrouter', label: 'OpenRouter' },
+];
+
+const OAUTH_PROVIDERS = [
+  {
+    id: 'anthropic',
+    providerId: 'anthropic',
+    methodId: 'setup-token',
+    label: 'Anthropic setup-token',
+    description: 'Uses the saved Anthropic setup-token from Settings.',
+    runtime: 'api',
+  },
+  {
+    id: 'google',
+    providerId: 'google',
+    methodId: 'google-gemini-cli',
+    label: 'Gemini CLI OAuth',
+    description: 'Uses the imported Gemini CLI OAuth profile from Settings.',
+    runtime: 'api',
+  },
+  {
+    id: 'openai-codex',
+    providerId: 'openai',
+    methodId: 'openai-codex',
+    label: 'OpenAI Codex OAuth',
+    description: 'Uses the imported Codex OAuth profile from Settings.',
+    runtime: 'cli',
+  },
 ];
 
 const MODELS = {
@@ -74,6 +101,12 @@ const STEPS = [
   { key: 'project', label: 'Project', icon: FolderOpen },
 ];
 
+function getProviderAuthMethod(providerAuth, providerId, methodId) {
+  return providerAuth?.providers
+    ?.find((provider) => provider.id === providerId)
+    ?.methods?.find((method) => method.id === methodId) || null;
+}
+
 export default function OnboardingWizard({ onComplete }) {
   const [step, setStep] = useState(0);
   const [dontShowAgain, setDontShowAgain] = useState(true);
@@ -84,8 +117,11 @@ export default function OnboardingWizard({ onComplete }) {
   const [apiKeys, setApiKeys] = useState({
     anthropic_api_key: '',
     openai_api_key: '',
+    google_api_key: '',
     openrouter_api_key: '',
   });
+  const [providerAuth, setProviderAuth] = useState(null);
+  const [providerAuthLoading, setProviderAuthLoading] = useState(false);
 
   // Step 3: Project
   const [project, setProject] = useState({ name: '', path: '' });
@@ -103,6 +139,24 @@ export default function OnboardingWizard({ onComplete }) {
 
   const currentStep = STEPS[step];
   const isLast = step === STEPS.length - 1;
+
+  useEffect(() => {
+    let cancelled = false;
+    setProviderAuthLoading(true);
+    api.getProviderAuth()
+      .then((data) => {
+        if (!cancelled) setProviderAuth(data);
+      })
+      .catch(() => {
+        if (!cancelled) setProviderAuth(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProviderAuthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handleFinish = async () => {
     if (dontShowAgain) {
@@ -140,6 +194,7 @@ export default function OnboardingWizard({ onComplete }) {
       const keysToSave = {};
       if (apiKeys.anthropic_api_key) keysToSave.anthropic_api_key = apiKeys.anthropic_api_key;
       if (apiKeys.openai_api_key) keysToSave.openai_api_key = apiKeys.openai_api_key;
+      if (apiKeys.google_api_key) keysToSave.google_api_key = apiKeys.google_api_key;
       if (apiKeys.openrouter_api_key) keysToSave.openrouter_api_key = apiKeys.openrouter_api_key;
       if (Object.keys(keysToSave).length > 0) {
         await api.updateSettings(keysToSave);
@@ -182,12 +237,20 @@ export default function OnboardingWizard({ onComplete }) {
       const modelId = agent.provider === 'openrouter' && agent.customModel
         ? agent.customModel
         : agent.model;
+      const selectedOauth = OAUTH_PROVIDERS.map((option) => ({
+        ...option,
+        method: getProviderAuthMethod(providerAuth, option.providerId, option.methodId),
+      })).find((option) => option.id === agent.provider);
+      if (agentAuthType === 'oauth' && !selectedOauth?.method?.configured) {
+        throw new Error('Configure this provider-auth method in Settings first.');
+      }
+      const usesCliRuntime = agentAuthType === 'cli' || (agentAuthType === 'oauth' && agent.provider === 'openai-codex');
       await api.createAgent({
         name: agent.name,
         role: agent.role,
         auth_type: agentAuthType,
-        provider: agentAuthType === 'cli' ? 'anthropic' : agent.provider,
-        model: agentAuthType === 'cli' ? '' : modelId,
+        provider: agentAuthType === 'cli' ? 'claude-cli' : agent.provider,
+        model: usesCliRuntime ? '' : modelId,
       });
       toast.success('Agent hired!');
       handleNext();
@@ -219,6 +282,47 @@ export default function OnboardingWizard({ onComplete }) {
   };
 
   const providerModels = MODELS[agent.provider] || [];
+  const oauthOptions = OAUTH_PROVIDERS.map((option) => {
+    const method = getProviderAuthMethod(providerAuth, option.providerId, option.methodId);
+    return {
+      ...option,
+      method,
+      configured: Boolean(method?.configured),
+    };
+  });
+  const configuredOauthOptions = oauthOptions.filter((option) => option.configured);
+
+  const setAuthMode = (nextType) => {
+    setAgentAuthType(nextType);
+
+    if (nextType === 'api') {
+      setAgent((current) => ({
+        ...current,
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+        customModel: '',
+      }));
+      return;
+    }
+
+    if (nextType === 'cli') {
+      setAgent((current) => ({
+        ...current,
+        provider: 'claude-cli',
+        model: '',
+        customModel: '',
+      }));
+      return;
+    }
+
+    const fallback = configuredOauthOptions[0] || oauthOptions[0] || OAUTH_PROVIDERS[0];
+    setAgent((current) => ({
+      ...current,
+      provider: fallback.id,
+      model: fallback.runtime === 'cli' ? '' : (MODELS[fallback.id]?.[0]?.id || ''),
+      customModel: '',
+    }));
+  };
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.6)' }}>
@@ -348,6 +452,27 @@ export default function OnboardingWizard({ onComplete }) {
                   </div>
                 </div>
                 <div>
+                  <label className="label">Google Gemini API Key</label>
+                  <div className="flex gap-2">
+                    <input
+                      className="input flex-1 font-mono text-sm"
+                      type={showKeys.google ? 'text' : 'password'}
+                      value={apiKeys.google_api_key}
+                      onChange={(e) =>
+                        setApiKeys({ ...apiKeys, google_api_key: e.target.value })
+                      }
+                      placeholder="AIza..."
+                    />
+                    <button
+                      type="button"
+                      className="btn btn-ghost"
+                      onClick={() => setShowKeys((p) => ({ ...p, google: !p.google }))}
+                    >
+                      {showKeys.google ? <EyeOff size={16} /> : <Eye size={16} />}
+                    </button>
+                  </div>
+                </div>
+                <div>
                   <label className="label">OpenRouter API Key <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(200+ models via one key)</span></label>
                   <div className="flex gap-2">
                     <input
@@ -436,7 +561,7 @@ export default function OnboardingWizard({ onComplete }) {
                 {/* Auth Type Toggle */}
                 <div>
                   <label className="label">Authentication Mode</label>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 gap-2">
                     <button
                       type="button"
                       className="p-2.5 rounded-lg border text-xs text-left transition-all"
@@ -445,10 +570,23 @@ export default function OnboardingWizard({ onComplete }) {
                         background: agentAuthType === 'api' ? 'var(--accent-light)' : 'transparent',
                         color: agentAuthType === 'api' ? 'var(--accent)' : 'var(--text-secondary)',
                       }}
-                      onClick={() => setAgentAuthType('api')}
+                      onClick={() => setAuthMode('api')}
                     >
                       <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Key size={12} /> API Key</div>
                       <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses provider API keys from previous step</span>
+                    </button>
+                    <button
+                      type="button"
+                      className="p-2.5 rounded-lg border text-xs text-left transition-all"
+                      style={{
+                        borderColor: agentAuthType === 'oauth' ? 'var(--accent)' : 'var(--border)',
+                        background: agentAuthType === 'oauth' ? 'var(--accent-light)' : 'transparent',
+                        color: agentAuthType === 'oauth' ? 'var(--accent)' : 'var(--text-secondary)',
+                      }}
+                      onClick={() => setAuthMode('oauth')}
+                    >
+                      <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Users size={12} /> OAuth / Provider Auth</div>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses saved Anthropic, Gemini, or Codex auth profiles from Settings</span>
                     </button>
                     <button
                       type="button"
@@ -458,7 +596,7 @@ export default function OnboardingWizard({ onComplete }) {
                         background: agentAuthType === 'cli' ? 'var(--accent-light)' : 'transparent',
                         color: agentAuthType === 'cli' ? 'var(--accent)' : 'var(--text-secondary)',
                       }}
-                      onClick={() => setAgentAuthType('cli')}
+                      onClick={() => setAuthMode('cli')}
                     >
                       <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Zap size={12} /> CLI Mode</div>
                       <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses local Claude Code or Codex CLI — no API key needed</span>
@@ -494,6 +632,69 @@ export default function OnboardingWizard({ onComplete }) {
                   <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
                     The agent will use your locally installed <strong>Claude Code</strong> or <strong>Codex</strong> CLI.
                     Make sure you have it installed and authenticated (<code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>claude</code> or <code className="px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>codex</code> command available).
+                  </div>
+                ) : agentAuthType === 'oauth' ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      {oauthOptions.map((option) => (
+                        <label
+                          key={option.id}
+                          className="flex items-start gap-3 p-3 rounded-lg transition-colors"
+                          style={{
+                            background: agent.provider === option.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                            border: agent.provider === option.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                            opacity: option.configured ? 1 : 0.6,
+                            cursor: option.configured ? 'pointer' : 'not-allowed',
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="onboarding-oauth-provider"
+                            className="mt-1"
+                            checked={agent.provider === option.id}
+                            disabled={!option.configured}
+                            onChange={() => setAgent({
+                              ...agent,
+                              provider: option.id,
+                              model: option.runtime === 'cli' ? '' : (MODELS[option.id]?.[0]?.id || ''),
+                              customModel: '',
+                            })}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{option.label}</span>
+                              <span className="text-[10px]" style={{ color: option.configured ? '#2f9e44' : 'var(--text-tertiary)' }}>
+                                {option.configured ? 'Configured' : 'Not configured'}
+                              </span>
+                            </div>
+                            <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{option.description}</p>
+                          </div>
+                        </label>
+                      ))}
+                    </div>
+                    {!providerAuthLoading && configuredOauthOptions.length === 0 ? (
+                      <p className="text-xs" style={{ color: 'var(--danger)' }}>
+                        No provider-auth methods are configured yet. Import one in Settings first.
+                      </p>
+                    ) : null}
+                    {agent.provider === 'openai-codex' ? (
+                      <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                        Codex OAuth uses the Codex SDK runtime, so model selection stays in your local Codex auth/config.
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="label">Model</label>
+                        <select
+                          className="input"
+                          value={agent.model}
+                          onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                        >
+                          {providerModels.map((m) => (
+                            <option key={m.id} value={m.id}>{m.label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
@@ -556,6 +757,10 @@ export default function OnboardingWizard({ onComplete }) {
                     </div>
                   </div>
                 )}
+
+                <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                  Hired agents get `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md` automatically.
+                </p>
               </div>
             </div>
           )}

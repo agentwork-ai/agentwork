@@ -96,6 +96,33 @@ const API_PROVIDERS = [
   { id: 'mistral', label: 'Mistral AI' },
 ];
 
+const OAUTH_PROVIDERS = [
+  {
+    id: 'anthropic',
+    providerId: 'anthropic',
+    methodId: 'setup-token',
+    label: 'Anthropic setup-token',
+    description: 'Uses the saved Anthropic setup-token from Settings.',
+    runtime: 'api',
+  },
+  {
+    id: 'google',
+    providerId: 'google',
+    methodId: 'google-gemini-cli',
+    label: 'Gemini CLI OAuth',
+    description: 'Uses the imported Gemini CLI OAuth profile from Settings.',
+    runtime: 'api',
+  },
+  {
+    id: 'openai-codex',
+    providerId: 'openai',
+    methodId: 'openai-codex',
+    label: 'OpenAI Codex OAuth',
+    description: 'Uses the imported Codex OAuth profile from Settings.',
+    runtime: 'cli',
+  },
+];
+
 const TIER_COLORS = {
   flagship: { bg: '#ffd43b20', color: '#fcc419' },
   balanced: { bg: '#4c6ef520', color: '#5c7cfa' },
@@ -103,6 +130,22 @@ const TIER_COLORS = {
   reasoning: { bg: '#f0659520', color: '#f06595' },
   code: { bg: '#20c99720', color: '#20c997' },
 };
+
+const AUTH_MODE_META = {
+  api: { label: '🔑 API', bg: 'var(--accent-light)', color: 'var(--accent)' },
+  cli: { label: '⌨ CLI', bg: '#20c99720', color: '#20c997' },
+  oauth: { label: '🪪 OAuth', bg: '#ff922b20', color: '#f08c00' },
+};
+
+function getAuthModeMeta(authType) {
+  return AUTH_MODE_META[authType] || AUTH_MODE_META.api;
+}
+
+function getProviderAuthMethod(providerAuth, providerId, methodId) {
+  return providerAuth?.providers
+    ?.find((provider) => provider.id === providerId)
+    ?.methods?.find((method) => method.id === methodId) || null;
+}
 
 export default function AgentsPage() {
   const socket = useSocket();
@@ -213,6 +256,10 @@ export default function AgentsPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {agents.map((agent) => (
                 <div key={agent.id} className="card p-5 group">
+                  {(() => {
+                    const authMode = getAuthModeMeta(agent.auth_type);
+                    return (
+                      <>
                   <div className="flex items-start gap-4">
                     <div className="relative">
                       <span className="text-4xl">{agent.avatar}</span>
@@ -229,10 +276,10 @@ export default function AgentsPage() {
                       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{agent.role}</p>
                       <div className="flex items-center gap-2 mt-1 flex-wrap">
                         <span className="badge text-[10px]" style={{
-                          background: agent.auth_type === 'cli' ? '#20c99720' : 'var(--accent-light)',
-                          color: agent.auth_type === 'cli' ? '#20c997' : 'var(--accent)',
+                          background: authMode.bg,
+                          color: authMode.color,
                         }}>
-                          {agent.auth_type === 'cli' ? '⌨ CLI' : '🔑 API'}
+                          {authMode.label}
                         </span>
                         <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                           {agent.provider}{agent.model ? ` / ${agent.model}` : ''}
@@ -263,6 +310,9 @@ export default function AgentsPage() {
                       <Trash2 size={14} />
                     </button>
                   </div>
+                      </>
+                    );
+                  })()}
                 </div>
               ))}
             </div>
@@ -305,9 +355,85 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     allowed_tools: agent?.allowed_tools || '',
   });
   const [saving, setSaving] = useState(false);
+  const [providerAuth, setProviderAuth] = useState(null);
+  const [providerAuthLoading, setProviderAuthLoading] = useState(false);
 
   // If editing, skip the type selection
   const showTypeSelector = !agent && !authType;
+
+  useEffect(() => {
+    let cancelled = false;
+    setProviderAuthLoading(true);
+    api.getProviderAuth()
+      .then((data) => {
+        if (!cancelled) setProviderAuth(data);
+      })
+      .catch(() => {
+        if (!cancelled) setProviderAuth(null);
+      })
+      .finally(() => {
+        if (!cancelled) setProviderAuthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const oauthOptions = OAUTH_PROVIDERS.map((option) => {
+    const method = getProviderAuthMethod(providerAuth, option.providerId, option.methodId);
+    return {
+      ...option,
+      method,
+      configured: Boolean(method?.configured),
+    };
+  });
+  const configuredOauthOptions = oauthOptions.filter((option) => option.configured);
+
+  useEffect(() => {
+    if (form.auth_type !== 'oauth') return;
+    if (oauthOptions.some((option) => option.id === form.provider)) return;
+
+    const fallback = configuredOauthOptions[0] || oauthOptions[0];
+    if (!fallback) return;
+
+    setForm((current) => ({
+      ...current,
+      provider: fallback.id,
+      model: fallback.runtime === 'cli' ? '' : (API_MODELS[fallback.id]?.[0]?.id || ''),
+    }));
+  }, [form.auth_type, form.provider, configuredOauthOptions, oauthOptions]);
+
+  const chooseAuthType = (nextType) => {
+    setAuthType(nextType);
+
+    if (nextType === 'api') {
+      setForm((current) => ({
+        ...current,
+        auth_type: 'api',
+        provider: 'anthropic',
+        model: 'claude-sonnet-4-6',
+      }));
+      return;
+    }
+
+    if (nextType === 'cli') {
+      setForm((current) => ({
+        ...current,
+        auth_type: 'cli',
+        provider: 'claude-cli',
+        model: '',
+      }));
+      return;
+    }
+
+    const fallback = configuredOauthOptions[0] || oauthOptions[0] || OAUTH_PROVIDERS[0];
+    setForm((current) => ({
+      ...current,
+      auth_type: 'oauth',
+      provider: fallback.id,
+      model: fallback.runtime === 'cli' ? '' : (API_MODELS[fallback.id]?.[0]?.id || ''),
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -317,6 +443,20 @@ function AgentFormModal({ agent, onClose, onSaved }) {
       if (data.auth_type === 'cli') {
         // CLI mode: model is optional
         if (!data.model) data.model = '';
+      }
+      if (data.auth_type === 'oauth') {
+        const selectedOauth = oauthOptions.find((option) => option.id === data.provider);
+        if (!selectedOauth) {
+          throw new Error('Select a provider-auth method.');
+        }
+        if (!selectedOauth.configured) {
+          throw new Error('Configure this provider-auth method in Settings first.');
+        }
+        if (selectedOauth.runtime === 'cli') {
+          data.model = '';
+        } else if (!data.model) {
+          data.model = API_MODELS[data.provider]?.[0]?.id || '';
+        }
       }
       if (agent) {
         await api.updateAgent(agent.id, data);
@@ -337,7 +477,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   if (showTypeSelector) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
-        <div className="card p-6 w-full max-w-lg animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
+        <div className="card p-6 w-full max-w-3xl animate-fade-in" style={{ background: 'var(--bg-elevated)' }}>
           <h3 className="font-semibold text-lg mb-2" style={{ color: 'var(--text-primary)' }}>
             Hire New Agent
           </h3>
@@ -345,15 +485,12 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             Choose how this agent will authenticate
           </p>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* API Key option */}
             <button
               className="card p-5 text-left hover:scale-[1.02] transition-transform"
               style={{ borderColor: 'var(--border)' }}
-              onClick={() => {
-                setAuthType('api');
-                setForm((f) => ({ ...f, auth_type: 'api', provider: 'anthropic', model: 'claude-sonnet-4-6' }));
-              }}
+              onClick={() => chooseAuthType('api')}
             >
               <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
                 style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}>
@@ -365,14 +502,27 @@ function AgentFormModal({ agent, onClose, onSaved }) {
               </p>
             </button>
 
+            {/* Provider auth option */}
+            <button
+              className="card p-5 text-left hover:scale-[1.02] transition-transform"
+              style={{ borderColor: 'var(--border)' }}
+              onClick={() => chooseAuthType('oauth')}
+            >
+              <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
+                style={{ background: '#ff922b20', color: '#f08c00' }}>
+                <Shield size={20} />
+              </div>
+              <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>OAuth / Provider Auth</p>
+              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
+                Uses saved provider auth from Settings. Supports Anthropic setup-token, Gemini CLI OAuth, and Codex OAuth.
+              </p>
+            </button>
+
             {/* CLI option */}
             <button
               className="card p-5 text-left hover:scale-[1.02] transition-transform"
               style={{ borderColor: 'var(--border)' }}
-              onClick={() => {
-                setAuthType('cli');
-                setForm((f) => ({ ...f, auth_type: 'cli', provider: 'claude-cli', model: '' }));
-              }}
+              onClick={() => chooseAuthType('cli')}
             >
               <div className="w-10 h-10 rounded-lg flex items-center justify-center mb-3"
                 style={{ background: '#20c99720', color: '#20c997' }}>
@@ -385,6 +535,10 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             </button>
           </div>
 
+          <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>
+            Every hired agent is bootstrapped with `AGENTS.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md`.
+          </p>
+
           <div className="flex justify-end mt-5">
             <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           </div>
@@ -394,7 +548,10 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   }
 
   const isCli = form.auth_type === 'cli';
-  const providerModels = !isCli ? (API_MODELS[form.provider] || []) : [];
+  const isOauth = form.auth_type === 'oauth';
+  const isOauthCodex = isOauth && form.provider === 'openai-codex';
+  const providerModels = !isCli && !isOauthCodex ? (API_MODELS[form.provider] || []) : [];
+  const authMode = getAuthModeMeta(form.auth_type);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'rgba(0,0,0,0.5)' }}>
@@ -404,10 +561,10 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             {agent ? 'Edit Agent' : 'Hire New Agent'}
           </h3>
           <span className="badge text-[10px]" style={{
-            background: isCli ? '#20c99720' : 'var(--accent-light)',
-            color: isCli ? '#20c997' : 'var(--accent)',
+            background: authMode.bg,
+            color: authMode.color,
           }}>
-            {isCli ? '⌨ CLI Mode' : '🔑 API Mode'}
+            {authMode.label} Mode
           </span>
         </div>
 
@@ -471,6 +628,90 @@ function AgentFormModal({ agent, onClose, onSaved }) {
                 Model is optional for CLI mode — it uses the default from your CLI config.
               </p>
             </div>
+          ) : isOauth ? (
+            <>
+              <div>
+                <label className="label">Provider Auth Method</label>
+                <div className="space-y-2">
+                  {oauthOptions.map((option) => {
+                    const details = [
+                      option.method?.profile?.email,
+                      option.method?.profile?.projectId,
+                    ].filter(Boolean).join(' · ');
+                    return (
+                      <label key={option.id}
+                        className="flex items-start gap-3 p-3 rounded-lg transition-colors"
+                        style={{
+                          background: form.provider === option.id ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                          border: form.provider === option.id ? '1px solid var(--accent)' : '1px solid var(--border)',
+                          opacity: option.configured ? 1 : 0.6,
+                          cursor: option.configured ? 'pointer' : 'not-allowed',
+                        }}
+                      >
+                        <input
+                          type="radio"
+                          name="oauth-provider"
+                          className="mt-1"
+                          checked={form.provider === option.id}
+                          disabled={!option.configured}
+                          onChange={() => setForm({
+                            ...form,
+                            provider: option.id,
+                            model: option.runtime === 'cli' ? '' : (API_MODELS[option.id]?.[0]?.id || ''),
+                          })}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{option.label}</p>
+                            <span className="badge text-[10px]" style={{
+                              background: option.configured ? '#40c05720' : '#868e9620',
+                              color: option.configured ? '#2f9e44' : '#868e96',
+                            }}>
+                              {option.configured ? 'Configured' : 'Not configured'}
+                            </span>
+                          </div>
+                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{option.description}</p>
+                          {details ? (
+                            <p className="text-[11px] mt-1" style={{ color: 'var(--text-secondary)' }}>{details}</p>
+                          ) : null}
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+                <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                  Configure these in Settings → API Providers before hiring an OAuth-backed agent.
+                </p>
+                {!providerAuthLoading && configuredOauthOptions.length === 0 ? (
+                  <p className="text-xs mt-2" style={{ color: 'var(--danger)' }}>
+                    No provider-auth methods are configured yet.
+                  </p>
+                ) : null}
+              </div>
+              {isOauthCodex ? (
+                <div className="p-3 rounded-lg text-xs" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                  Codex OAuth agents run through the Codex SDK. Model selection is handled by your local Codex auth/config, so no model picker is needed here.
+                </div>
+              ) : (
+                <div>
+                  <label className="label">Model</label>
+                  <select className="input" value={providerModels.some((m) => m.id === form.model) || !form.model ? form.model : '__custom__'}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setForm({ ...form, model: '' });
+                      } else {
+                        setForm({ ...form, model: e.target.value });
+                      }
+                    }}>
+                    {providerModels.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.label} ({m.tier})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
+            </>
           ) : (
             <>
               <div>
@@ -694,6 +935,9 @@ function AgentFormModal({ agent, onClose, onSaved }) {
               </button>
             </div>
           </div>
+          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+            Workspace files are created immediately when the agent is hired and are editable from the Memory drawer.
+          </p>
         </form>
       </div>
     </div>

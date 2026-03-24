@@ -1,5 +1,6 @@
 const { db } = require('../db');
 const { decrypt, isSensitiveKey } = require('../crypto');
+const { ensureCodexCliAuthFromStoredProfile, resolveProviderRuntimeAuth } = require('./provider-auth');
 
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
@@ -91,39 +92,42 @@ async function _createCompletion(provider, model, messages, options = {}) {
     console.log(`[AI Verbose] Request: ${provider}/${model} | ${messages.length} messages | ~${promptLen} chars`);
   }
 
-  let apiKey;
   let customBaseUrl = getSetting('custom_base_url');
+  const auth = await resolveProviderRuntimeAuth(provider);
 
-  const keyMap = {
-    anthropic: 'anthropic_api_key',
-    openai: 'openai_api_key',
-    openrouter: 'openrouter_api_key',
-    deepseek: 'deepseek_api_key',
-    mistral: 'mistral_api_key',
-    google: 'google_api_key',
-  };
-  apiKey = getSetting(keyMap[provider] || 'openai_api_key');
-
-  if (!apiKey && !customBaseUrl) {
-    const labels = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter', deepseek: 'DeepSeek', mistral: 'Mistral', google: 'Google' };
-    throw new Error(`No API key configured for "${provider}". Go to Settings → API Providers to add your ${labels[provider] || provider} API key.`);
+  if (!auth && !customBaseUrl) {
+    throw buildMissingAuthError(provider);
   }
 
   if (provider === 'anthropic') {
-    return callAnthropic(apiKey, model, messages, options, customBaseUrl);
+    return callAnthropic(auth?.apiKey, model, messages, options, customBaseUrl);
   } else if (provider === 'openrouter') {
     // Warm pricing cache in background so cost logging is accurate
     if (!openRouterPricingCache) fetchOpenRouterPricing().catch(() => {});
-    return callOpenRouter(apiKey, model, messages, options);
+    return callOpenRouter(auth?.apiKey, model, messages, options);
   } else if (provider === 'deepseek') {
-    return callOpenAI(apiKey, model, messages, options, 'https://api.deepseek.com');
+    return callOpenAI(auth?.apiKey, model, messages, options, 'https://api.deepseek.com');
   } else if (provider === 'mistral') {
-    return callOpenAI(apiKey, model, messages, options, 'https://api.mistral.ai/v1');
+    return callOpenAI(auth?.apiKey, model, messages, options, 'https://api.mistral.ai/v1');
   } else if (provider === 'google') {
-    return callOpenAI(apiKey, model, messages, options, 'https://generativelanguage.googleapis.com/v1beta/openai');
+    return callGoogle(auth, model, messages, options, customBaseUrl);
   } else {
-    return callOpenAI(apiKey, model, messages, options, customBaseUrl);
+    return callOpenAI(auth?.apiKey, model, messages, options, customBaseUrl);
   }
+}
+
+function buildMissingAuthError(provider) {
+  const labels = {
+    anthropic: 'Anthropic',
+    openai: 'OpenAI',
+    openrouter: 'OpenRouter',
+    google: 'Google',
+    deepseek: 'DeepSeek',
+    mistral: 'Mistral',
+  };
+  return new Error(
+    `No authentication configured for "${provider}". Go to Settings → API Providers to add your ${labels[provider] || provider} credentials.`
+  );
 }
 
 async function callAnthropic(apiKey, model, messages, options, customBaseUrl) {
@@ -244,6 +248,71 @@ async function callOpenRouter(apiKey, model, messages, options) {
   return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
 }
 
+async function callGoogle(auth, model, messages, options, customBaseUrl) {
+  const baseUrl = customBaseUrl || 'https://generativelanguage.googleapis.com/v1beta/openai';
+  const headers = {
+    'Content-Type': 'application/json',
+  };
+
+  if (auth?.mode === 'oauth' && auth.token) {
+    headers.Authorization = `Bearer ${auth.token}`;
+    if (auth.projectId) {
+      headers['x-goog-user-project'] = auth.projectId;
+    }
+  } else if (auth?.apiKey) {
+    headers.Authorization = `Bearer ${auth.apiKey}`;
+  }
+
+  const requestParams = {
+    model: model || 'gemini-2.5-pro',
+    max_tokens: options.maxTokens || 8096,
+    messages,
+  };
+
+  if (options.tools && options.tools.length > 0) {
+    requestParams.tools = options.tools.map((t) => ({
+      type: 'function',
+      function: { name: t.name, description: t.description, parameters: t.parameters },
+    }));
+  }
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(requestParams),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`Google request failed (${response.status}): ${text || response.statusText}`);
+  }
+
+  const data = await response.json();
+  const choice = data.choices?.[0] || {};
+  const message = choice.message || {};
+  const inputTokens = data.usage?.prompt_tokens || 0;
+  const outputTokens = data.usage?.completion_tokens || 0;
+  const content = message.content || '';
+  const toolCalls = (message.tool_calls || []).map((tc) => ({
+    id: tc.id,
+    name: tc.function?.name,
+    input: JSON.parse(tc.function?.arguments || '{}'),
+  }));
+  const rawAssistantMsg = toolCalls.length > 0
+    ? { role: 'assistant', content: message.content, tool_calls: message.tool_calls }
+    : null;
+
+  return {
+    content,
+    toolCalls,
+    rawAssistantMsg,
+    inputTokens,
+    outputTokens,
+    model: data.model || model,
+    stopReason: choice.finish_reason,
+  };
+}
+
 // ─── CLI-based execution (no API key needed) ───
 
 /**
@@ -314,6 +383,7 @@ async function runClaudeAgent(prompt, workDir, onEvent, abortController) {
 async function runCodexAgent(prompt, workDir, onEvent, abortController) {
   const { Codex } = await import('@openai/codex-sdk');
 
+  ensureCodexCliAuthFromStoredProfile();
   const client = new Codex();
   const thread = client.startThread({
     workingDirectory: workDir,
@@ -470,18 +540,16 @@ function estimateCost(provider, model, inputTokens, outputTokens) {
 
 // Streaming completion for chat — yields partial text chunks
 async function createStreamingCompletion(provider, model, messages, onChunk) {
-  let apiKey;
   let customBaseUrl = getSetting('custom_base_url');
-  const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key', deepseek: 'deepseek_api_key', mistral: 'mistral_api_key', google: 'openai_api_key' };
-  apiKey = getSetting(keyMap[provider] || 'openai_api_key');
-  if (!apiKey && !customBaseUrl) throw new Error(`No API key for ${provider}`);
+  const auth = await resolveProviderRuntimeAuth(provider);
+  if (!auth && !customBaseUrl) throw buildMissingAuthError(provider);
 
   let fullContent = '';
   let inputTokens = 0, outputTokens = 0;
 
   if (provider === 'anthropic') {
     const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey, ...(customBaseUrl ? { baseURL: customBaseUrl } : {}) });
+    const client = new Anthropic({ apiKey: auth?.apiKey, ...(customBaseUrl ? { baseURL: customBaseUrl } : {}) });
     const systemMessage = messages.find((m) => m.role === 'system');
     const chatMessages = messages.filter((m) => m.role !== 'system');
     const stream = client.messages.stream({
@@ -499,6 +567,12 @@ async function createStreamingCompletion(provider, model, messages, onChunk) {
     const final = await stream.finalMessage();
     inputTokens = final.usage?.input_tokens || 0;
     outputTokens = final.usage?.output_tokens || 0;
+  } else if (provider === 'google') {
+    const response = await callGoogle(auth, model, messages, { maxTokens: 4096 }, customBaseUrl);
+    fullContent = response.content || '';
+    inputTokens = response.inputTokens || 0;
+    outputTokens = response.outputTokens || 0;
+    if (fullContent) onChunk(fullContent);
   } else {
     // OpenAI-compatible (OpenAI, OpenRouter, DeepSeek, Mistral)
     const OpenAI = require('openai');
@@ -506,7 +580,7 @@ async function createStreamingCompletion(provider, model, messages, onChunk) {
     if (provider === 'openrouter') baseURL = 'https://openrouter.ai/api/v1';
     else if (provider === 'deepseek') baseURL = 'https://api.deepseek.com';
     else if (provider === 'mistral') baseURL = 'https://api.mistral.ai/v1';
-    const client = new OpenAI({ apiKey, ...(baseURL ? { baseURL } : {}) });
+    const client = new OpenAI({ apiKey: auth?.apiKey, ...(baseURL ? { baseURL } : {}) });
     const stream = await client.chat.completions.create({
       model: model || 'gpt-4o',
       max_tokens: 4096,

@@ -103,6 +103,12 @@ db.exec(`
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (agent_id) REFERENCES agents(id) ON DELETE SET NULL
   );
+
+  CREATE TABLE IF NOT EXISTS provider_auth_profiles (
+    provider TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // ─── Versioned Migration System ───

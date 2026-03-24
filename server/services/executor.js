@@ -2,6 +2,7 @@ const { db, uuidv4, DATA_DIR } = require('../db');
 const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent } = require('./ai');
 const { getPluginTools } = require('../plugins');
 const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt } = require('./agent-context');
+const { ensureCodexCliAuthFromStoredProfile } = require('./provider-auth');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -13,6 +14,24 @@ const agentSessions = new Map(); // In-memory cache for Codex threads (non-seria
 // Agent context warm-up cache
 const agentContextCache = new Map();
 const CONTEXT_CACHE_TTL = 60000; // 1 minute
+
+function isCodexAgent(agent) {
+  return agent?.provider === 'codex-cli'
+    || agent?.provider === 'openai-codex'
+    || (agent?.auth_type === 'cli' && agent?.provider === 'openai');
+}
+
+function usesCliRuntime(agent) {
+  return Boolean(agent) && (
+    agent.auth_type === 'cli'
+    || agent.provider === 'claude-cli'
+    || isCodexAgent(agent)
+  );
+}
+
+function supportsApiReflection(agent) {
+  return !usesCliRuntime(agent);
+}
 
 function getAgentContext(agentId) {
   const cached = agentContextCache.get(agentId);
@@ -288,7 +307,7 @@ async function handleDirectChat(agentId, content, platformChatId) {
   console.log(`[Chat] Direct message to ${agent.name} (${agent.auth_type}/${agent.provider}): "${content.slice(0, 80)}"`);
 
   try {
-    if (agent.auth_type === 'cli') {
+    if (usesCliRuntime(agent)) {
       await handleCliChat(agent, content, platformChatId);
     } else {
       await handleApiChat(agent, content, platformChatId);
@@ -322,7 +341,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       const result = await chatWithClaudeAgent(userMessage, session.session_id, process.cwd());
       persistSession(agentId, result.sessionId, 'anthropic');
       responseContent = result.content || '(Agent returned an empty response)';
-    } else if (agent.provider === 'openai' || agent.provider === 'codex-cli') {
+    } else if (isCodexAgent(agent)) {
       let Codex, chatWithCodexAgent;
       try {
         ({ chatWithCodexAgent } = require('./ai'));
@@ -332,6 +351,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       }
       let session = agentSessions.get(agentId);
       if (!session?.thread) {
+        ensureCodexCliAuthFromStoredProfile();
         const client = new Codex();
         const thread = client.startThread({ workingDirectory: process.cwd(), approvalPolicy: 'never', sandboxMode: 'read-only' });
         session = { thread };
@@ -360,14 +380,6 @@ async function handleApiChat(agent, userMessage, platformChatId) {
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
   try {
-    const keyMap = { anthropic: 'anthropic_api_key', openai: 'openai_api_key', openrouter: 'openrouter_api_key', deepseek: 'deepseek_api_key', mistral: 'mistral_api_key', google: 'openai_api_key' };
-    const apiKey = db.prepare("SELECT value FROM settings WHERE key = ?").get(keyMap[agent.provider] || 'openai_api_key')?.value;
-    const customBaseUrl = db.prepare("SELECT value FROM settings WHERE key = 'custom_base_url'").get()?.value;
-    if (!apiKey && !customBaseUrl) {
-      const labels = { anthropic: 'Anthropic', openai: 'OpenAI', openrouter: 'OpenRouter', google: 'Google', deepseek: 'DeepSeek', mistral: 'Mistral' };
-      throw new Error(`No API key configured for "${agent.provider}". Go to Settings → API Providers to add your ${labels[agent.provider] || agent.provider} API key.`);
-    }
-
     const agentContext = buildAgentContext(agentId, agent, { includeMemory: true, includeHeartbeat: false });
 
     const recentMsgs = db.prepare('SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20').all(agentId).reverse();
@@ -501,7 +513,7 @@ async function _executeTask(taskId, agentId) {
 
     if (isFlow) {
       await executeFlowTask(taskId, agentId, task, project, execState);
-    } else if (agent.auth_type === 'cli') {
+    } else if (usesCliRuntime(agent)) {
       await executeTaskCli(taskId, agentId, agent, task, project, workDir, execState);
     } else {
       await executeTaskApi(taskId, agentId, agent, task, project, workDir, execState);
@@ -627,7 +639,7 @@ async function executeFlowTask(taskId, mainAgentId, task, project, execState) {
     let stepFailed = false;
 
     try {
-      if (agent.auth_type === 'cli') {
+      if (usesCliRuntime(agent)) {
         stepOutput = await executeFlowStepCli(taskId, agentId, agent, task, currentItem, previousContext, workDir, execState, currentIdx, flowItems.length);
       } else {
         stepOutput = await executeFlowStepApi(taskId, agentId, agent, task, currentItem, previousContext, project, workDir, execState, currentIdx, flowItems.length);
@@ -793,7 +805,7 @@ Complete your step using the tools. When done, call task_complete with a summary
 
 async function executeFlowStepCli(taskId, agentId, agent, task, flowItem, previousContext, workDir, execState, stepIdx, totalSteps) {
   const agentContext = buildAgentContext(agentId, agent, { includeMemory: false, includeHeartbeat: false });
-  const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
+  const isCodex = isCodexAgent(agent);
 
   if (isCodex) ensureGitRepo(workDir, taskId);
 
@@ -829,6 +841,7 @@ Complete your step autonomously.`;
   };
 
   if (isCodex) {
+    ensureCodexCliAuthFromStoredProfile();
     const { Codex } = await import('@openai/codex-sdk');
     const client = new Codex();
     const thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
@@ -862,7 +875,7 @@ async function executeFlowStepWrapper(taskId, mainAgentId, task, project, execSt
   db.prepare("UPDATE agents SET status = 'working', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'working' });
   try {
-    if (agent.auth_type === 'cli') {
+    if (usesCliRuntime(agent)) {
       return await executeFlowStepCli(taskId, agentId, agent, task, item, previousContext, workDir, execState, stepIdx, flowItems.length);
     } else {
       return await executeFlowStepApi(taskId, agentId, agent, task, item, previousContext, project, workDir, execState, stepIdx, flowItems.length);
@@ -914,7 +927,7 @@ async function executeTaskCli(taskId, agentId, agent, task, project, workDir, ex
     includeHeartbeat: isRecurring,
   });
 
-  const isCodex = agent.provider === 'codex-cli' || (agent.auth_type === 'cli' && agent.provider === 'openai');
+  const isCodex = isCodexAgent(agent);
   const sdkName = isCodex ? 'Codex' : 'Claude';
 
   addLog(taskId, 'info', `Using ${sdkName} Agent SDK (CLI mode)`);
@@ -993,6 +1006,7 @@ ${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the li
       addLog(taskId, 'info', 'Creating Codex client and thread...');
       let client, thread;
       try {
+        ensureCodexCliAuthFromStoredProfile();
         client = new Codex();
         thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
         addLog(taskId, 'info', 'Codex thread created');
@@ -1903,7 +1917,7 @@ function appendMemoryEntry(agentDir, title, content) {
 // Full AI-powered reflection after task completion — async, fire-and-forget
 async function reflectAfterTask(agent, agentDir, taskTitle, taskSummary, project) {
   appendDailyMemoryEntry(agentDir, taskTitle, taskSummary);
-  if (agent.auth_type !== 'api') {
+  if (!supportsApiReflection(agent)) {
     appendMemoryEntry(agentDir, taskTitle, taskSummary);
     return;
   }
@@ -1984,7 +1998,7 @@ Rules:
 
 // Lightweight AI reflection after a chat exchange — async, fire-and-forget
 async function reflectAfterChat(agent, agentDir, userMessage, agentResponse) {
-  if (agent.auth_type !== 'api') {
+  if (!supportsApiReflection(agent)) {
     appendDailyMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 300)}\nAgent: ${agentResponse.slice(0, 300)}`);
     appendMemoryEntry(agentDir, 'Chat', `User: ${userMessage.slice(0, 150)}\nAgent: ${agentResponse.slice(0, 150)}`);
     return;

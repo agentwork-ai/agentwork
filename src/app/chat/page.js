@@ -6,7 +6,29 @@ import BottomBar from '@/components/BottomBar';
 import MarkdownContent from '@/components/MarkdownContent';
 import { api } from '@/lib/api';
 import { useSocket, useUnread } from '@/app/providers';
-import { Send, Bot, User, Key, Terminal, Search, X } from 'lucide-react';
+import { Send, Bot, User, Key, Terminal, Search, X, Shield } from 'lucide-react';
+
+const AUTH_MODE_META = {
+  api: { label: 'API Mode', bg: 'var(--accent-light)', color: 'var(--accent)', Icon: Key },
+  cli: { label: 'CLI Mode', bg: '#20c99715', color: '#20c997', Icon: Terminal },
+  oauth: { label: 'OAuth Mode', bg: '#ff922b20', color: '#f08c00', Icon: Shield },
+};
+
+function getAuthModeMeta(authType) {
+  return AUTH_MODE_META[authType] || AUTH_MODE_META.api;
+}
+
+function getAuthDescription(agent) {
+  if (agent?.auth_type === 'cli') {
+    return 'This agent uses your local CLI auth.';
+  }
+  if (agent?.auth_type === 'oauth') {
+    return agent.provider === 'openai-codex'
+      ? 'This agent uses saved Codex OAuth from Settings.'
+      : 'This agent uses saved provider auth from Settings.';
+  }
+  return 'Make sure the required API credentials are configured in Settings.';
+}
 
 export default function ChatPage() {
   const socket = useSocket();
@@ -84,6 +106,8 @@ export default function ChatPage() {
     setIsTyping(true); // Expect agent response
   };
 
+  const selectedAuthMode = getAuthModeMeta(selectedAgent?.auth_type);
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -126,6 +150,8 @@ export default function ChatPage() {
                 agents.map((agent) => {
                   const agentUnread = unread[agent.id];
                   const hasUnread = agentUnread && agentUnread.count > 0;
+                  const authMode = getAuthModeMeta(agent.auth_type);
+                  const AuthIcon = authMode.Icon;
                   return (
                   <button
                     key={agent.id}
@@ -154,10 +180,10 @@ export default function ChatPage() {
                       </p>
                     </div>
                     <span className="text-[9px] shrink-0 px-1.5 py-0.5 rounded" style={{
-                      background: agent.auth_type === 'cli' ? '#20c99715' : 'var(--accent-light)',
-                      color: agent.auth_type === 'cli' ? '#20c997' : 'var(--accent)',
+                      background: authMode.bg,
+                      color: authMode.color,
                     }}>
-                      {agent.auth_type === 'cli' ? <Terminal size={10} /> : <Key size={10} />}
+                      <AuthIcon size={10} />
                     </span>
                   </button>
                   );
@@ -211,10 +237,10 @@ export default function ChatPage() {
                       />
                     </div>
                     <span className="text-[10px] px-2 py-1 rounded" style={{
-                      background: selectedAgent.auth_type === 'cli' ? '#20c99715' : 'var(--accent-light)',
-                      color: selectedAgent.auth_type === 'cli' ? '#20c997' : 'var(--accent)',
+                      background: selectedAuthMode.bg,
+                      color: selectedAuthMode.color,
                     }}>
-                      {selectedAgent.auth_type === 'cli' ? 'CLI Mode' : 'API Mode'}
+                      {selectedAuthMode.label}
                       {selectedAgent.model ? ` · ${selectedAgent.model}` : ''}
                     </span>
                   </div>
@@ -230,9 +256,7 @@ export default function ChatPage() {
                           Start a conversation with {selectedAgent.name}
                         </p>
                         <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                          {selectedAgent.auth_type === 'cli'
-                            ? 'This agent uses your local CLI — no API key needed'
-                            : 'Make sure your API key is configured in Settings'}
+                          {getAuthDescription(selectedAgent)}
                         </p>
                       </div>
                     </div>

@@ -2,6 +2,13 @@ const express = require('express');
 const router = express.Router();
 const { db, logAudit } = require('../db');
 const { encrypt, decrypt, isSensitiveKey } = require('../crypto');
+const {
+  buildAuthOverview,
+  deleteProfile,
+  importCodexCliProfile,
+  importGeminiCliProfile,
+  saveAnthropicSetupToken,
+} = require('../services/provider-auth');
 
 // Get all settings (decrypt sensitive values)
 router.get('/', (req, res) => {
@@ -11,6 +18,51 @@ router.get('/', (req, res) => {
     settings[r.key] = isSensitiveKey(r.key) ? decrypt(r.value) : r.value;
   });
   res.json(settings);
+});
+
+router.get('/provider-auth', (req, res) => {
+  res.json(buildAuthOverview());
+});
+
+router.post('/provider-auth/anthropic/setup-token', (req, res) => {
+  try {
+    saveAnthropicSetupToken(req.body?.token);
+    logAudit('update', 'provider_auth', 'anthropic', 'setup-token');
+    res.json(buildAuthOverview());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/provider-auth/openai-codex/import', (req, res) => {
+  try {
+    importCodexCliProfile();
+    logAudit('update', 'provider_auth', 'openai-codex', 'import-local');
+    res.json(buildAuthOverview());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.post('/provider-auth/google-gemini-cli/import', (req, res) => {
+  try {
+    importGeminiCliProfile({ projectId: req.body?.project_id });
+    logAudit('update', 'provider_auth', 'google-gemini-cli', 'import-local');
+    res.json(buildAuthOverview());
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+router.delete('/provider-auth/:provider', (req, res) => {
+  const provider = String(req.params.provider || '').trim();
+  if (!['anthropic', 'openai-codex', 'google-gemini-cli'].includes(provider)) {
+    return res.status(404).json({ error: 'Unknown provider auth profile' });
+  }
+
+  deleteProfile(provider);
+  logAudit('delete', 'provider_auth', provider, 'clear-profile');
+  return res.json(buildAuthOverview());
 });
 
 // Update settings

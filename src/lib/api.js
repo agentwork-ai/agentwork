@@ -87,6 +87,24 @@ export const api = {
   // Settings
   getSettings: () => request('/api/settings'),
   updateSettings: (data) => request('/api/settings', { method: 'PUT', body: JSON.stringify(data) }),
+  getProviderAuth: () => request('/api/settings/provider-auth'),
+  saveAnthropicSetupToken: (token) =>
+    request('/api/settings/provider-auth/anthropic/setup-token', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+    }),
+  importCodexOAuth: () =>
+    request('/api/settings/provider-auth/openai-codex/import', {
+      method: 'POST',
+      body: JSON.stringify({}),
+    }),
+  importGeminiOAuth: (projectId) =>
+    request('/api/settings/provider-auth/google-gemini-cli/import', {
+      method: 'POST',
+      body: JSON.stringify({ project_id: projectId || '' }),
+    }),
+  clearProviderAuth: (provider) =>
+    request(`/api/settings/provider-auth/${provider}`, { method: 'DELETE' }),
   getBudget: () => request('/api/settings/budget'),
   getBudgetHistory: (days) => request(`/api/settings/budget/history?days=${days || 30}`),
   getBudgetByAgent: (days) => request(`/api/settings/budget/by-agent?days=${days || 30}`),
