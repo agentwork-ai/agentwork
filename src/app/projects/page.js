@@ -12,6 +12,19 @@ import {
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
+const DEFAULT_PROJECT_TEMPLATES = [
+  { id: 'generic', label: 'Generic', description: 'Current default template.' },
+  { id: 'ios', label: 'iOS App', description: 'Swift / SwiftUI / UIKit project structure.' },
+  { id: 'android', label: 'Android App', description: 'Kotlin / Java Android project structure.' },
+  { id: 'flutter', label: 'Flutter App', description: 'Flutter and Dart cross-platform app structure.' },
+  { id: 'react-native', label: 'React Native App', description: 'React Native mobile app structure.' },
+  { id: 'python', label: 'Python App', description: 'Python service, script, or web app structure.' },
+  { id: 'node-api', label: 'Node API / Service', description: 'Backend API or service structure.' },
+  { id: 'nextjs', label: 'Next.js Web App', description: 'Next.js web application structure.' },
+  { id: 'web-frontend', label: 'Web Frontend', description: 'Frontend SPA / web client structure.' },
+  { id: 'go', label: 'Go Service', description: 'Go application or service structure.' },
+];
+
 export default function ProjectsPage() {
   const socket = useSocket();
   const [projects, setProjects] = useState([]);
@@ -398,16 +411,25 @@ function ProjectFormModal({ project, onClose, onSaved }) {
     description: project?.description || '',
     path: project?.path || '',
     ignore_patterns: project?.ignore_patterns || 'node_modules,.git,dist,build,.next',
+    project_template: project?.project_template || 'generic',
     project_manager_agent_id: project?.project_manager_agent_id || project?.default_agent_id || '',
     main_developer_agent_id: project?.main_developer_agent_id || '',
   });
   const [saving, setSaving] = useState(false);
   const [browsing, setBrowsing] = useState(false);
   const [agents, setAgents] = useState([]);
+  const [projectTemplates, setProjectTemplates] = useState(DEFAULT_PROJECT_TEMPLATES);
 
   useEffect(() => {
     api.getAgents().then(setAgents).catch(() => {});
+    api.getProjectTemplates().then((templates) => {
+      if (Array.isArray(templates) && templates.length > 0) {
+        setProjectTemplates(templates);
+      }
+    }).catch(() => {});
   }, []);
+
+  const selectedTemplate = projectTemplates.find((template) => template.id === form.project_template) || projectTemplates[0];
 
   const handleBrowse = async () => {
     setBrowsing(true);
@@ -476,6 +498,26 @@ function ProjectFormModal({ project, onClose, onSaved }) {
             <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} />
           </div>
           <div>
+            <label className="label">Project Template</label>
+            <select
+              className="input"
+              value={form.project_template}
+              onChange={(e) => setForm({ ...form, project_template: e.target.value })}
+            >
+              {projectTemplates.map((template) => (
+                <option key={template.id} value={template.id}>{template.label}</option>
+              ))}
+            </select>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Controls the initial `PROJECT.md` structure. `Generic` keeps the current default behavior.
+            </p>
+            {selectedTemplate?.description ? (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                {selectedTemplate.description}
+              </p>
+            ) : null}
+          </div>
+          <div>
             <label className="label">Project Manager</label>
             <select className="input" value={form.project_manager_agent_id}
               onChange={(e) => setForm({ ...form, project_manager_agent_id: e.target.value })}>
@@ -505,6 +547,9 @@ function ProjectFormModal({ project, onClose, onSaved }) {
             <label className="label">Ignore Patterns (comma-separated)</label>
             <input className="input text-sm" value={form.ignore_patterns}
               onChange={(e) => setForm({ ...form, ignore_patterns: e.target.value })} />
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              These names are skipped in the project file tree, search, and indexing. Example: `node_modules,.git,dist,build,.next`.
+            </p>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>

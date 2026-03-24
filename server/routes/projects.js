@@ -1,7 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const { db, uuidv4 } = require('../db');
-const { generateProjectDoc } = require('../services/project-doc');
+const {
+  generateProjectDoc,
+  listProjectTemplates,
+  normalizeProjectTemplate,
+} = require('../services/project-doc');
 const fs = require('fs');
 const path = require('path');
 
@@ -16,6 +20,10 @@ function resolveAgentId(value) {
 router.get('/', (req, res) => {
   const projects = db.prepare('SELECT * FROM projects ORDER BY updated_at DESC').all();
   res.json(projects);
+});
+
+router.get('/templates', (_req, res) => {
+  res.json(listProjectTemplates());
 });
 
 // Get single project
@@ -35,6 +43,7 @@ router.post('/', (req, res) => {
     default_agent_id,
     project_manager_agent_id,
     main_developer_agent_id,
+    project_template,
   } = req.body;
 
   if (!name || !projectPath) {
@@ -49,12 +58,13 @@ router.post('/', (req, res) => {
     project_manager_agent_id !== undefined ? project_manager_agent_id : default_agent_id
   );
   const mainDeveloperAgentId = resolveAgentId(main_developer_agent_id);
+  const projectTemplate = normalizeProjectTemplate(project_template);
 
   const id = uuidv4();
   db.prepare(
     `INSERT INTO projects
-      (id, name, description, path, ignore_patterns, default_agent_id, project_manager_agent_id, main_developer_agent_id)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+      (id, name, description, path, ignore_patterns, default_agent_id, project_manager_agent_id, main_developer_agent_id, project_template)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     name,
@@ -64,11 +74,12 @@ router.post('/', (req, res) => {
     projectManagerAgentId,
     projectManagerAgentId,
     mainDeveloperAgentId,
+    projectTemplate,
   );
 
   // Auto-generate PROJECT.md
   try {
-    generateProjectDoc(projectPath, name, description);
+    generateProjectDoc(projectPath, name, description, projectTemplate);
   } catch (err) {
     console.error('[Projects] Failed to generate PROJECT.md:', err.message);
   }
@@ -93,6 +104,7 @@ router.put('/:id', (req, res) => {
     default_agent_id,
     project_manager_agent_id,
     main_developer_agent_id,
+    project_template,
   } = req.body;
 
   const projectManagerAgentId = project_manager_agent_id !== undefined
@@ -104,11 +116,14 @@ router.put('/:id', (req, res) => {
   const mainDeveloperAgentId = main_developer_agent_id !== undefined
     ? resolveAgentId(main_developer_agent_id)
     : project.main_developer_agent_id || null;
+  const projectTemplate = project_template !== undefined
+    ? normalizeProjectTemplate(project_template)
+    : normalizeProjectTemplate(project.project_template);
 
   db.prepare(
     `UPDATE projects
      SET name = ?, description = ?, path = ?, ignore_patterns = ?, default_agent_id = ?,
-         project_manager_agent_id = ?, main_developer_agent_id = ?, updated_at = CURRENT_TIMESTAMP
+         project_manager_agent_id = ?, main_developer_agent_id = ?, project_template = ?, updated_at = CURRENT_TIMESTAMP
      WHERE id = ?`
   ).run(
     name || project.name,
@@ -118,6 +133,7 @@ router.put('/:id', (req, res) => {
     projectManagerAgentId,
     projectManagerAgentId,
     mainDeveloperAgentId,
+    projectTemplate,
     req.params.id
   );
 
@@ -181,7 +197,13 @@ router.post('/:id/regenerate-doc', (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   try {
-    generateProjectDoc(project.path, project.name, project.description);
+    generateProjectDoc(
+      project.path,
+      project.name,
+      project.description,
+      project.project_template,
+      { force: true }
+    );
     res.json({ success: true, message: 'PROJECT.md regenerated' });
   } catch (err) {
     res.status(500).json({ error: err.message });

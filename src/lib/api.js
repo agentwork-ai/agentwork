@@ -32,6 +32,7 @@ async function request(path, options = {}) {
 export const api = {
   // Projects
   getProjects: () => request('/api/projects'),
+  getProjectTemplates: () => request('/api/projects/templates'),
   getProject: (id) => request(`/api/projects/${id}`),
   createProject: (data) => request('/api/projects', { method: 'POST', body: JSON.stringify(data) }),
   updateProject: (id, data) => request(`/api/projects/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
