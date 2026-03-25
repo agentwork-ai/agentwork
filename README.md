@@ -23,17 +23,25 @@ Autonomous AI agent orchestration platform for software teams. Hire role-based a
 
 Requires **Node.js 18+**.
 
-### Option 1: npm
+### One-liner install (macOS/Linux)
+
+```bash
+curl -fsSL https://agentwork.sh/install.sh | bash
+```
+
+The installer bootstraps Node.js if needed, installs the latest `agentwork`, starts the daemon, and prints the local dashboard URL.
+
+### Option 2: npm
 
 ```bash
 npm install -g agentwork
 agentwork start
 ```
 
-### Option 2: From source
+### Option 3: From source
 
 ```bash
-git clone https://github.com/your-org/agentwork.git
+git clone https://github.com/agentwork-ai/agentwork.git
 cd agentwork
 npm install && npm run build && npm link
 agentwork start
