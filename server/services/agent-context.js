@@ -1172,6 +1172,8 @@ Use the actual tool names below when acting:
 - **task_complete**: Call when all requested work is done
 - **request_help**: Only if you are truly blocked${customToolsPrompt || ''}
 
+For website and web-app tasks, use \`browser\` instead of \`run_bash\` with curl/wget when browser access is available.
+
 TOOLS.md may contain local notes, but actual capabilities come from the runtime, not from TOOLS.md.`;
 }
 

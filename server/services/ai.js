@@ -75,6 +75,153 @@ function normalizeTextContent(content) {
   return typeof content === 'string' ? content : '';
 }
 
+const XML_TOOL_NAME_ALIASES = {
+  bash: 'run_bash',
+  shell: 'run_bash',
+  command: 'run_bash',
+  runbash: 'run_bash',
+  read: 'read_file',
+  readfile: 'read_file',
+  write: 'write_file',
+  writefile: 'write_file',
+  delete: 'delete_path',
+  removepath: 'delete_path',
+  list: 'list_directory',
+  listdirectory: 'list_directory',
+  ls: 'list_directory',
+  readimage: 'read_image',
+  image: 'read_image',
+  browser: 'browser',
+  taskcomplete: 'task_complete',
+  complete: 'task_complete',
+  done: 'task_complete',
+  requesthelp: 'request_help',
+  help: 'request_help',
+  message: 'message_agent',
+  messageagent: 'message_agent',
+  agentmessage: 'message_agent',
+};
+
+function normalizeXmlToolName(name) {
+  const cleaned = String(name || '')
+    .trim()
+    .replace(/^["']|["']$/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '');
+
+  return XML_TOOL_NAME_ALIASES[cleaned] || String(name || '').trim();
+}
+
+function coerceXmlToolValue(raw) {
+  const value = String(raw || '').trim();
+  if (!value) return '';
+
+  if ((value.startsWith('{') && value.endsWith('}')) || (value.startsWith('[') && value.endsWith(']'))) {
+    try {
+      return JSON.parse(value);
+    } catch {}
+  }
+
+  if (/^(true|false)$/i.test(value)) return value.toLowerCase() === 'true';
+  if (/^null$/i.test(value)) return null;
+  if (/^-?\d+$/.test(value)) return parseInt(value, 10);
+  if (/^-?\d+\.\d+$/.test(value)) return parseFloat(value);
+
+  return value;
+}
+
+function parseXmlToolParameters(block) {
+  const input = {};
+  const parameterRe = /<parameter(?:=|\s+name=)(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>([\s\S]*?)<\/parameter>/gi;
+  let match;
+
+  while ((match = parameterRe.exec(block)) !== null) {
+    const key = (match[1] || match[2] || match[3] || '').trim();
+    if (!key) continue;
+    input[key] = coerceXmlToolValue(match[4]);
+  }
+
+  return input;
+}
+
+function parseXmlLikeToolCalls(content) {
+  const text = normalizeTextContent(content);
+  if (!text || (!/<tool_call\b/i.test(text) && !/<invoke\b/i.test(text) && !/<function(?:=|\s+name=)/i.test(text))) {
+    return { toolCalls: [], cleanedContent: text };
+  }
+
+  const toolCalls = [];
+  let sequence = 0;
+
+  const pushToolCall = (name, body) => {
+    const normalizedName = normalizeXmlToolName(name);
+    if (!normalizedName) return;
+    sequence += 1;
+    toolCalls.push({
+      id: `xml_tool_${sequence}`,
+      name: normalizedName,
+      input: parseXmlToolParameters(body),
+    });
+  };
+
+  const toolBlockRe = /<tool_call\b[^>]*>([\s\S]*?)<\/tool_call>/gi;
+  let matchedToolBlock = false;
+  let match;
+  while ((match = toolBlockRe.exec(text)) !== null) {
+    matchedToolBlock = true;
+    const block = match[1];
+
+    let functionFound = false;
+    const functionRe = /<function(?:=|\s+name=)(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>([\s\S]*?)<\/function>/gi;
+    let functionMatch;
+    while ((functionMatch = functionRe.exec(block)) !== null) {
+      functionFound = true;
+      pushToolCall(functionMatch[1] || functionMatch[2] || functionMatch[3], functionMatch[4]);
+    }
+
+    if (!functionFound) {
+      const invokeRe = /<invoke\b[^>]*name=(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>([\s\S]*?)<\/invoke>/gi;
+      let invokeMatch;
+      while ((invokeMatch = invokeRe.exec(block)) !== null) {
+        functionFound = true;
+        pushToolCall(invokeMatch[1] || invokeMatch[2] || invokeMatch[3], invokeMatch[4]);
+      }
+    }
+  }
+
+  if (!matchedToolBlock) {
+    const invokeRe = /<invoke\b[^>]*name=(?:"([^"]+)"|'([^']+)'|([^\s>]+))[^>]*>([\s\S]*?)<\/invoke>/gi;
+    while ((match = invokeRe.exec(text)) !== null) {
+      pushToolCall(match[1] || match[2] || match[3], match[4]);
+    }
+  }
+
+  const cleanedContent = text
+    .replace(/<tool_call\b[^>]*>[\s\S]*?<\/tool_call>/gi, ' ')
+    .replace(/<invoke\b[^>]*>[\s\S]*?<\/invoke>/gi, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+
+  return { toolCalls, cleanedContent };
+}
+
+function buildSyntheticOpenAIToolMessage(toolCalls, cleanedContent) {
+  if (!Array.isArray(toolCalls) || toolCalls.length === 0) return null;
+
+  return {
+    role: 'assistant',
+    content: cleanedContent || '',
+    tool_calls: toolCalls.map((toolCall) => ({
+      id: toolCall.id,
+      type: 'function',
+      function: {
+        name: toolCall.name,
+        arguments: JSON.stringify(toolCall.input || {}),
+      },
+    })),
+  };
+}
+
 function buildOpenAICompatibleClient(provider, apiKey, baseURL) {
   const OpenAI = require('openai');
   const defaultHeaders = getOpenAICompatibleHeaders(provider);
@@ -262,16 +409,27 @@ async function callOpenAICompatible(provider, apiKey, model, messages, options, 
   const inputTokens = response.usage?.prompt_tokens || 0;
   const outputTokens = response.usage?.completion_tokens || 0;
   const content = normalizeTextContent(choice.message.content);
-  const toolCalls = (choice.message.tool_calls || []).map((tc) => ({
+  const nativeToolCalls = (choice.message.tool_calls || []).map((tc) => ({
     id: tc.id,
     name: tc.function.name,
     input: parseJsonSafe(tc.function.arguments),
   }));
-  const rawAssistantMsg = toolCalls.length > 0
+  const parsedXml = nativeToolCalls.length === 0 ? parseXmlLikeToolCalls(content) : { toolCalls: [], cleanedContent: content };
+  const toolCalls = nativeToolCalls.length > 0 ? nativeToolCalls : parsedXml.toolCalls;
+  const cleanedContent = nativeToolCalls.length > 0 ? content : parsedXml.cleanedContent;
+  const rawAssistantMsg = nativeToolCalls.length > 0
     ? { role: 'assistant', content: choice.message.content, tool_calls: choice.message.tool_calls }
-    : null;
+    : buildSyntheticOpenAIToolMessage(toolCalls, cleanedContent);
 
-  return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
+  return {
+    content: cleanedContent,
+    toolCalls,
+    rawAssistantMsg,
+    inputTokens,
+    outputTokens,
+    model: response.model,
+    stopReason: choice.finish_reason,
+  };
 }
 
 async function callOpenRouter(apiKey, model, messages, options) {
@@ -323,17 +481,20 @@ async function callGoogle(auth, model, messages, options, customBaseUrl) {
   const inputTokens = data.usage?.prompt_tokens || 0;
   const outputTokens = data.usage?.completion_tokens || 0;
   const content = normalizeTextContent(message.content);
-  const toolCalls = (message.tool_calls || []).map((tc) => ({
+  const nativeToolCalls = (message.tool_calls || []).map((tc) => ({
     id: tc.id,
     name: tc.function?.name,
     input: parseJsonSafe(tc.function?.arguments),
   }));
-  const rawAssistantMsg = toolCalls.length > 0
+  const parsedXml = nativeToolCalls.length === 0 ? parseXmlLikeToolCalls(content) : { toolCalls: [], cleanedContent: content };
+  const toolCalls = nativeToolCalls.length > 0 ? nativeToolCalls : parsedXml.toolCalls;
+  const cleanedContent = nativeToolCalls.length > 0 ? content : parsedXml.cleanedContent;
+  const rawAssistantMsg = nativeToolCalls.length > 0
     ? { role: 'assistant', content: message.content, tool_calls: message.tool_calls }
-    : null;
+    : buildSyntheticOpenAIToolMessage(toolCalls, cleanedContent);
 
   return {
-    content,
+    content: cleanedContent,
     toolCalls,
     rawAssistantMsg,
     inputTokens,

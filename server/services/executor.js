@@ -401,6 +401,7 @@ function buildChatToolsPrompt(toolDefs) {
     '## Chat Tools',
     'You may use tools during chat when the user needs real browser actions, filesystem work, or command execution.',
     'After using tools, reply naturally to the user with the result.',
+    'When the user asks about a website or web app, use the browser tool instead of run_bash with curl/wget.',
     ...toolDefs.map((tool) => `- **${tool.name}**: ${tool.description}`),
   ];
 

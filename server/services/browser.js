@@ -55,8 +55,17 @@ function getDownloadDir(profile) {
   return dir;
 }
 
+function parseBooleanFlag(value) {
+  const normalized = String(value ?? '').trim().toLowerCase();
+  if (!normalized) return null;
+  if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  return null;
+}
+
 function getDefaultHeadless() {
-  return process.env.AGENTWORK_BROWSER_HEADLESS !== 'false';
+  const explicit = parseBooleanFlag(process.env.AGENTWORK_BROWSER_HEADLESS);
+  return explicit === null ? false : explicit;
 }
 
 function getPlaywright() {
@@ -145,19 +154,33 @@ async function serializePages(session) {
 
 async function ensureSession(agentId, options = {}) {
   const profile = resolveProfile(agentId, options.profile);
+  const headless = options.headless !== undefined ? Boolean(options.headless) : getDefaultHeadless();
   let session = sessions.get(profile);
   if (session?.context) {
-    return session;
+    if (session.headless === headless) {
+      return session;
+    }
+    await stopSession(profile);
+    session = null;
   }
 
   const { chromium } = getPlaywright();
-  const headless = options.headless !== undefined ? Boolean(options.headless) : getDefaultHeadless();
-  const context = await chromium.launchPersistentContext(getProfileDir(profile), {
-    headless,
-    acceptDownloads: true,
-    viewport: DEFAULT_VIEWPORT,
-    downloadsPath: getDownloadDir(profile),
-  });
+  let context;
+  try {
+    context = await chromium.launchPersistentContext(getProfileDir(profile), {
+      headless,
+      acceptDownloads: true,
+      viewport: DEFAULT_VIEWPORT,
+      downloadsPath: getDownloadDir(profile),
+    });
+  } catch (err) {
+    if (!headless) {
+      throw new Error(
+        `Failed to launch a visible browser window: ${err.message}. If AgentWork is running in a headless session, set AGENTWORK_BROWSER_HEADLESS=true and restart.`
+      );
+    }
+    throw err;
+  }
 
   session = {
     profile,
