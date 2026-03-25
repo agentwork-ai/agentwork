@@ -19,7 +19,6 @@ import {
   ChevronRight,
   Sun,
   Moon,
-  Zap,
   Menu,
   X,
   GitBranch,
@@ -76,12 +75,11 @@ export default function Sidebar() {
     <>
       {/* Logo */}
       <div className="flex items-center gap-3 px-4 h-14 border-b" style={{ borderColor: 'var(--border)' }}>
-        <div
-          className="flex items-center justify-center w-8 h-8 rounded-lg"
-          style={{ background: 'var(--accent)' }}
-        >
-          <Zap size={18} className="text-white" />
-        </div>
+        <img
+          src="/icon.svg"
+          alt="AgentWork"
+          className="w-8 h-8 rounded-lg shrink-0"
+        />
         {!collapsed && (
           <span className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>
             AgentWork
