@@ -1,12 +1,90 @@
 const { db } = require('../db');
 const { decrypt, isSensitiveKey } = require('../crypto');
 const { ensureCodexCliAuthFromStoredProfile, resolveProviderRuntimeAuth } = require('./provider-auth');
+const llmProviders = require('../../shared/llm-providers.json');
 const CODEX_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+const API_PROVIDER_INDEX = Object.fromEntries(
+  (llmProviders.apiProviders || []).map((provider) => [provider.id, provider])
+);
 
 function getSetting(key) {
   const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(key);
   if (!row) return '';
   return isSensitiveKey(key) ? decrypt(row.value) : row.value;
+}
+
+function getProviderConfig(provider) {
+  return API_PROVIDER_INDEX[String(provider || '').trim()] || null;
+}
+
+function getProviderBaseUrl(provider, customBaseUrl = '') {
+  const config = getProviderConfig(provider);
+  const trimmedCustomBaseUrl = String(customBaseUrl || '').trim();
+
+  if (['openai', 'anthropic', 'google', 'deepseek', 'mistral'].includes(provider)) {
+    return trimmedCustomBaseUrl || config?.baseUrl || '';
+  }
+
+  if (config?.baseUrlSetting) {
+    const configured = String(getSetting(config.baseUrlSetting) || '').trim();
+    if (configured) return configured;
+  }
+
+  return config?.baseUrl || '';
+}
+
+function providerAllowsAnonymous(provider, baseUrl) {
+  const config = getProviderConfig(provider);
+  if (config?.authOptional) return true;
+  return provider === 'openai' && Boolean(baseUrl);
+}
+
+function getProviderDefaultModel(provider, fallback = '') {
+  const config = getProviderConfig(provider);
+  return fallback || config?.models?.[0]?.id || '';
+}
+
+function getOpenAICompatibleHeaders(provider) {
+  if (provider === 'openrouter') {
+    return {
+      'HTTP-Referer': 'http://localhost:1248',
+      'X-Title': 'AgentWork',
+    };
+  }
+  return null;
+}
+
+function parseJsonSafe(value) {
+  try {
+    return JSON.parse(value || '{}');
+  } catch {
+    return {};
+  }
+}
+
+function normalizeTextContent(content) {
+  if (Array.isArray(content)) {
+    return content
+      .map((part) => {
+        if (typeof part === 'string') return part;
+        if (typeof part?.text === 'string') return part.text;
+        return '';
+      })
+      .join('');
+  }
+  return typeof content === 'string' ? content : '';
+}
+
+function buildOpenAICompatibleClient(provider, apiKey, baseURL) {
+  const OpenAI = require('openai');
+  const defaultHeaders = getOpenAICompatibleHeaders(provider);
+  const resolvedApiKey = apiKey || (baseURL ? 'agentwork-local' : undefined);
+
+  return new OpenAI({
+    ...(resolvedApiKey ? { apiKey: resolvedApiKey } : {}),
+    ...(baseURL ? { baseURL } : {}),
+    ...(defaultHeaders ? { defaultHeaders } : {}),
+  });
 }
 
 // Simple per-provider rate limiter
@@ -93,41 +171,34 @@ async function _createCompletion(provider, model, messages, options = {}) {
     console.log(`[AI Verbose] Request: ${provider}/${model} | ${messages.length} messages | ~${promptLen} chars`);
   }
 
-  let customBaseUrl = getSetting('custom_base_url');
+  const customBaseUrl = getSetting('custom_base_url');
+  const baseUrl = getProviderBaseUrl(provider, customBaseUrl);
   const auth = await resolveProviderRuntimeAuth(provider);
 
-  if (!auth && !customBaseUrl) {
+  if (!auth && !providerAllowsAnonymous(provider, baseUrl)) {
     throw buildMissingAuthError(provider);
   }
 
   if (provider === 'anthropic') {
-    return callAnthropic(auth?.apiKey, model, messages, options, customBaseUrl);
-  } else if (provider === 'openrouter') {
-    // Warm pricing cache in background so cost logging is accurate
-    if (!openRouterPricingCache) fetchOpenRouterPricing().catch(() => {});
-    return callOpenRouter(auth?.apiKey, model, messages, options);
-  } else if (provider === 'deepseek') {
-    return callOpenAI(auth?.apiKey, model, messages, options, 'https://api.deepseek.com');
-  } else if (provider === 'mistral') {
-    return callOpenAI(auth?.apiKey, model, messages, options, 'https://api.mistral.ai/v1');
-  } else if (provider === 'google') {
-    return callGoogle(auth, model, messages, options, customBaseUrl);
-  } else {
-    return callOpenAI(auth?.apiKey, model, messages, options, customBaseUrl);
+    return callAnthropic(auth?.apiKey, model, messages, options, baseUrl);
   }
+
+  if (provider === 'google') {
+    return callGoogle(auth, model, messages, options, baseUrl);
+  }
+
+  if (provider === 'openrouter' && !openRouterPricingCache) {
+    fetchOpenRouterPricing().catch(() => {});
+  }
+
+  return callOpenAICompatible(provider, auth?.apiKey, model, messages, options, baseUrl);
 }
 
 function buildMissingAuthError(provider) {
-  const labels = {
-    anthropic: 'Anthropic',
-    openai: 'OpenAI',
-    openrouter: 'OpenRouter',
-    google: 'Google',
-    deepseek: 'DeepSeek',
-    mistral: 'Mistral',
-  };
+  const config = getProviderConfig(provider);
+  const label = config?.label?.replace(/\s+\(.*\)$/, '') || provider;
   return new Error(
-    `No authentication configured for "${provider}". Go to Settings → API Providers to add your ${labels[provider] || provider} credentials.`
+    `No authentication configured for "${provider}". Go to Settings → API Providers to add your ${label} credentials.`
   );
 }
 
@@ -142,7 +213,7 @@ async function callAnthropic(apiKey, model, messages, options, customBaseUrl) {
   const chatMessages = messages.filter((m) => m.role !== 'system');
 
   const requestParams = {
-    model: model || 'claude-sonnet-4-20250514',
+    model: getProviderDefaultModel('anthropic', model || ''),
     max_tokens: options.maxTokens || 8096,
     system: systemMessage?.content || '',
     messages: chatMessages,
@@ -169,15 +240,11 @@ async function callAnthropic(apiKey, model, messages, options, customBaseUrl) {
   return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: response.stop_reason };
 }
 
-async function callOpenAI(apiKey, model, messages, options, customBaseUrl) {
-  const OpenAI = require('openai');
-  const client = new OpenAI({
-    apiKey,
-    ...(customBaseUrl ? { baseURL: customBaseUrl } : {}),
-  });
+async function callOpenAICompatible(provider, apiKey, model, messages, options, baseUrl) {
+  const client = buildOpenAICompatibleClient(provider, apiKey, baseUrl);
 
   const requestParams = {
-    model: model || 'gpt-4o',
+    model: getProviderDefaultModel(provider, model || ''),
     max_tokens: options.maxTokens || 8096,
     messages,
   };
@@ -194,11 +261,11 @@ async function callOpenAI(apiKey, model, messages, options, customBaseUrl) {
   const choice = response.choices[0];
   const inputTokens = response.usage?.prompt_tokens || 0;
   const outputTokens = response.usage?.completion_tokens || 0;
-  const content = choice.message.content || '';
+  const content = normalizeTextContent(choice.message.content);
   const toolCalls = (choice.message.tool_calls || []).map((tc) => ({
     id: tc.id,
     name: tc.function.name,
-    input: JSON.parse(tc.function.arguments || '{}'),
+    input: parseJsonSafe(tc.function.arguments),
   }));
   const rawAssistantMsg = toolCalls.length > 0
     ? { role: 'assistant', content: choice.message.content, tool_calls: choice.message.tool_calls }
@@ -208,45 +275,7 @@ async function callOpenAI(apiKey, model, messages, options, customBaseUrl) {
 }
 
 async function callOpenRouter(apiKey, model, messages, options) {
-  const OpenAI = require('openai');
-  const client = new OpenAI({
-    apiKey,
-    baseURL: 'https://openrouter.ai/api/v1',
-    defaultHeaders: {
-      'HTTP-Referer': 'http://localhost:1248',
-      'X-Title': 'AgentWork',
-    },
-  });
-
-  const requestParams = {
-    model: model || 'anthropic/claude-sonnet-4',
-    max_tokens: options.maxTokens || 8096,
-    messages,
-  };
-
-  if (options.tools && options.tools.length > 0) {
-    requestParams.tools = options.tools.map((t) => ({
-      type: 'function',
-      function: { name: t.name, description: t.description, parameters: t.parameters },
-    }));
-  }
-
-  const response = await client.chat.completions.create(requestParams);
-
-  const choice = response.choices[0];
-  const inputTokens = response.usage?.prompt_tokens || 0;
-  const outputTokens = response.usage?.completion_tokens || 0;
-  const content = choice.message.content || '';
-  const toolCalls = (choice.message.tool_calls || []).map((tc) => ({
-    id: tc.id,
-    name: tc.function.name,
-    input: JSON.parse(tc.function.arguments || '{}'),
-  }));
-  const rawAssistantMsg = toolCalls.length > 0
-    ? { role: 'assistant', content: choice.message.content, tool_calls: choice.message.tool_calls }
-    : null;
-
-  return { content, toolCalls, rawAssistantMsg, inputTokens, outputTokens, model: response.model, stopReason: choice.finish_reason };
+  return callOpenAICompatible('openrouter', apiKey, model, messages, options, getProviderBaseUrl('openrouter'));
 }
 
 async function callGoogle(auth, model, messages, options, customBaseUrl) {
@@ -265,7 +294,7 @@ async function callGoogle(auth, model, messages, options, customBaseUrl) {
   }
 
   const requestParams = {
-    model: model || 'gemini-2.5-pro',
+    model: getProviderDefaultModel('google', model || ''),
     max_tokens: options.maxTokens || 8096,
     messages,
   };
@@ -293,11 +322,11 @@ async function callGoogle(auth, model, messages, options, customBaseUrl) {
   const message = choice.message || {};
   const inputTokens = data.usage?.prompt_tokens || 0;
   const outputTokens = data.usage?.completion_tokens || 0;
-  const content = message.content || '';
+  const content = normalizeTextContent(message.content);
   const toolCalls = (message.tool_calls || []).map((tc) => ({
     id: tc.id,
     name: tc.function?.name,
-    input: JSON.parse(tc.function?.arguments || '{}'),
+    input: parseJsonSafe(tc.function?.arguments),
   }));
   const rawAssistantMsg = toolCalls.length > 0
     ? { role: 'assistant', content: message.content, tool_calls: message.tool_calls }
@@ -567,20 +596,21 @@ function estimateCost(provider, model, inputTokens, outputTokens) {
 
 // Streaming completion for chat — yields partial text chunks
 async function createStreamingCompletion(provider, model, messages, onChunk) {
-  let customBaseUrl = getSetting('custom_base_url');
+  const customBaseUrl = getSetting('custom_base_url');
+  const baseUrl = getProviderBaseUrl(provider, customBaseUrl);
   const auth = await resolveProviderRuntimeAuth(provider);
-  if (!auth && !customBaseUrl) throw buildMissingAuthError(provider);
+  if (!auth && !providerAllowsAnonymous(provider, baseUrl)) throw buildMissingAuthError(provider);
 
   let fullContent = '';
   let inputTokens = 0, outputTokens = 0;
 
   if (provider === 'anthropic') {
     const Anthropic = require('@anthropic-ai/sdk');
-    const client = new Anthropic({ apiKey: auth?.apiKey, ...(customBaseUrl ? { baseURL: customBaseUrl } : {}) });
+    const client = new Anthropic({ apiKey: auth?.apiKey, ...(baseUrl ? { baseURL: baseUrl } : {}) });
     const systemMessage = messages.find((m) => m.role === 'system');
     const chatMessages = messages.filter((m) => m.role !== 'system');
     const stream = client.messages.stream({
-      model: model || 'claude-sonnet-4-20250514',
+      model: getProviderDefaultModel('anthropic', model || ''),
       max_tokens: 4096,
       system: systemMessage?.content || '',
       messages: chatMessages,
@@ -595,21 +625,15 @@ async function createStreamingCompletion(provider, model, messages, onChunk) {
     inputTokens = final.usage?.input_tokens || 0;
     outputTokens = final.usage?.output_tokens || 0;
   } else if (provider === 'google') {
-    const response = await callGoogle(auth, model, messages, { maxTokens: 4096 }, customBaseUrl);
+    const response = await callGoogle(auth, model, messages, { maxTokens: 4096 }, baseUrl);
     fullContent = response.content || '';
     inputTokens = response.inputTokens || 0;
     outputTokens = response.outputTokens || 0;
     if (fullContent) onChunk(fullContent);
   } else {
-    // OpenAI-compatible (OpenAI, OpenRouter, DeepSeek, Mistral)
-    const OpenAI = require('openai');
-    let baseURL = customBaseUrl;
-    if (provider === 'openrouter') baseURL = 'https://openrouter.ai/api/v1';
-    else if (provider === 'deepseek') baseURL = 'https://api.deepseek.com';
-    else if (provider === 'mistral') baseURL = 'https://api.mistral.ai/v1';
-    const client = new OpenAI({ apiKey: auth?.apiKey, ...(baseURL ? { baseURL } : {}) });
+    const client = buildOpenAICompatibleClient(provider, auth?.apiKey, baseUrl);
     const stream = await client.chat.completions.create({
-      model: model || 'gpt-4o',
+      model: getProviderDefaultModel(provider, model || ''),
       max_tokens: 4096,
       messages,
       stream: true,

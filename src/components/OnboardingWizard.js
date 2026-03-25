@@ -2,6 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import {
+  API_MODELS,
+  API_PROVIDERS as PROVIDERS,
+  API_PROVIDER_DEFS,
+  getDefaultModelForProvider,
+  getModelSelectValue,
+  providerSupportsCustomModel,
+} from '../lib/llmProviders';
 import agentMetadata from '../../shared/agent-metadata.json';
 import { toast } from 'react-hot-toast';
 import {
@@ -27,15 +35,6 @@ const TOOL_RESTRICTION_OPTIONS = [
   { name: 'delete_path', label: 'Delete Path', desc: 'Delete files or directories' },
   { name: 'run_bash', label: 'Run Bash', desc: 'Execute shell commands' },
   { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
-];
-
-const PROVIDERS = [
-  { id: 'anthropic', label: 'Anthropic (Claude)' },
-  { id: 'openai', label: 'OpenAI (GPT)' },
-  { id: 'google', label: 'Google (Gemini)' },
-  { id: 'deepseek', label: 'DeepSeek' },
-  { id: 'mistral', label: 'Mistral AI' },
-  { id: 'openrouter', label: 'OpenRouter' },
 ];
 
 const OAUTH_PROVIDERS = [
@@ -65,36 +64,6 @@ const OAUTH_PROVIDERS = [
   },
 ];
 
-const MODELS = {
-  anthropic: [
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6' },
-    { id: 'claude-opus-4-6', label: 'Claude Opus 4.6' },
-    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5' },
-  ],
-  openai: [
-    { id: 'gpt-4o', label: 'GPT-4o' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini' },
-    { id: 'o3-mini', label: 'o3 Mini' },
-  ],
-  google: [
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash' },
-  ],
-  deepseek: [
-    { id: 'deepseek-chat', label: 'DeepSeek V3' },
-    { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
-  ],
-  mistral: [
-    { id: 'mistral-large-latest', label: 'Mistral Large' },
-    { id: 'codestral-latest', label: 'Codestral' },
-  ],
-  openrouter: [
-    { id: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4' },
-    { id: 'openai/gpt-4o', label: 'GPT-4o' },
-    { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-  ],
-};
-
 const STEPS = [
   { key: 'welcome', label: 'Welcome', icon: Zap },
   { key: 'agent', label: 'Agent', icon: Users },
@@ -121,12 +90,9 @@ export default function OnboardingWizard({ onComplete }) {
 
   // Step 2: API Keys
   const [showKeys, setShowKeys] = useState({});
-  const [apiKeys, setApiKeys] = useState({
-    anthropic_api_key: '',
-    openai_api_key: '',
-    google_api_key: '',
-    openrouter_api_key: '',
-  });
+  const [apiKeys, setApiKeys] = useState(() => (
+    Object.fromEntries(API_PROVIDER_DEFS.map((provider) => [provider.keySetting, '']))
+  ));
   const [providerAuth, setProviderAuth] = useState(null);
   const [providerAuthLoading, setProviderAuthLoading] = useState(false);
 
@@ -141,8 +107,7 @@ export default function OnboardingWizard({ onComplete }) {
     role: 'Assistant',
     agent_type: 'smart',
     provider: 'anthropic',
-    model: 'claude-sonnet-4-6',
-    customModel: '',
+    model: getDefaultModelForProvider('anthropic'),
     allowed_tools: '',
   });
   const [toolRestrictionsEnabled, setToolRestrictionsEnabled] = useState(false);
@@ -202,10 +167,9 @@ export default function OnboardingWizard({ onComplete }) {
     setSaving(true);
     try {
       const keysToSave = {};
-      if (apiKeys.anthropic_api_key) keysToSave.anthropic_api_key = apiKeys.anthropic_api_key;
-      if (apiKeys.openai_api_key) keysToSave.openai_api_key = apiKeys.openai_api_key;
-      if (apiKeys.google_api_key) keysToSave.google_api_key = apiKeys.google_api_key;
-      if (apiKeys.openrouter_api_key) keysToSave.openrouter_api_key = apiKeys.openrouter_api_key;
+      for (const provider of API_PROVIDER_DEFS) {
+        if (apiKeys[provider.keySetting]) keysToSave[provider.keySetting] = apiKeys[provider.keySetting];
+      }
       if (Object.keys(keysToSave).length > 0) {
         await api.updateSettings(keysToSave);
         toast.success('API keys saved');
@@ -244,9 +208,6 @@ export default function OnboardingWizard({ onComplete }) {
     }
     setSaving(true);
     try {
-      const modelId = agent.provider === 'openrouter' && agent.customModel
-        ? agent.customModel
-        : agent.model;
       const selectedOauth = OAUTH_PROVIDERS.map((option) => ({
         ...option,
         method: getProviderAuthMethod(providerAuth, option.providerId, option.methodId),
@@ -261,7 +222,7 @@ export default function OnboardingWizard({ onComplete }) {
         agent_type: agent.agent_type,
         auth_type: agentAuthType,
         provider: agentAuthType === 'cli' ? 'claude-cli' : agent.provider,
-        model: usesCliRuntime ? '' : modelId,
+        model: usesCliRuntime ? '' : agent.model,
         allowed_tools: toolRestrictionsEnabled ? agent.allowed_tools : '',
       });
       toast.success('Agent hired!');
@@ -293,7 +254,9 @@ export default function OnboardingWizard({ onComplete }) {
     }
   };
 
-  const providerModels = MODELS[agent.provider] || [];
+  const providerModels = API_MODELS[agent.provider] || [];
+  const canUseCustomModel = providerSupportsCustomModel(agent.provider);
+  const modelSelectValue = getModelSelectValue(agent.provider, agent.model);
   const allowedToolSet = new Set(
     (agent.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
   );
@@ -328,8 +291,7 @@ export default function OnboardingWizard({ onComplete }) {
         ...current,
         agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
         provider: 'anthropic',
-        model: 'claude-sonnet-4-6',
-        customModel: '',
+        model: getDefaultModelForProvider('anthropic'),
       }));
       return;
     }
@@ -340,7 +302,6 @@ export default function OnboardingWizard({ onComplete }) {
         agent_type: 'cli',
         provider: 'claude-cli',
         model: '',
-        customModel: '',
       }));
       return;
     }
@@ -351,8 +312,7 @@ export default function OnboardingWizard({ onComplete }) {
       ...current,
       agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
       provider: fallback.id,
-      model: fallback.runtime === 'cli' ? '' : (MODELS[fallback.id]?.[0]?.id || ''),
-      customModel: '',
+      model: fallback.runtime === 'cli' ? '' : getDefaultModelForProvider(fallback.id),
     }));
   };
 
@@ -441,93 +401,36 @@ export default function OnboardingWizard({ onComplete }) {
                 Enter at least one API key so your agents can call AI models. You can always add more later in Settings.
               </p>
               <div className="space-y-4">
-                <div>
-                  <label className="label">Anthropic API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.anthropic ? 'text' : 'password'}
-                      value={apiKeys.anthropic_api_key}
-                      onChange={(e) =>
-                        setApiKeys({ ...apiKeys, anthropic_api_key: e.target.value })
-                      }
-                      placeholder="sk-ant-..."
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setShowKeys((p) => ({ ...p, anthropic: !p.anthropic }))}
-                    >
-                      {showKeys.anthropic ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
+                {API_PROVIDER_DEFS.map((provider) => (
+                  <div key={provider.id}>
+                    <label className="label">
+                      {provider.keyLabel}
+                      {provider.helperText ? (
+                        <span className="font-normal text-[10px] ml-1" style={{ color: 'var(--text-tertiary)' }}>
+                          {provider.helperText}
+                        </span>
+                      ) : null}
+                    </label>
+                    <div className="flex gap-2">
+                      <input
+                        className="input flex-1 font-mono text-sm"
+                        type={showKeys[provider.id] ? 'text' : 'password'}
+                        value={apiKeys[provider.keySetting] || ''}
+                        onChange={(e) =>
+                          setApiKeys({ ...apiKeys, [provider.keySetting]: e.target.value })
+                        }
+                        placeholder={provider.keyPlaceholder}
+                      />
+                      <button
+                        type="button"
+                        className="btn btn-ghost"
+                        onClick={() => setShowKeys((p) => ({ ...p, [provider.id]: !p[provider.id] }))}
+                      >
+                        {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <div>
-                  <label className="label">OpenAI API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.openai ? 'text' : 'password'}
-                      value={apiKeys.openai_api_key}
-                      onChange={(e) =>
-                        setApiKeys({ ...apiKeys, openai_api_key: e.target.value })
-                      }
-                      placeholder="sk-..."
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setShowKeys((p) => ({ ...p, openai: !p.openai }))}
-                    >
-                      {showKeys.openai ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Google Gemini API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.google ? 'text' : 'password'}
-                      value={apiKeys.google_api_key}
-                      onChange={(e) =>
-                        setApiKeys({ ...apiKeys, google_api_key: e.target.value })
-                      }
-                      placeholder="AIza..."
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setShowKeys((p) => ({ ...p, google: !p.google }))}
-                    >
-                      {showKeys.google ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">OpenRouter API Key <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(200+ models via one key)</span></label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.openrouter ? 'text' : 'password'}
-                      value={apiKeys.openrouter_api_key}
-                      onChange={(e) =>
-                        setApiKeys({ ...apiKeys, openrouter_api_key: e.target.value })
-                      }
-                      placeholder="sk-or-..."
-                    />
-                    <button
-                      type="button"
-                      className="btn btn-ghost"
-                      onClick={() => setShowKeys((p) => ({ ...p, openrouter: !p.openrouter }))}
-                    >
-                      {showKeys.openrouter ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    Get a key at openrouter.ai — access Claude, GPT, Gemini, and more with one key
-                  </p>
-                </div>
+                ))}
                 <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                   <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                     Or skip API keys entirely — you can use <strong>Claude Code CLI</strong> or <strong>OpenAI Codex CLI</strong> in the next step (no API key needed).
@@ -723,8 +626,7 @@ export default function OnboardingWizard({ onComplete }) {
                             onChange={() => setAgent({
                               ...agent,
                               provider: option.id,
-                              model: option.runtime === 'cli' ? '' : (MODELS[option.id]?.[0]?.id || ''),
-                              customModel: '',
+                              model: option.runtime === 'cli' ? '' : getDefaultModelForProvider(option.id),
                             })}
                           />
                           <div className="min-w-0 flex-1">
@@ -753,13 +655,30 @@ export default function OnboardingWizard({ onComplete }) {
                         <label className="label">Model</label>
                         <select
                           className="input"
-                          value={agent.model}
-                          onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                          value={getModelSelectValue(agent.provider, agent.model)}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setAgent({ ...agent, model: '' });
+                            } else {
+                              setAgent({ ...agent, model: e.target.value });
+                            }
+                          }}
                         >
                           {providerModels.map((m) => (
                             <option key={m.id} value={m.id}>{m.label}</option>
                           ))}
+                          {providerSupportsCustomModel(agent.provider) ? (
+                            <option value="__custom__">Custom model ID...</option>
+                          ) : null}
                         </select>
+                        {providerSupportsCustomModel(agent.provider) && getModelSelectValue(agent.provider, agent.model) === '__custom__' ? (
+                          <input
+                            className="input mt-1.5 font-mono text-xs"
+                            value={agent.model}
+                            onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                            placeholder="Enter the exact model ID for this provider"
+                          />
+                        ) : null}
                       </div>
                     )}
                   </div>
@@ -772,8 +691,7 @@ export default function OnboardingWizard({ onComplete }) {
                         value={agent.provider}
                         onChange={(e) => {
                           const p = e.target.value;
-                          const models = MODELS[p] || [];
-                          setAgent({ ...agent, provider: p, model: models[0]?.id || '', customModel: '' });
+                          setAgent({ ...agent, provider: p, model: getDefaultModelForProvider(p) });
                         }}
                       >
                         {PROVIDERS.map((p) => (
@@ -783,44 +701,32 @@ export default function OnboardingWizard({ onComplete }) {
                     </div>
                     <div>
                       <label className="label">Model</label>
-                      {agent.provider === 'openrouter' ? (
-                        <div className="space-y-1.5">
-                          <select
-                            className="input"
-                            value={agent.customModel ? '__custom__' : agent.model}
-                            onChange={(e) => {
-                              if (e.target.value === '__custom__') {
-                                setAgent({ ...agent, model: '', customModel: '' });
-                              } else {
-                                setAgent({ ...agent, model: e.target.value, customModel: '' });
-                              }
-                            }}
-                          >
-                            {providerModels.map((m) => (
-                              <option key={m.id} value={m.id}>{m.label}</option>
-                            ))}
-                            <option value="__custom__">Custom model...</option>
-                          </select>
-                          {(agent.customModel !== undefined && (agent.customModel || (!agent.model && agent.customModel !== undefined))) && agent.model === '' && (
-                            <input
-                              className="input font-mono text-xs"
-                              value={agent.customModel}
-                              onChange={(e) => setAgent({ ...agent, customModel: e.target.value })}
-                              placeholder="e.g., meta-llama/llama-3.1-70b-instruct"
-                            />
-                          )}
-                        </div>
-                      ) : (
+                      <div className="space-y-1.5">
                         <select
                           className="input"
-                          value={agent.model}
-                          onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                          value={modelSelectValue}
+                          onChange={(e) => {
+                            if (e.target.value === '__custom__') {
+                              setAgent({ ...agent, model: '' });
+                            } else {
+                              setAgent({ ...agent, model: e.target.value });
+                            }
+                          }}
                         >
                           {providerModels.map((m) => (
                             <option key={m.id} value={m.id}>{m.label}</option>
                           ))}
+                          {canUseCustomModel ? <option value="__custom__">Custom model ID...</option> : null}
                         </select>
-                      )}
+                        {canUseCustomModel && modelSelectValue === '__custom__' ? (
+                          <input
+                            className="input font-mono text-xs"
+                            value={agent.model}
+                            onChange={(e) => setAgent({ ...agent, model: e.target.value })}
+                            placeholder="Enter the exact model ID for this provider"
+                          />
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                 )}

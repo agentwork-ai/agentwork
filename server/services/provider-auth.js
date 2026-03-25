@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { db } = require('../db');
 const { encrypt, decrypt, isSensitiveKey } = require('../crypto');
+const llmProviders = require('../../shared/llm-providers.json');
 
 const CODEX_PROVIDER = 'openai-codex';
 const GEMINI_CLI_PROVIDER = 'google-gemini-cli';
@@ -24,6 +25,9 @@ const GOOGLE_OAUTH_CLIENT_SECRET_KEYS = [
   'GEMINI_CLI_OAUTH_CLIENT_SECRET',
 ];
 const codexOAuthFlows = new Map();
+const API_PROVIDER_INDEX = Object.fromEntries(
+  (llmProviders.apiProviders || []).map((provider) => [provider.id, provider])
+);
 
 const UPSERT_PROFILE = db.prepare(
   `INSERT INTO provider_auth_profiles (provider, payload, updated_at)
@@ -125,6 +129,27 @@ function summarizeProfile(profile) {
 function resolveConfiguredApiKey(key) {
   const value = getSetting(key);
   return typeof value === 'string' && value.trim() ? value.trim() : '';
+}
+
+function getApiProvider(provider) {
+  return API_PROVIDER_INDEX[String(provider || '').trim()] || null;
+}
+
+function buildApiKeyMethod(providerId) {
+  const provider = getApiProvider(providerId);
+  if (!provider?.keySetting) return null;
+
+  const hasApiKey = Boolean(resolveConfiguredApiKey(provider.keySetting));
+  const hasBaseUrl =
+    provider.baseUrlSetting && typeof getSetting(provider.baseUrlSetting) === 'string'
+      ? Boolean(getSetting(provider.baseUrlSetting).trim())
+      : false;
+
+  return {
+    id: 'api-key',
+    label: provider.keyLabel,
+    configured: hasApiKey || Boolean(provider.authOptional && hasBaseUrl),
+  };
 }
 
 function computeCodexHome() {
@@ -872,14 +897,17 @@ async function resolveProviderRuntimeAuth(provider) {
     return await resolveGoogleRuntimeAuth();
   }
 
-  const keyMap = {
-    openai: 'openai_api_key',
-    openrouter: 'openrouter_api_key',
-    deepseek: 'deepseek_api_key',
-    mistral: 'mistral_api_key',
-  };
-  const key = resolveConfiguredApiKey(keyMap[provider] || 'openai_api_key');
-  return key ? { mode: 'api_key', apiKey: key } : null;
+  const providerConfig = getApiProvider(provider);
+  if (!providerConfig?.keySetting) return null;
+
+  const key = resolveConfiguredApiKey(providerConfig.keySetting);
+  if (key) return { mode: 'api_key', apiKey: key };
+
+  if (providerConfig.authOptional) {
+    return { mode: 'local', apiKey: provider === 'ollama' ? 'ollama-local' : '' };
+  }
+
+  return null;
 }
 
 function buildAuthOverview() {
@@ -888,92 +916,61 @@ function buildAuthOverview() {
   const geminiProfile = loadProfile(GEMINI_CLI_PROVIDER);
 
   return {
-    providers: [
-      {
-        id: 'anthropic',
-        label: 'Anthropic',
-        methods: [
-          {
-            id: 'setup-token',
-            label: 'Anthropic token (paste setup-token)',
-            configured: Boolean(anthropicProfile?.token),
-            profile: summarizeProfile(anthropicProfile),
-          },
-          {
-            id: 'api-key',
-            label: 'Anthropic API key',
-            configured: Boolean(resolveConfiguredApiKey('anthropic_api_key')),
-          },
-        ],
-      },
-      {
-        id: 'openai',
-        label: 'OpenAI',
-        methods: [
-          {
-            id: 'openai-codex',
-            label: 'OpenAI Codex (ChatGPT OAuth)',
-            configured: Boolean(codexProfile?.access && codexProfile?.refresh),
-            profile: summarizeProfile(codexProfile),
-          },
-          {
-            id: 'api-key',
-            label: 'OpenAI API key',
-            configured: Boolean(resolveConfiguredApiKey('openai_api_key')),
-          },
-        ],
-      },
-      {
-        id: 'google',
-        label: 'Google',
-        methods: [
-          {
-            id: 'google-gemini-cli',
-            label: 'Gemini CLI OAuth',
-            configured: Boolean(geminiProfile?.access && geminiProfile?.refresh),
-            profile: summarizeProfile(geminiProfile),
-          },
-          {
-            id: 'api-key',
-            label: 'Gemini API key',
-            configured: Boolean(resolveConfiguredApiKey('google_api_key')),
-          },
-        ],
-      },
-      {
-        id: 'openrouter',
-        label: 'OpenRouter',
-        methods: [
-          {
-            id: 'api-key',
-            label: 'OpenRouter API key',
-            configured: Boolean(resolveConfiguredApiKey('openrouter_api_key')),
-          },
-        ],
-      },
-      {
-        id: 'deepseek',
-        label: 'DeepSeek',
-        methods: [
-          {
-            id: 'api-key',
-            label: 'DeepSeek API key',
-            configured: Boolean(resolveConfiguredApiKey('deepseek_api_key')),
-          },
-        ],
-      },
-      {
-        id: 'mistral',
-        label: 'Mistral',
-        methods: [
-          {
-            id: 'api-key',
-            label: 'Mistral API key',
-            configured: Boolean(resolveConfiguredApiKey('mistral_api_key')),
-          },
-        ],
-      },
-    ],
+    providers: (llmProviders.apiProviders || []).map((provider) => {
+      if (provider.id === 'anthropic') {
+        return {
+          id: provider.id,
+          label: 'Anthropic',
+          methods: [
+            {
+              id: 'setup-token',
+              label: 'Anthropic token (paste setup-token)',
+              configured: Boolean(anthropicProfile?.token),
+              profile: summarizeProfile(anthropicProfile),
+            },
+            buildApiKeyMethod(provider.id),
+          ].filter(Boolean),
+        };
+      }
+
+      if (provider.id === 'openai') {
+        return {
+          id: provider.id,
+          label: 'OpenAI',
+          methods: [
+            {
+              id: 'openai-codex',
+              label: 'OpenAI Codex (ChatGPT OAuth)',
+              configured: Boolean(codexProfile?.access && codexProfile?.refresh),
+              profile: summarizeProfile(codexProfile),
+            },
+            buildApiKeyMethod(provider.id),
+          ].filter(Boolean),
+        };
+      }
+
+      if (provider.id === 'google') {
+        return {
+          id: provider.id,
+          label: 'Google',
+          methods: [
+            {
+              id: 'google-gemini-cli',
+              label: 'Gemini CLI OAuth',
+              configured: Boolean(geminiProfile?.access && geminiProfile?.refresh),
+              profile: summarizeProfile(geminiProfile),
+            },
+            buildApiKeyMethod(provider.id),
+          ].filter(Boolean),
+        };
+      }
+
+      return {
+        id: provider.id,
+        label: provider.label.replace(/\s+\(.*\)$/, ''),
+        methods: [buildApiKeyMethod(provider.id)].filter(Boolean),
+      };
+    }),
   };
 }
 

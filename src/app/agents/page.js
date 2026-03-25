@@ -4,6 +4,13 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import { api } from '../../lib/api';
+import {
+  API_MODELS,
+  API_PROVIDERS,
+  getDefaultModelForProvider,
+  getModelSelectValue,
+  providerSupportsCustomModel,
+} from '../../lib/llmProviders';
 import { useSocket } from '../providers';
 import agentMetadata from '../../../shared/agent-metadata.json';
 import {
@@ -24,74 +31,9 @@ const TOOL_RESTRICTION_OPTIONS = [
   { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
 ];
 
-const API_MODELS = {
-  anthropic: [
-    { id: 'claude-opus-4-6', label: 'Claude Opus 4.6', tier: 'flagship' },
-    { id: 'claude-sonnet-4-6', label: 'Claude Sonnet 4.6', tier: 'balanced' },
-    { id: 'claude-opus-4-5', label: 'Claude Opus 4.5', tier: 'flagship' },
-    { id: 'claude-sonnet-4-5', label: 'Claude Sonnet 4.5', tier: 'balanced' },
-    { id: 'claude-haiku-4-5', label: 'Claude Haiku 4.5', tier: 'fast' },
-    { id: 'claude-sonnet-4-20250514', label: 'Claude Sonnet 4', tier: 'balanced' },
-    { id: 'claude-opus-4-20250514', label: 'Claude Opus 4', tier: 'flagship' },
-  ],
-  openai: [
-    { id: 'gpt-5.4', label: 'GPT-5.4', tier: 'flagship' },
-    { id: 'gpt-5.4-pro', label: 'GPT-5.4 Pro', tier: 'flagship' },
-    { id: 'gpt-5.1', label: 'GPT-5.1', tier: 'flagship' },
-    { id: 'gpt-5-mini', label: 'GPT-5 Mini', tier: 'fast' },
-    { id: 'gpt-5-nano', label: 'GPT-5 Nano', tier: 'fast' },
-    { id: 'gpt-4.1', label: 'GPT-4.1', tier: 'balanced' },
-    { id: 'gpt-4.1-mini', label: 'GPT-4.1 Mini', tier: 'fast' },
-    { id: 'gpt-4.1-nano', label: 'GPT-4.1 Nano', tier: 'fast' },
-    { id: 'gpt-4o', label: 'GPT-4o', tier: 'balanced' },
-    { id: 'gpt-4o-mini', label: 'GPT-4o Mini', tier: 'fast' },
-    { id: 'o3', label: 'o3 (Reasoning)', tier: 'reasoning' },
-    { id: 'o3-pro', label: 'o3 Pro', tier: 'reasoning' },
-    { id: 'o3-mini', label: 'o3 Mini', tier: 'reasoning' },
-    { id: 'o4-mini', label: 'o4 Mini', tier: 'reasoning' },
-  ],
-  google: [
-    { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro', tier: 'flagship' },
-    { id: 'gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'fast' },
-    { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash', tier: 'fast' },
-  ],
-  deepseek: [
-    { id: 'deepseek-chat', label: 'DeepSeek V3', tier: 'balanced' },
-    { id: 'deepseek-reasoner', label: 'DeepSeek Reasoner', tier: 'reasoning' },
-  ],
-  mistral: [
-    { id: 'mistral-large-latest', label: 'Mistral Large', tier: 'flagship' },
-    { id: 'mistral-small-latest', label: 'Mistral Small', tier: 'fast' },
-    { id: 'codestral-latest', label: 'Codestral', tier: 'code' },
-  ],
-  openrouter: [
-    { id: 'anthropic/claude-opus-4', label: 'Claude Opus 4', tier: 'flagship' },
-    { id: 'anthropic/claude-sonnet-4', label: 'Claude Sonnet 4', tier: 'balanced' },
-    { id: 'anthropic/claude-haiku-4', label: 'Claude Haiku 4', tier: 'fast' },
-    { id: 'openai/gpt-4o', label: 'GPT-4o', tier: 'balanced' },
-    { id: 'openai/gpt-4o-mini', label: 'GPT-4o Mini', tier: 'fast' },
-    { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro', tier: 'flagship' },
-    { id: 'google/gemini-2.5-flash', label: 'Gemini 2.5 Flash', tier: 'fast' },
-    { id: 'deepseek/deepseek-chat-v3', label: 'DeepSeek V3', tier: 'balanced' },
-    { id: 'meta-llama/llama-4-maverick', label: 'Llama 4 Maverick', tier: 'flagship' },
-    { id: 'meta-llama/llama-4-scout', label: 'Llama 4 Scout', tier: 'balanced' },
-    { id: 'mistralai/mistral-large', label: 'Mistral Large', tier: 'flagship' },
-    { id: 'qwen/qwen3-235b', label: 'Qwen3 235B', tier: 'flagship' },
-  ],
-};
-
 const CLI_PROVIDERS = [
   { id: 'claude-cli', label: 'Claude Code (Agent SDK)', description: 'Uses your local Claude CLI auth — no API key needed' },
   { id: 'codex-cli', label: 'Codex CLI (Codex SDK)', description: 'Uses your local Codex CLI auth — no API key needed' },
-];
-
-const API_PROVIDERS = [
-  { id: 'anthropic', label: 'Anthropic (Claude)' },
-  { id: 'openai', label: 'OpenAI (GPT)' },
-  { id: 'openrouter', label: 'OpenRouter (Multi-provider)' },
-  { id: 'google', label: 'Google (Gemini)' },
-  { id: 'deepseek', label: 'DeepSeek' },
-  { id: 'mistral', label: 'Mistral AI' },
 ];
 
 const OAUTH_PROVIDERS = [
@@ -425,7 +367,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     setForm((current) => ({
       ...current,
       provider: fallback.id,
-      model: fallback.runtime === 'cli' ? '' : (API_MODELS[fallback.id]?.[0]?.id || ''),
+      model: fallback.runtime === 'cli' ? '' : getDefaultModelForProvider(fallback.id),
     }));
   }, [form.auth_type, form.provider, configuredOauthOptions, oauthOptions]);
 
@@ -461,7 +403,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
       agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
       auth_type: 'oauth',
       provider: fallback.id,
-      model: fallback.runtime === 'cli' ? '' : (API_MODELS[fallback.id]?.[0]?.id || ''),
+      model: fallback.runtime === 'cli' ? '' : getDefaultModelForProvider(fallback.id),
     }));
   };
 
@@ -486,7 +428,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
         if (selectedOauth.runtime === 'cli') {
           data.model = '';
         } else if (!data.model) {
-          data.model = API_MODELS[data.provider]?.[0]?.id || '';
+          data.model = getDefaultModelForProvider(data.provider);
         }
       }
       if (agent) {
@@ -529,7 +471,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
               </div>
               <p className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>API Key</p>
               <p className="text-xs leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-                Uses your API keys from Settings. Supports Anthropic, OpenAI, Google, DeepSeek, Mistral.
+                Uses your API keys from Settings. Supports Claude, GPT, Gemini, Grok, Groq, Together, Kimi, Ollama, and more.
               </p>
             </button>
 
@@ -582,6 +524,8 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   const isOauth = form.auth_type === 'oauth';
   const isOauthCodex = isOauth && form.provider === 'openai-codex';
   const providerModels = !isCli && !isOauthCodex ? (API_MODELS[form.provider] || []) : [];
+  const canUseCustomModel = !isCli && !isOauthCodex && providerSupportsCustomModel(form.provider);
+  const modelSelectValue = getModelSelectValue(form.provider, form.model);
   const allowedToolSet = new Set(
     (form.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
   );
@@ -739,7 +683,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
                           onChange={() => setForm({
                             ...form,
                             provider: option.id,
-                            model: option.runtime === 'cli' ? '' : (API_MODELS[option.id]?.[0]?.id || ''),
+                            model: option.runtime === 'cli' ? '' : getDefaultModelForProvider(option.id),
                           })}
                         />
                         <div className="min-w-0 flex-1">
@@ -777,7 +721,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
               ) : (
                 <div>
                   <label className="label">Model</label>
-                  <select className="input" value={providerModels.some((m) => m.id === form.model) || !form.model ? form.model : '__custom__'}
+                  <select className="input" value={modelSelectValue}
                     onChange={(e) => {
                       if (e.target.value === '__custom__') {
                         setForm({ ...form, model: '' });
@@ -790,7 +734,18 @@ function AgentFormModal({ agent, onClose, onSaved }) {
                         {m.label} ({m.tier})
                       </option>
                     ))}
+                    {canUseCustomModel ? (
+                      <option value="__custom__">Custom model ID...</option>
+                    ) : null}
                   </select>
+                  {canUseCustomModel && modelSelectValue === '__custom__' ? (
+                    <input
+                      className="input mt-2 font-mono text-sm"
+                      value={form.model}
+                      onChange={(e) => setForm({ ...form, model: e.target.value })}
+                      placeholder="Enter the exact model ID for this provider"
+                    />
+                  ) : null}
                 </div>
               )}
             </>
@@ -801,15 +756,14 @@ function AgentFormModal({ agent, onClose, onSaved }) {
                 <select className="input" value={form.provider}
                   onChange={(e) => {
                     const p = e.target.value;
-                    const models = API_MODELS[p] || [];
-                    setForm({ ...form, provider: p, model: models[0]?.id || '' });
+                    setForm({ ...form, provider: p, model: getDefaultModelForProvider(p) });
                   }}>
                   {API_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
                 </select>
               </div>
               <div>
                 <label className="label">Model</label>
-                <select className="input" value={providerModels.some((m) => m.id === form.model) || !form.model ? form.model : '__custom__'}
+                <select className="input" value={modelSelectValue}
                   onChange={(e) => {
                     if (e.target.value === '__custom__') {
                       setForm({ ...form, model: '' });
@@ -822,16 +776,16 @@ function AgentFormModal({ agent, onClose, onSaved }) {
                       {m.label} ({m.tier})
                     </option>
                   ))}
-                  {form.provider === 'openrouter' && (
+                  {canUseCustomModel && (
                     <option value="__custom__">Custom model ID...</option>
                   )}
                 </select>
-                {form.provider === 'openrouter' && (!providerModels.some((m) => m.id === form.model)) && (
+                {canUseCustomModel && modelSelectValue === '__custom__' && (
                   <input
                     className="input mt-2 font-mono text-sm"
                     value={form.model}
                     onChange={(e) => setForm({ ...form, model: e.target.value })}
-                    placeholder="e.g. anthropic/claude-sonnet-4.5 or meta-llama/llama-4-scout"
+                    placeholder="Enter the exact model ID for this provider"
                   />
                 )}
               </div>

@@ -1873,6 +1873,11 @@ const REFLECTION_MODELS = {
   openrouter: 'openai/gpt-4o-mini',
   deepseek: 'deepseek-chat',
   mistral: 'mistral-small-latest',
+  xai: 'grok-code-fast-1',
+  groq: 'llama-3.1-8b-instant',
+  together: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+  moonshot: 'kimi-k2-turbo-preview',
+  ollama: 'glm-4.7-flash',
 };
 
 function parseJsonResponse(content) {

@@ -47,6 +47,8 @@ function decrypt(ciphertext) {
 const SENSITIVE_KEYS = [
   'anthropic_api_key', 'openai_api_key', 'openrouter_api_key',
   'deepseek_api_key', 'mistral_api_key', 'google_api_key',
+  'xai_api_key', 'groq_api_key', 'together_api_key',
+  'moonshot_api_key', 'ollama_api_key',
   'dashboard_password', 'smtp_pass',
 ];
 

@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import { api } from '../../lib/api';
+import { API_PROVIDER_DEFS } from '../../lib/llmProviders';
 import { useTheme, useAuth } from '../providers';
 import {
   Key, Globe, DollarSign, Shield, Palette, Bell,
@@ -200,99 +201,42 @@ export default function SettingsPage() {
             {/* API Providers */}
             <Section icon={<Key size={18} />} title="API Providers">
               <div className="space-y-4">
-                <div>
-                  <label className="label">Anthropic API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.anthropic ? 'text' : 'password'}
-                      value={settings.anthropic_api_key || ''}
-                      onChange={(e) => updateField('anthropic_api_key', e.target.value)}
-                      placeholder="sk-ant-..."
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, anthropic: !p.anthropic }))}>
-                      {showKeys.anthropic ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
+                {API_PROVIDER_DEFS.map((provider) => (
+                  <div key={provider.id}>
+                    <label className="label">{provider.keyLabel}</label>
+                    <div className="flex gap-2">
+                      <input
+                        className="input flex-1 font-mono text-sm"
+                        type={showKeys[provider.id] ? 'text' : 'password'}
+                        value={settings[provider.keySetting] || ''}
+                        onChange={(e) => updateField(provider.keySetting, e.target.value)}
+                        placeholder={provider.keyPlaceholder}
+                      />
+                      <button
+                        className="btn btn-ghost"
+                        onClick={() => setShowKeys((p) => ({ ...p, [provider.id]: !p[provider.id] }))}
+                      >
+                        {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
+                      </button>
+                    </div>
+                    {provider.baseUrlSetting ? (
+                      <div className="mt-2">
+                        <label className="label">{provider.baseUrlLabel}</label>
+                        <input
+                          className="input flex-1 font-mono text-sm"
+                          value={settings[provider.baseUrlSetting] || ''}
+                          onChange={(e) => updateField(provider.baseUrlSetting, e.target.value)}
+                          placeholder={provider.baseUrlPlaceholder}
+                        />
+                      </div>
+                    ) : null}
+                    {provider.helperText ? (
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+                        {provider.helperText}
+                      </p>
+                    ) : null}
                   </div>
-                </div>
-                <div>
-                  <label className="label">OpenAI API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.openai ? 'text' : 'password'}
-                      value={settings.openai_api_key || ''}
-                      onChange={(e) => updateField('openai_api_key', e.target.value)}
-                      placeholder="sk-..."
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, openai: !p.openai }))}>
-                      {showKeys.openai ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Google Gemini API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.google ? 'text' : 'password'}
-                      value={settings.google_api_key || ''}
-                      onChange={(e) => updateField('google_api_key', e.target.value)}
-                      placeholder="AIza..."
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, google: !p.google }))}>
-                      {showKeys.google ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">DeepSeek API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.deepseek ? 'text' : 'password'}
-                      value={settings.deepseek_api_key || ''}
-                      onChange={(e) => updateField('deepseek_api_key', e.target.value)}
-                      placeholder="sk-..."
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, deepseek: !p.deepseek }))}>
-                      {showKeys.deepseek ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">Mistral API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.mistral ? 'text' : 'password'}
-                      value={settings.mistral_api_key || ''}
-                      onChange={(e) => updateField('mistral_api_key', e.target.value)}
-                      placeholder="..."
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, mistral: !p.mistral }))}>
-                      {showKeys.mistral ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="label">OpenRouter API Key</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.openrouter ? 'text' : 'password'}
-                      value={settings.openrouter_api_key || ''}
-                      onChange={(e) => updateField('openrouter_api_key', e.target.value)}
-                      placeholder="sk-or-..."
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, openrouter: !p.openrouter }))}>
-                      {showKeys.openrouter ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    Access 200+ models through a single key. Get one at openrouter.ai
-                  </p>
-                </div>
+                ))}
                 <div className="pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
                   <div className="flex items-center justify-between gap-3 mb-3">
                     <div>

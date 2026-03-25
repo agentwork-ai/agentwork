@@ -1,0 +1,192 @@
+{
+  "apiProviders": [
+    {
+      "id": "anthropic",
+      "label": "Anthropic (Claude)",
+      "transport": "anthropic",
+      "keySetting": "anthropic_api_key",
+      "keyLabel": "Anthropic API Key",
+      "keyPlaceholder": "sk-ant-...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "claude-sonnet-4-6", "label": "Claude Sonnet 4.6", "tier": "balanced" },
+        { "id": "claude-opus-4-6", "label": "Claude Opus 4.6", "tier": "flagship" },
+        { "id": "claude-opus-4-5", "label": "Claude Opus 4.5", "tier": "flagship" },
+        { "id": "claude-sonnet-4-5", "label": "Claude Sonnet 4.5", "tier": "balanced" },
+        { "id": "claude-haiku-4-5", "label": "Claude Haiku 4.5", "tier": "fast" }
+      ]
+    },
+    {
+      "id": "openai",
+      "label": "OpenAI (GPT)",
+      "transport": "openai-compatible",
+      "keySetting": "openai_api_key",
+      "keyLabel": "OpenAI API Key",
+      "keyPlaceholder": "sk-...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "gpt-5.4", "label": "GPT-5.4", "tier": "flagship" },
+        { "id": "gpt-5.4-pro", "label": "GPT-5.4 Pro", "tier": "flagship" },
+        { "id": "gpt-5.1", "label": "GPT-5.1", "tier": "flagship" },
+        { "id": "gpt-5-mini", "label": "GPT-5 Mini", "tier": "fast" },
+        { "id": "gpt-5-nano", "label": "GPT-5 Nano", "tier": "fast" },
+        { "id": "gpt-4.1", "label": "GPT-4.1", "tier": "balanced" },
+        { "id": "gpt-4.1-mini", "label": "GPT-4.1 Mini", "tier": "fast" },
+        { "id": "gpt-4o", "label": "GPT-4o", "tier": "balanced" },
+        { "id": "gpt-4o-mini", "label": "GPT-4o Mini", "tier": "fast" },
+        { "id": "o3", "label": "o3", "tier": "reasoning" },
+        { "id": "o3-mini", "label": "o3 Mini", "tier": "reasoning" },
+        { "id": "o4-mini", "label": "o4 Mini", "tier": "reasoning" }
+      ]
+    },
+    {
+      "id": "openrouter",
+      "label": "OpenRouter (Multi-provider)",
+      "transport": "openrouter",
+      "keySetting": "openrouter_api_key",
+      "keyLabel": "OpenRouter API Key",
+      "keyPlaceholder": "sk-or-...",
+      "helperText": "Access Claude, GPT, Gemini, DeepSeek, Qwen, and more with one key.",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "anthropic/claude-sonnet-4", "label": "Claude Sonnet 4", "tier": "balanced" },
+        { "id": "anthropic/claude-opus-4", "label": "Claude Opus 4", "tier": "flagship" },
+        { "id": "openai/gpt-4o", "label": "GPT-4o", "tier": "balanced" },
+        { "id": "openai/gpt-4o-mini", "label": "GPT-4o Mini", "tier": "fast" },
+        { "id": "google/gemini-2.5-pro", "label": "Gemini 2.5 Pro", "tier": "flagship" },
+        { "id": "deepseek/deepseek-chat-v3", "label": "DeepSeek V3", "tier": "balanced" },
+        { "id": "meta-llama/llama-4-maverick", "label": "Llama 4 Maverick", "tier": "flagship" },
+        { "id": "qwen/qwen3-235b", "label": "Qwen3 235B", "tier": "flagship" }
+      ]
+    },
+    {
+      "id": "google",
+      "label": "Google (Gemini)",
+      "transport": "google-openai",
+      "keySetting": "google_api_key",
+      "keyLabel": "Google Gemini API Key",
+      "keyPlaceholder": "AIza...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "gemini-2.5-pro", "label": "Gemini 2.5 Pro", "tier": "flagship" },
+        { "id": "gemini-2.5-flash", "label": "Gemini 2.5 Flash", "tier": "fast" },
+        { "id": "gemini-2.0-flash", "label": "Gemini 2.0 Flash", "tier": "fast" }
+      ]
+    },
+    {
+      "id": "deepseek",
+      "label": "DeepSeek",
+      "transport": "openai-compatible",
+      "baseUrl": "https://api.deepseek.com",
+      "keySetting": "deepseek_api_key",
+      "keyLabel": "DeepSeek API Key",
+      "keyPlaceholder": "sk-...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "deepseek-chat", "label": "DeepSeek V3", "tier": "balanced" },
+        { "id": "deepseek-reasoner", "label": "DeepSeek Reasoner", "tier": "reasoning" }
+      ]
+    },
+    {
+      "id": "mistral",
+      "label": "Mistral AI",
+      "transport": "openai-compatible",
+      "baseUrl": "https://api.mistral.ai/v1",
+      "keySetting": "mistral_api_key",
+      "keyLabel": "Mistral API Key",
+      "keyPlaceholder": "...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "mistral-large-latest", "label": "Mistral Large", "tier": "flagship" },
+        { "id": "mistral-small-latest", "label": "Mistral Small", "tier": "fast" },
+        { "id": "codestral-latest", "label": "Codestral", "tier": "code" }
+      ]
+    },
+    {
+      "id": "xai",
+      "label": "xAI (Grok)",
+      "transport": "openai-compatible",
+      "baseUrl": "https://api.x.ai/v1",
+      "keySetting": "xai_api_key",
+      "keyLabel": "xAI API Key",
+      "keyPlaceholder": "xai-...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "grok-4", "label": "Grok 4", "tier": "flagship" },
+        { "id": "grok-4-fast-reasoning", "label": "Grok 4 Fast Reasoning", "tier": "reasoning" },
+        { "id": "grok-4-fast-non-reasoning", "label": "Grok 4 Fast", "tier": "fast" },
+        { "id": "grok-code-fast-1", "label": "Grok Code Fast 1", "tier": "code" }
+      ]
+    },
+    {
+      "id": "groq",
+      "label": "Groq",
+      "transport": "openai-compatible",
+      "baseUrl": "https://api.groq.com/openai/v1",
+      "keySetting": "groq_api_key",
+      "keyLabel": "Groq API Key",
+      "keyPlaceholder": "gsk_...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "llama-3.3-70b-versatile", "label": "Llama 3.3 70B Versatile", "tier": "flagship" },
+        { "id": "llama-3.1-8b-instant", "label": "Llama 3.1 8B Instant", "tier": "fast" },
+        { "id": "qwen-qwq-32b", "label": "Qwen QwQ 32B", "tier": "reasoning" },
+        { "id": "deepseek-r1-distill-llama-70b", "label": "DeepSeek R1 Distill Llama 70B", "tier": "reasoning" }
+      ]
+    },
+    {
+      "id": "together",
+      "label": "Together AI",
+      "transport": "openai-compatible",
+      "baseUrl": "https://api.together.xyz/v1",
+      "keySetting": "together_api_key",
+      "keyLabel": "Together API Key",
+      "keyPlaceholder": "...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "moonshotai/Kimi-K2.5", "label": "Kimi K2.5", "tier": "flagship" },
+        { "id": "meta-llama/Llama-3.3-70B-Instruct-Turbo", "label": "Llama 3.3 70B Turbo", "tier": "balanced" },
+        { "id": "deepseek-ai/DeepSeek-V3.1", "label": "DeepSeek V3.1", "tier": "flagship" },
+        { "id": "Qwen/Qwen3-Coder-480B-A35B-Instruct", "label": "Qwen3 Coder 480B", "tier": "code" }
+      ]
+    },
+    {
+      "id": "moonshot",
+      "label": "Moonshot AI (Kimi)",
+      "transport": "openai-compatible",
+      "baseUrl": "https://api.moonshot.ai/v1",
+      "keySetting": "moonshot_api_key",
+      "keyLabel": "Moonshot API Key",
+      "keyPlaceholder": "sk-...",
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "kimi-k2.5", "label": "Kimi K2.5", "tier": "flagship" },
+        { "id": "kimi-k2-0905-preview", "label": "Kimi K2 0905 Preview", "tier": "balanced" },
+        { "id": "kimi-k2-turbo-preview", "label": "Kimi K2 Turbo", "tier": "fast" },
+        { "id": "kimi-k2-thinking", "label": "Kimi K2 Thinking", "tier": "reasoning" }
+      ]
+    },
+    {
+      "id": "ollama",
+      "label": "Ollama (Local / Cloud)",
+      "transport": "openai-compatible",
+      "baseUrl": "http://127.0.0.1:11434/v1",
+      "baseUrlSetting": "ollama_base_url",
+      "baseUrlLabel": "Ollama Base URL",
+      "baseUrlPlaceholder": "http://127.0.0.1:11434/v1",
+      "keySetting": "ollama_api_key",
+      "keyLabel": "Ollama API Key",
+      "keyPlaceholder": "ollama-local",
+      "helperText": "Optional. Leave blank for a local Ollama instance without auth.",
+      "authOptional": true,
+      "supportsCustomModel": true,
+      "models": [
+        { "id": "glm-4.7-flash", "label": "GLM 4.7 Flash", "tier": "fast" },
+        { "id": "gpt-oss:20b", "label": "GPT-OSS 20B", "tier": "code" },
+        { "id": "llama3.3", "label": "Llama 3.3", "tier": "balanced" },
+        { "id": "qwen2.5-coder:32b", "label": "Qwen 2.5 Coder 32B", "tier": "code" },
+        { "id": "kimi-k2.5:cloud", "label": "Kimi K2.5 Cloud", "tier": "flagship" }
+      ]
+    }
+  ]
+}
