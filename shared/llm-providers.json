@@ -43,6 +43,7 @@
       "id": "openrouter",
       "label": "OpenRouter (Multi-provider)",
       "transport": "openrouter",
+      "baseUrl": "https://openrouter.ai/api/v1",
       "keySetting": "openrouter_api_key",
       "keyLabel": "OpenRouter API Key",
       "keyPlaceholder": "sk-or-...",

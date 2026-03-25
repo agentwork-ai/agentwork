@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Keyboard } from 'lucide-react';
 
-const ROUTES = ['/', '/projects', '/kanban', '/cron', '/chat', '/meetings', '/office', '/agents', '/settings'];
+const ROUTES = ['/', '/projects', '/kanban', '/chat', '/meetings', '/office', '/agents', '/settings'];
 
 const SHORTCUT_GROUPS = [
   {
@@ -15,12 +15,11 @@ const SHORTCUT_GROUPS = [
       { keys: ['Cmd', '1'], description: 'Dashboard' },
       { keys: ['Cmd', '2'], description: 'Projects' },
       { keys: ['Cmd', '3'], description: 'Tasks (Kanban)' },
-      { keys: ['Cmd', '4'], description: 'Cron' },
-      { keys: ['Cmd', '5'], description: 'Chat' },
-      { keys: ['Cmd', '6'], description: 'Meetings' },
-      { keys: ['Cmd', '7'], description: 'Office' },
-      { keys: ['Cmd', '8'], description: 'Agents' },
-      { keys: ['Cmd', '9'], description: 'Settings' },
+      { keys: ['Cmd', '4'], description: 'Chat' },
+      { keys: ['Cmd', '5'], description: 'Meetings' },
+      { keys: ['Cmd', '6'], description: 'Office' },
+      { keys: ['Cmd', '7'], description: 'Agents' },
+      { keys: ['Cmd', '8'], description: 'Settings' },
     ],
   },
   {

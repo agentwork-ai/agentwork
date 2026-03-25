@@ -23,7 +23,7 @@ const CRON_TO_WEEKDAY = {
 
 const DEFAULT_DAILY_HOUR = 9;
 const DEFAULT_DAILY_MINUTE = 0;
-const ACTION_HINT = /\b(check|review|monitor|scan|watch|summarize|send|sync|update|run|execute|generate|prepare|analyze|audit|report|remind|draft|inspect|triage|create|build|clean)\b/i;
+const ACTION_HINT = /\b(check|review|monitor|scan|watch|summarize|send|sync|update|run|execute|generate|prepare|analyze|audit|report|remind|draft|inspect|triage|create|build|clean|get|fetch|pull|read)\b/i;
 
 function titleCase(value) {
   return String(value || '')
@@ -118,7 +118,7 @@ function cleanupActionText(originalText, scheduleText) {
 
 function hasSchedulingIntent(content) {
   const trimmed = String(content || '').trim().toLowerCase();
-  return /^(?:please\s+)?(?:(?:can|could|would|will)\s+you|set\s*up|setup|schedule|create|make|run|check|review|monitor|scan|watch|summarize|send|sync|update|prepare|generate|analyze|audit|report|remind|every\b|daily\b|hourly\b)/.test(trimmed)
+  return /^(?:please\s+)?(?:(?:can|could|would|will)\s+you|set\s*up|setup|schedule|create|make|run|check|review|monitor|scan|watch|summarize|send|sync|update|prepare|generate|analyze|audit|report|remind|every\b|everyday\b|daily\b|hourly\b)/.test(trimmed)
     || /\b(?:schedule|set\s*up|setup|create|make)\s+(?:a\s+)?(?:cron|recurring|scheduled)\b/.test(trimmed);
 }
 
@@ -159,7 +159,7 @@ function parseEveryN(lowered) {
 }
 
 function parseDailyPatterns(normalized, lowered) {
-  const match = normalized.match(/\b(?:daily|every day|each day)(?:\s+at\s+([0-9:\samp\.]+|noon|midnight))?\b/i);
+  const match = normalized.match(/\b(?:daily|every day|everyday|each day)(?:\s+at\s+([0-9:\samp\.]+|noon|midnight))?\b/i);
   if (!match) return null;
   const time = parseTimeToken(match[1]);
   if (!time) return null;

@@ -380,7 +380,7 @@ function createRecurringTaskFromChat(agent, userMessage) {
   } else {
     details.push(`Timing uses ${timezoneLabel}.`);
   }
-  details.push(`You can manage or delete it from the Cron page.`);
+  details.push(`You can manage or delete it from the task board.`);
 
   return {
     task,
