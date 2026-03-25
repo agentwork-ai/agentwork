@@ -57,6 +57,7 @@ db.exec(`
     model TEXT DEFAULT 'claude-sonnet-4-20250514',
     status TEXT DEFAULT 'idle',
     personality TEXT DEFAULT '',
+    skills_json TEXT DEFAULT '[]',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -216,6 +217,9 @@ if (!agentCols.includes('allowed_tools')) {
 }
 if (!agentCols.includes('agent_type')) {
   db.exec("ALTER TABLE agents ADD COLUMN agent_type TEXT DEFAULT 'smart'");
+}
+if (!agentCols.includes('skills_json')) {
+  db.exec("ALTER TABLE agents ADD COLUMN skills_json TEXT DEFAULT '[]'");
 }
 
 // Seed default settings if not present

@@ -9,6 +9,9 @@ const {
   getDefaultFileContent,
   normalizeAgentType,
 } = require('../services/agent-context');
+const {
+  filterInstalledSkillSlugs,
+} = require('../services/skills');
 
 // Lazy-load platforms to avoid circular deps
 function getPlatforms() {
@@ -64,9 +67,27 @@ function replaceIdentityField(content, label, value) {
   return `${updated.join('\n').trimEnd()}\n`;
 }
 
+function parseSkillsJson(value) {
+  try {
+    const parsed = JSON.parse(value || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function serializeAgentRecord(agent) {
+  if (!agent) return agent;
+  const { skills_json, ...rest } = agent;
+  return {
+    ...rest,
+    skills: parseSkillsJson(skills_json),
+  };
+}
+
 // Get all agents
 router.get('/', (req, res) => {
-  const agents = db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all();
+  const agents = db.prepare('SELECT * FROM agents ORDER BY created_at DESC').all().map(serializeAgentRecord);
   res.json(agents);
 });
 
@@ -171,23 +192,24 @@ router.get('/:id', (req, res) => {
   const teamPath = path.join(DATA_DIR, 'TEAM.md');
   agent.memory['TEAM.md'] = fs.existsSync(teamPath) ? fs.readFileSync(teamPath, 'utf8') : '';
 
-  res.json(agent);
+  res.json(serializeAgentRecord(agent));
 });
 
 // Create (hire) agent
 router.post('/', async (req, res) => {
   const { name, avatar, role, agent_type, auth_type, provider, model, personality,
           chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids,
-          daily_budget_usd, allowed_tools } = req.body;
+          daily_budget_usd, allowed_tools, skills } = req.body;
 
   if (!name) return res.status(400).json({ error: 'Name is required' });
 
   const id = uuidv4();
   const normalizedAgentType = normalizeAgentType(agent_type || (auth_type === 'cli' ? 'cli' : 'smart'));
+  const assignedSkills = filterInstalledSkillSlugs(skills);
   db.prepare(
     `INSERT INTO agents (id, name, avatar, role, agent_type, auth_type, provider, model, status, personality,
-      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd, allowed_tools)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd, allowed_tools, skills_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id,
     name,
@@ -205,10 +227,11 @@ router.post('/', async (req, res) => {
     chat_app_token || '',
     chat_allowed_ids || '',
     daily_budget_usd || 0,
-    allowed_tools || ''
+    allowed_tools || '',
+    JSON.stringify(assignedSkills)
   );
 
-  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+  const agent = serializeAgentRecord(db.prepare('SELECT * FROM agents WHERE id = ?').get(id));
   ensureMemoryFiles(id, agent, { syncRole: true });
   logAudit('create', 'agent', id, { name, role: role || 'Assistant', agent_type: normalizedAgentType });
   const io = req.app.get('io');
@@ -230,16 +253,19 @@ router.put('/:id', async (req, res) => {
 
   const { name, avatar, role, agent_type, auth_type, provider, model, status, personality,
           chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids,
-          daily_budget_usd, allowed_tools } = req.body;
+          daily_budget_usd, allowed_tools, skills } = req.body;
 
   const newChatEnabled = chat_enabled !== undefined ? (chat_enabled ? 1 : 0) : existing.chat_enabled;
   const nextAgentType = agent_type !== undefined ? normalizeAgentType(agent_type) : normalizeAgentType(existing.agent_type);
+  const nextSkills = skills !== undefined
+    ? filterInstalledSkillSlugs(skills)
+    : parseSkillsJson(existing.skills_json);
 
   db.prepare(
     `UPDATE agents SET name = ?, avatar = ?, role = ?, agent_type = ?, auth_type = ?, provider = ?, model = ?,
      status = ?, personality = ?,
      chat_enabled = ?, chat_platform = ?, chat_token = ?, chat_app_token = ?, chat_allowed_ids = ?,
-     daily_budget_usd = ?, allowed_tools = ?,
+     daily_budget_usd = ?, allowed_tools = ?, skills_json = ?,
      updated_at = CURRENT_TIMESTAMP WHERE id = ?`
   ).run(
     name || existing.name,
@@ -258,10 +284,11 @@ router.put('/:id', async (req, res) => {
     chat_allowed_ids !== undefined ? chat_allowed_ids : existing.chat_allowed_ids,
     daily_budget_usd !== undefined ? daily_budget_usd : (existing.daily_budget_usd || 0),
     allowed_tools !== undefined ? allowed_tools : (existing.allowed_tools || ''),
+    JSON.stringify(nextSkills),
     req.params.id
   );
 
-  const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id);
+  const agent = serializeAgentRecord(db.prepare('SELECT * FROM agents WHERE id = ?').get(req.params.id));
   ensureMemoryFiles(req.params.id, agent, { previousAgent: existing, syncRole: true });
   const io = req.app.get('io');
   if (io) io.emit('agent:updated', agent);
@@ -381,12 +408,12 @@ router.post('/:id/clone', (req, res) => {
 
   db.prepare(
     `INSERT INTO agents (id, name, avatar, role, agent_type, auth_type, provider, model, status, personality,
-      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd, allowed_tools)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      chat_enabled, chat_platform, chat_token, chat_app_token, chat_allowed_ids, daily_budget_usd, allowed_tools, skills_json)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(id, cloneName, source.avatar, source.role, normalizeAgentType(source.agent_type), source.auth_type, source.provider,
-    source.model, 'idle', source.personality, 0, '', '', '', '', source.daily_budget_usd || 0, source.allowed_tools || '');
+    source.model, 'idle', source.personality, 0, '', '', '', '', source.daily_budget_usd || 0, source.allowed_tools || '', source.skills_json || '[]');
 
-  const cloneAgent = db.prepare('SELECT * FROM agents WHERE id = ?').get(id);
+  const cloneAgent = serializeAgentRecord(db.prepare('SELECT * FROM agents WHERE id = ?').get(id));
   ensureMemoryFiles(id, cloneAgent, { syncRole: true });
 
   // Clone workspace files

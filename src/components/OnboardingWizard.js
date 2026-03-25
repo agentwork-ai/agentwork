@@ -25,6 +25,7 @@ import {
   EyeOff,
   SkipForward,
   X,
+  Wrench,
 } from 'lucide-react';
 
 const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
@@ -96,6 +97,8 @@ export default function OnboardingWizard({ onComplete }) {
   ));
   const [providerAuth, setProviderAuth] = useState(null);
   const [providerAuthLoading, setProviderAuthLoading] = useState(false);
+  const [availableSkills, setAvailableSkills] = useState([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
 
   // Step 3: Project
   const [project, setProject] = useState({ name: '', path: '' });
@@ -110,6 +113,7 @@ export default function OnboardingWizard({ onComplete }) {
     provider: 'anthropic',
     model: getDefaultModelForProvider('anthropic'),
     allowed_tools: '',
+    skills: [],
   });
   const [toolRestrictionsEnabled, setToolRestrictionsEnabled] = useState(false);
 
@@ -128,6 +132,24 @@ export default function OnboardingWizard({ onComplete }) {
       })
       .finally(() => {
         if (!cancelled) setProviderAuthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSkillsLoading(true);
+    api.getSkills()
+      .then((data) => {
+        if (!cancelled) setAvailableSkills(data.skills || []);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableSkills([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSkillsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -225,6 +247,7 @@ export default function OnboardingWizard({ onComplete }) {
         provider: agentAuthType === 'cli' ? 'claude-cli' : agent.provider,
         model: usesCliRuntime ? '' : agent.model,
         allowed_tools: toolRestrictionsEnabled ? agent.allowed_tools : '',
+        skills: agent.skills,
       });
       toast.success('Agent hired!');
       handleNext();
@@ -282,6 +305,14 @@ export default function OnboardingWizard({ onComplete }) {
       }
       return { ...current, allowed_tools: Array.from(next).join(',') };
     });
+  };
+  const toggleAgentSkill = (skillSlug) => {
+    setAgent((current) => ({
+      ...current,
+      skills: current.skills.includes(skillSlug)
+        ? current.skills.filter((slug) => slug !== skillSlug)
+        : [...current.skills, skillSlug],
+    }));
   };
 
   const setAuthMode = (nextType) => {
@@ -792,6 +823,50 @@ export default function OnboardingWizard({ onComplete }) {
                         `task_complete` and `request_help` stay available even when restrictions are enabled.
                       </p>
                     </div>
+                  )}
+                </div>
+
+                <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+                  <div className="flex items-center gap-2 mb-3">
+                    <Wrench size={16} style={{ color: 'var(--text-secondary)' }} />
+                    <label className="label mb-0" style={{ marginBottom: 0 }}>Assigned Skills</label>
+                  </div>
+                  {skillsLoading ? (
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Loading shared skills...</p>
+                  ) : availableSkills.length > 0 ? (
+                    <div className="space-y-2">
+                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        Optional shared skills from `~/.agentwork/skills`. Assign the ones this agent should use during tasks and chat.
+                      </p>
+                      {availableSkills.map((skill) => {
+                        const checked = agent.skills.includes(skill.slug);
+                        return (
+                          <label
+                            key={skill.slug}
+                            className="flex items-start gap-3 p-2.5 rounded-lg cursor-pointer transition-colors"
+                            style={{
+                              background: checked ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                              border: checked ? '1px solid var(--accent)' : '1px solid var(--border)',
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              checked={checked}
+                              onChange={() => toggleAgentSkill(skill.slug)}
+                            />
+                            <div className="min-w-0 flex-1">
+                              <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{skill.name}</span>
+                              <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>{skill.description || 'No description'}</p>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : (
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      No shared skills are installed yet. You can add them later from the Skills page.
+                    </p>
                   )}
                 </div>
 

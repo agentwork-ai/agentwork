@@ -12,6 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { DATA_DIR } = require('../db');
+const { getAssignedSkillContextEntries } = require('./skills');
 const AGENT_METADATA = require('../../shared/agent-metadata.json');
 
 const STANDARD_AGENT_FILES = [
@@ -1067,7 +1068,8 @@ function loadBootstrapFiles(agentId, agent, options = {}) {
 
 function buildAgentContext(agentId, agent, options = {}) {
   const files = loadBootstrapFiles(agentId, agent, options);
-  if (files.length === 0) return '';
+  const skillEntries = getAssignedSkillContextEntries(agent);
+  if (files.length === 0 && skillEntries.length === 0) return '';
 
   const agentType = normalizeAgentType(agent?.agent_type);
   const hasSoul = files.some((file) => file.name === 'SOUL.md');
@@ -1076,6 +1078,7 @@ function buildAgentContext(agentId, agent, options = {}) {
   const hasHeartbeat = files.some((file) => file.name === 'HEARTBEAT.md');
   const hasMemory = files.some((file) => file.name === 'MEMORY.md');
   const hasDailyNotes = files.some((file) => file.name.startsWith('memory/'));
+  const hasSkills = skillEntries.length > 0;
 
   const lines = [
     '# Project Context',
@@ -1086,6 +1089,9 @@ function buildAgentContext(agentId, agent, options = {}) {
 
   if (agentType === 'worker') {
     lines.push('This Worker Agent intentionally uses a narrow workspace context: ROLE.md plus memory files.');
+  }
+  if (agentType === 'cli' && hasSkills) {
+    lines.push('This CLI Agent does not load workspace markdown files, but assigned shared skills are available.');
   }
   if (hasSoul) {
     lines.push(
@@ -1109,10 +1115,30 @@ function buildAgentContext(agentId, agent, options = {}) {
   if (hasDailyNotes) {
     lines.push('Recent daily notes from memory/YYYY-MM-DD.md provide short-horizon context and raw recent history.');
   }
+  if (hasSkills) {
+    lines.push('Assigned skills are shared playbooks stored under ~/.agentwork/skills. Use them when the task matches their purpose.');
+  }
 
   lines.push('');
   for (const file of files) {
     lines.push(`## ${file.name}`, '', file.content, '');
+  }
+  for (const skill of skillEntries) {
+    const resources = [];
+    if (skill.has_scripts) resources.push('scripts/');
+    if (skill.has_references) resources.push('references/');
+    if (skill.has_assets) resources.push('assets/');
+    if (skill.extra_files?.length) resources.push(`files: ${skill.extra_files.join(', ')}`);
+
+    lines.push(`## Skill: ${skill.name} (${skill.slug})`);
+    lines.push('');
+    lines.push(`Path: ${skill.path}`);
+    if (skill.description) lines.push(`Description: ${skill.description}`);
+    if (resources.length > 0) lines.push(`Resources: ${resources.join(' | ')}`);
+    lines.push('Read supporting files from the skill directory only when they are relevant.');
+    lines.push('');
+    lines.push(skill.content);
+    lines.push('');
   }
   lines.push(
     '## Runtime Access',
@@ -1295,6 +1321,7 @@ function buildChatSystemPrompt(agent, agentContext) {
     ],
     cli: [
       '- No workspace markdown files are loaded for this agent type.',
+      '- Assigned shared skills may still be loaded separately when present.',
       '- Use the current chat, the task at hand, and project files if provided.',
       '- Do not claim hidden memory or workspace-file context you do not actually have.',
     ],

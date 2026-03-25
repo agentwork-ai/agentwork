@@ -4,7 +4,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { X, Keyboard } from 'lucide-react';
 
-const ROUTES = ['/', '/projects', '/kanban', '/chat', '/meetings', '/office', '/agents', '/settings'];
+const ROUTES = ['/', '/projects', '/kanban', '/chat', '/meetings', '/office', '/skills', '/agents', '/settings'];
 
 const SHORTCUT_GROUPS = [
   {
@@ -18,8 +18,9 @@ const SHORTCUT_GROUPS = [
       { keys: ['Cmd', '4'], description: 'Chat' },
       { keys: ['Cmd', '5'], description: 'Meetings' },
       { keys: ['Cmd', '6'], description: 'Office' },
-      { keys: ['Cmd', '7'], description: 'Agents' },
-      { keys: ['Cmd', '8'], description: 'Settings' },
+      { keys: ['Cmd', '7'], description: 'Skills' },
+      { keys: ['Cmd', '8'], description: 'Agents' },
+      { keys: ['Cmd', '9'], description: 'Settings' },
     ],
   },
   {
@@ -266,9 +267,9 @@ export default function KeyboardShortcuts() {
         return;
       }
 
-      // Cmd+1 through Cmd+8 -> navigate to routes
+      // Cmd+1 through Cmd+9 -> navigate to routes
       const num = parseInt(e.key, 10);
-      if (num >= 1 && num <= 8) {
+      if (num >= 1 && num <= 9) {
         e.preventDefault();
         router.push(ROUTES[num - 1]);
         return;

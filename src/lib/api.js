@@ -81,6 +81,14 @@ export const api = {
     request(`/api/agents/${agentId}/message`, { method: 'POST', body: JSON.stringify({ from_agent_id: fromAgentId, content }) }),
   getAgentInbox: (agentId) => request(`/api/agents/${agentId}/inbox`),
 
+  // Skills
+  getSkills: () => request('/api/skills'),
+  getSkill: (slug) => request(`/api/skills/${encodeURIComponent(slug)}`),
+  createSkill: (data) => request('/api/skills/create', { method: 'POST', body: JSON.stringify(data) }),
+  importSkill: (data) => request('/api/skills/import', { method: 'POST', body: JSON.stringify(data) }),
+  installSkill: (data) => request('/api/skills/install', { method: 'POST', body: JSON.stringify(data) }),
+  deleteSkill: (slug) => request(`/api/skills/${encodeURIComponent(slug)}`, { method: 'DELETE' }),
+
   // Chat
   getMessages: (agentId, limit) => request(`/api/chat/${agentId}?limit=${limit || 100}`),
   searchMessages: (agentId, query) => request(`/api/chat/${agentId}/search?q=${encodeURIComponent(query)}`),

@@ -13,6 +13,7 @@ import {
   Presentation,
   BarChart3,
   Users,
+  Wrench,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -33,6 +34,7 @@ const navItems = [
   { href: '/office', label: 'Office', icon: Building2 },
   // { href: '/pipelines', label: 'Pipelines', icon: GitBranch }, // temporarily hidden — canvas z-index issue
   { href: '/analytics', label: 'Analytics', icon: BarChart3 },
+  { href: '/skills', label: 'Skills', icon: Wrench },
   { href: '/agents', label: 'Agents', icon: Users },
   { href: '/settings', label: 'Settings', icon: Settings },
 ];

@@ -123,6 +123,7 @@ app.prepare().then(() => {
   server.use('/api/projects', require('./routes/projects'));
   server.use('/api/tasks', require('./routes/tasks'));
   server.use('/api/agents', require('./routes/agents'));
+  server.use('/api/skills', require('./routes/skills'));
   server.use('/api/settings', require('./routes/settings'));
   server.use('/api/chat', require('./routes/chat'));
   server.use('/api/meetings', require('./routes/meetings'));
@@ -212,6 +213,12 @@ app.prepare().then(() => {
         { method: 'GET', path: '/api/agents/:id/inbox', description: 'Get agent inbox (messages from other agents)' },
         { method: 'PUT', path: '/api/agents/:id/memory/:filename', description: 'Update memory file' },
         { method: 'POST', path: '/api/agents/:id/clear-memory', description: 'Clear agent memory' },
+        { method: 'GET', path: '/api/skills', description: 'List installed shared skills in ~/.agentwork/skills' },
+        { method: 'GET', path: '/api/skills/:slug', description: 'Get a skill with SKILL.md content and assignment metadata' },
+        { method: 'POST', path: '/api/skills/create', description: 'Create a new shared skill using a creator agent', body: '{ creator_agent_id, name, slug?, description?, use_when?, workflow?, notes? }' },
+        { method: 'POST', path: '/api/skills/import', description: 'Import a local skill folder or SKILL.md into ~/.agentwork/skills', body: '{ source_path, slug? }' },
+        { method: 'POST', path: '/api/skills/install', description: 'Install a shared skill from ClawHub', body: '{ slug_or_url }' },
+        { method: 'DELETE', path: '/api/skills/:slug', description: 'Delete a shared skill and remove it from assigned agents' },
         { method: 'GET', path: '/api/chat/:agentId', description: 'Get messages' },
         { method: 'GET', path: '/api/chat/:agentId/search', description: 'Search messages', query: 'q' },
         { method: 'GET', path: '/api/chat/:agentId/export', description: 'Export chat as Markdown' },

@@ -16,6 +16,7 @@ import agentMetadata from '../../../shared/agent-metadata.json';
 import {
   Plus, Trash2, Edit2, Settings2, Brain, FileText, Copy,
   User, Shield, BookOpen, X, RotateCcw, Key, Terminal, MessageCircle,
+  Wrench,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -251,6 +252,11 @@ export default function AgentsPage() {
                         <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                           {agent.provider}{agent.model ? ` / ${agent.model}` : ''}
                         </span>
+                        {agent.skills?.length ? (
+                          <span className="badge text-[10px]" style={{ background: '#12b88620', color: '#0ca678' }}>
+                            <Wrench size={10} /> {agent.skills.length} skill{agent.skills.length === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
                         {agent.chat_enabled ? (
                           <span className="badge text-[10px]" style={{ background: '#7950f220', color: '#7950f2' }}>
                             {agent.chat_platform === 'telegram' ? '✈ Telegram' : '💬 Slack'}
@@ -321,11 +327,14 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     chat_app_token: agent?.chat_app_token || '',
     chat_allowed_ids: agent?.chat_allowed_ids || '',
     allowed_tools: agent?.allowed_tools || '',
+    skills: Array.isArray(agent?.skills) ? agent.skills : [],
   });
   const [saving, setSaving] = useState(false);
   const [providerAuth, setProviderAuth] = useState(null);
   const [providerAuthLoading, setProviderAuthLoading] = useState(false);
   const [toolRestrictionsEnabled, setToolRestrictionsEnabled] = useState(Boolean(String(agent?.allowed_tools || '').trim()));
+  const [availableSkills, setAvailableSkills] = useState([]);
+  const [skillsLoading, setSkillsLoading] = useState(false);
 
   // If editing, skip the type selection
   const showTypeSelector = !agent && !authType;
@@ -342,6 +351,24 @@ function AgentFormModal({ agent, onClose, onSaved }) {
       })
       .finally(() => {
         if (!cancelled) setProviderAuthLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    setSkillsLoading(true);
+    api.getSkills()
+      .then((data) => {
+        if (!cancelled) setAvailableSkills(data.skills || []);
+      })
+      .catch(() => {
+        if (!cancelled) setAvailableSkills([]);
+      })
+      .finally(() => {
+        if (!cancelled) setSkillsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -544,6 +571,14 @@ function AgentFormModal({ agent, onClose, onSaved }) {
       }
       return { ...current, allowed_tools: Array.from(next).join(',') };
     });
+  };
+  const toggleSkill = (skillSlug) => {
+    setForm((current) => ({
+      ...current,
+      skills: current.skills.includes(skillSlug)
+        ? current.skills.filter((slug) => slug !== skillSlug)
+        : [...current.skills, skillSlug],
+    }));
   };
 
   return (
@@ -798,6 +833,50 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             <label className="label">Personality / Instructions</label>
             <textarea className="input" value={form.personality} onChange={(e) => setForm({ ...form, personality: e.target.value })}
               placeholder="e.g., Methodical, always writes tests, prefers functional patterns..." rows={3} />
+          </div>
+
+          <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="flex items-center gap-2 mb-3">
+              <Wrench size={16} style={{ color: 'var(--text-secondary)' }} />
+              <label className="label mb-0" style={{ marginBottom: 0 }}>Assigned Skills</label>
+            </div>
+            {skillsLoading ? (
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Loading shared skills...</p>
+            ) : availableSkills.length > 0 ? (
+              <>
+                <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                  These shared skills are stored in `~/.agentwork/skills`. Assigned skills are injected when this agent handles tasks and chat.
+                </p>
+                <div className="space-y-2">
+                  {availableSkills.map((skill) => {
+                    const checked = form.skills.includes(skill.slug);
+                    return (
+                      <label
+                        key={skill.slug}
+                        className="flex items-start gap-3 p-3 rounded-lg cursor-pointer transition-colors"
+                        style={{
+                          background: checked ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                          border: checked ? '1px solid var(--accent)' : '1px solid var(--border)',
+                        }}
+                      >
+                        <input type="checkbox" className="mt-1" checked={checked} onChange={() => toggleSkill(skill.slug)} />
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{skill.name}</span>
+                            <span className="text-[10px] font-mono" style={{ color: 'var(--text-tertiary)' }}>{skill.slug}</span>
+                          </div>
+                          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{skill.description || 'No description'}</p>
+                        </div>
+                      </label>
+                    );
+                  })}
+                </div>
+              </>
+            ) : (
+              <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                No shared skills are installed yet. Add them from the Skills page, then return here to assign them.
+              </p>
+            )}
           </div>
 
           {/* Per-Agent Budget */}
