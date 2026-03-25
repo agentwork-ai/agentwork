@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 const { Command } = require('commander');
-const { spawn, execSync } = require('child_process');
+const { spawn, spawnSync, execSync } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const chalk = require('chalk');
@@ -9,14 +9,61 @@ const chalk = require('chalk');
 const os = require('os');
 const http = require('http');
 
+const PACKAGE_JSON = require('../package.json');
 const program = new Command();
 const ROOT = path.resolve(__dirname, '..');
+const PACKAGE_NAME = PACKAGE_JSON.name;
 const DATA_DIR = process.env.AGENTWORK_DATA || path.join(os.homedir(), '.agentwork');
 const PID_FILE = path.join(DATA_DIR, 'agentwork.pid');
 const LOG_FILE = path.join(DATA_DIR, 'logs', 'agentwork.log');
+const RUNTIME_FILE = path.join(DATA_DIR, 'runtime.json');
 const DEFAULT_PORT = process.env.PORT || 1248;
 
 fs.mkdirSync(path.join(DATA_DIR, 'logs'), { recursive: true });
+
+function normalizePort(value) {
+  const port = parseInt(String(value || DEFAULT_PORT), 10);
+  return Number.isFinite(port) && port > 0 ? String(port) : String(DEFAULT_PORT);
+}
+
+function loadRuntimeState() {
+  try {
+    if (!fs.existsSync(RUNTIME_FILE)) return null;
+    const parsed = JSON.parse(fs.readFileSync(RUNTIME_FILE, 'utf8'));
+    return parsed && typeof parsed === 'object' ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveRuntimeState(state) {
+  fs.writeFileSync(
+    RUNTIME_FILE,
+    `${JSON.stringify({ ...state, updatedAt: new Date().toISOString() }, null, 2)}\n`
+  );
+}
+
+function clearRuntimeArtifacts() {
+  if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
+  if (fs.existsSync(RUNTIME_FILE)) fs.unlinkSync(RUNTIME_FILE);
+}
+
+function resolveServerPort(fallback = DEFAULT_PORT) {
+  return normalizePort(loadRuntimeState()?.port || fallback);
+}
+
+function readInstalledVersion() {
+  try {
+    const file = path.join(ROOT, 'package.json');
+    return JSON.parse(fs.readFileSync(file, 'utf8'))?.version || null;
+  } catch {
+    return null;
+  }
+}
+
+function npmCommand() {
+  return process.platform === 'win32' ? 'npm.cmd' : 'npm';
+}
 
 // ── HTTP helper ──────────────────────────────────────────────────────────────
 
@@ -24,7 +71,7 @@ function apiRequest(method, urlPath, body) {
   return new Promise((resolve, reject) => {
     const options = {
       hostname: 'localhost',
-      port: DEFAULT_PORT,
+      port: resolveServerPort(),
       path: urlPath,
       method,
       headers: { 'Content-Type': 'application/json' },
@@ -110,15 +157,144 @@ function isRunning() {
     process.kill(pid, 0);
     return pid;
   } catch {
-    fs.unlinkSync(PID_FILE);
+    clearRuntimeArtifacts();
     return false;
   }
+}
+
+function waitForExit(pid, timeoutMs = 5000, intervalMs = 250) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const timer = setInterval(() => {
+      try {
+        process.kill(pid, 0);
+        if (Date.now() - startedAt >= timeoutMs) {
+          clearInterval(timer);
+          resolve(false);
+        }
+      } catch {
+        clearInterval(timer);
+        resolve(true);
+      }
+    }, intervalMs);
+  });
+}
+
+async function stopAgentWork({ silent = false } = {}) {
+  const pid = isRunning();
+  if (!pid) {
+    if (!silent) console.log(chalk.yellow('AgentWork is not running.'));
+    return false;
+  }
+
+  if (!silent) console.log(chalk.blue(`Stopping AgentWork (PID: ${pid})...`));
+
+  try {
+    process.kill(pid, 'SIGTERM');
+  } catch {
+    clearRuntimeArtifacts();
+    if (!silent) console.log(chalk.green('AgentWork stopped.'));
+    return true;
+  }
+
+  let stopped = await waitForExit(pid, 5000);
+  if (!stopped) {
+    if (!silent) console.log(chalk.yellow('Graceful shutdown timed out. Sending SIGKILL...'));
+    try {
+      process.kill(pid, 'SIGKILL');
+    } catch {}
+    stopped = await waitForExit(pid, 1500);
+  }
+
+  if (!stopped) {
+    if (!silent) console.log(chalk.red('✗ Failed to stop AgentWork.'));
+    return false;
+  }
+
+  clearRuntimeArtifacts();
+  if (!silent) console.log(chalk.green.bold('✓ AgentWork stopped.'));
+  return true;
+}
+
+function ensureDashboardBuild(env) {
+  const nextDir = path.join(ROOT, '.next');
+  if (fs.existsSync(nextDir)) return;
+
+  console.log(chalk.yellow('First run — building dashboard (this may take a minute)...'));
+  try {
+    const nextBin = path.join(ROOT, 'node_modules', '.bin', 'next');
+    execSync(`"${nextBin}" build`, { cwd: ROOT, stdio: 'inherit', env });
+    console.log(chalk.green('✓ Build complete'));
+  } catch {
+    console.log(chalk.red('✗ Build failed. Try running manually:'));
+    console.log(chalk.gray(`  cd ${ROOT} && npx next build`));
+    process.exit(1);
+  }
+}
+
+function startAgentWork({ port = DEFAULT_PORT, foreground = false } = {}) {
+  const normalizedPort = normalizePort(port);
+  const pid = isRunning();
+  if (pid) {
+    console.log(chalk.yellow(`AgentWork is already running (PID: ${pid})`));
+    console.log(chalk.gray(`Dashboard: http://localhost:${resolveServerPort(normalizedPort)}`));
+    return false;
+  }
+
+  console.log(chalk.blue.bold('🚀 Starting AgentWork...'));
+
+  const serverScript = path.join(ROOT, 'server', 'index.js');
+  const env = { ...process.env, PORT: normalizedPort, AGENTWORK_ROOT: ROOT, NODE_ENV: 'production' };
+
+  ensureDashboardBuild(env);
+
+  if (foreground) {
+    const child = spawn('node', [serverScript], {
+      cwd: ROOT,
+      env,
+      stdio: 'inherit',
+    });
+    fs.writeFileSync(PID_FILE, String(child.pid));
+    saveRuntimeState({ pid: child.pid, port: normalizedPort, root: ROOT, mode: 'foreground' });
+    child.on('exit', (code) => {
+      clearRuntimeArtifacts();
+      process.exit(code);
+    });
+    return true;
+  }
+
+  const logStream = fs.openSync(LOG_FILE, 'a');
+  const child = spawn('node', [serverScript], {
+    cwd: ROOT,
+    env,
+    detached: true,
+    stdio: ['ignore', logStream, logStream],
+  });
+  child.unref();
+
+  fs.writeFileSync(PID_FILE, String(child.pid));
+  saveRuntimeState({ pid: child.pid, port: normalizedPort, root: ROOT, mode: 'daemon' });
+
+  setTimeout(() => {
+    const running = isRunning();
+    if (running) {
+      console.log(chalk.green.bold('✓ AgentWork started successfully'));
+      console.log(chalk.gray(`  PID:       ${running}`));
+      console.log(chalk.gray(`  Dashboard: http://localhost:${normalizedPort}`));
+      console.log(chalk.gray(`  Logs:      ${LOG_FILE}`));
+    } else {
+      console.log(chalk.red('✗ Failed to start AgentWork. Check logs:'));
+      console.log(chalk.gray(`  ${LOG_FILE}`));
+    }
+  }, 2000);
+
+  return true;
 }
 
 program
   .name('agentwork')
   .description('AgentWork - Autonomous AI Agent Orchestrator')
-  .version(require('../package.json').version);
+  .version(PACKAGE_JSON.version);
 
 program
   .command('start')
@@ -126,105 +302,91 @@ program
   .option('-p, --port <port>', 'Port to run on', '1248')
   .option('-f, --foreground', 'Run in foreground (no daemon)')
   .action((opts) => {
-    const pid = isRunning();
-    if (pid) {
-      console.log(chalk.yellow(`AgentWork is already running (PID: ${pid})`));
-      console.log(chalk.gray(`Dashboard: http://localhost:${opts.port}`));
-      return;
-    }
-
-    console.log(chalk.blue.bold('🚀 Starting AgentWork...'));
-
-    const serverScript = path.join(ROOT, 'server', 'index.js');
-    const nextDir = path.join(ROOT, '.next');
-    const env = { ...process.env, PORT: opts.port, AGENTWORK_ROOT: ROOT, NODE_ENV: 'production' };
-
-    // Auto-build if .next directory doesn't exist
-    if (!fs.existsSync(nextDir)) {
-      console.log(chalk.yellow('First run — building dashboard (this may take a minute)...'));
-      try {
-        const nextBin = path.join(ROOT, 'node_modules', '.bin', 'next');
-        execSync(`"${nextBin}" build`, { cwd: ROOT, stdio: 'inherit', env });
-        console.log(chalk.green('✓ Build complete'));
-      } catch (err) {
-        console.log(chalk.red('✗ Build failed. Try running manually:'));
-        console.log(chalk.gray(`  cd ${ROOT} && npx next build`));
-        process.exit(1);
-      }
-    }
-
-    if (opts.foreground) {
-      const child = spawn('node', [serverScript], {
-        cwd: ROOT,
-        env,
-        stdio: 'inherit',
-      });
-      child.on('exit', (code) => {
-        if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-        process.exit(code);
-      });
-      fs.writeFileSync(PID_FILE, String(child.pid));
-      return;
-    }
-
-    const logStream = fs.openSync(LOG_FILE, 'a');
-    const child = spawn('node', [serverScript], {
-      cwd: ROOT,
-      env,
-      detached: true,
-      stdio: ['ignore', logStream, logStream],
-    });
-    child.unref();
-
-    fs.writeFileSync(PID_FILE, String(child.pid));
-
-    // Wait a moment, then confirm
-    setTimeout(() => {
-      const running = isRunning();
-      if (running) {
-        console.log(chalk.green.bold('✓ AgentWork started successfully'));
-        console.log(chalk.gray(`  PID:       ${running}`));
-        console.log(chalk.gray(`  Dashboard: http://localhost:${opts.port}`));
-        console.log(chalk.gray(`  Logs:      ${LOG_FILE}`));
-      } else {
-        console.log(chalk.red('✗ Failed to start AgentWork. Check logs:'));
-        console.log(chalk.gray(`  ${LOG_FILE}`));
-      }
-    }, 2000);
+    startAgentWork({ port: opts.port, foreground: opts.foreground });
   });
 
 program
   .command('stop')
   .description('Stop AgentWork daemon')
-  .action(() => {
-    const pid = isRunning();
-    if (!pid) {
-      console.log(chalk.yellow('AgentWork is not running.'));
-      return;
+  .action(async () => {
+    const stopped = await stopAgentWork();
+    if (stopped === false && isRunning()) process.exit(1);
+  });
+
+program
+  .command('restart')
+  .description('Restart AgentWork daemon and dashboard')
+  .option('-p, --port <port>', 'Port to run on (defaults to the previous port if known)')
+  .option('-f, --foreground', 'Run in foreground after restart')
+  .action(async (opts) => {
+    const previous = loadRuntimeState();
+    const targetPort = normalizePort(opts.port || previous?.port || DEFAULT_PORT);
+    const wasRunning = Boolean(isRunning());
+
+    if (wasRunning) {
+      const stopped = await stopAgentWork();
+      if (!stopped) process.exit(1);
+    } else {
+      console.log(chalk.yellow('AgentWork is not running. Starting a fresh instance.'));
     }
 
-    console.log(chalk.blue(`Stopping AgentWork (PID: ${pid})...`));
-    try {
-      process.kill(pid, 'SIGTERM');
-      // Give it a moment to shut down
-      let attempts = 0;
-      const check = setInterval(() => {
-        attempts++;
-        try {
-          process.kill(pid, 0);
-          if (attempts > 10) {
-            process.kill(pid, 'SIGKILL');
-            clearInterval(check);
-          }
-        } catch {
-          clearInterval(check);
-          if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-          console.log(chalk.green.bold('✓ AgentWork stopped.'));
-        }
-      }, 500);
-    } catch (err) {
-      if (fs.existsSync(PID_FILE)) fs.unlinkSync(PID_FILE);
-      console.log(chalk.green('AgentWork stopped.'));
+    startAgentWork({ port: targetPort, foreground: opts.foreground });
+  });
+
+program
+  .command('update')
+  .description('Update AgentWork to the latest npm release')
+  .option('-t, --tag <tag>', 'npm dist-tag or explicit version', 'latest')
+  .option('--no-restart', 'Do not restart AgentWork after updating if it is currently running')
+  .action(async (opts) => {
+    const wasRunning = Boolean(isRunning());
+    const previous = loadRuntimeState();
+    const targetPort = normalizePort(previous?.port || DEFAULT_PORT);
+    const packageSpec = opts.tag && opts.tag !== 'latest'
+      ? `${PACKAGE_NAME}@${opts.tag}`
+      : `${PACKAGE_NAME}@latest`;
+
+    if (wasRunning && opts.restart) {
+      const stopped = await stopAgentWork();
+      if (!stopped) process.exit(1);
+    }
+
+    console.log(chalk.blue(`Updating ${PACKAGE_NAME} (${packageSpec})...`));
+    const result = spawnSync(npmCommand(), ['install', '-g', packageSpec], {
+      cwd: process.cwd(),
+      env: process.env,
+      stdio: 'inherit',
+    });
+
+    if (result.error) {
+      if (wasRunning && opts.restart) {
+        console.log(chalk.yellow('Update failed. Attempting to restore the previous daemon...'));
+        startAgentWork({ port: targetPort, foreground: false });
+      }
+      console.error(chalk.red(`Error: ${result.error.message}`));
+      process.exit(1);
+    }
+
+    if (result.status !== 0) {
+      if (wasRunning && opts.restart) {
+        console.log(chalk.yellow('Update failed. Attempting to restore the previous daemon...'));
+        startAgentWork({ port: targetPort, foreground: false });
+      }
+      process.exit(result.status || 1);
+    }
+
+    const updatedVersion = readInstalledVersion();
+    console.log(chalk.green.bold(`✓ AgentWork updated${updatedVersion ? ` to v${updatedVersion}` : ''}`));
+
+    if (wasRunning) {
+      if (opts.restart) {
+        console.log(chalk.blue(`Restarting AgentWork on port ${targetPort}...`));
+        startAgentWork({ port: targetPort, foreground: false });
+      } else {
+        console.log(chalk.yellow('Restart AgentWork to apply the update: agentwork restart'));
+      }
+    } else {
+      console.log(chalk.gray('Run `agentwork start` to launch the updated version.'));
     }
   });
 
@@ -240,10 +402,10 @@ program
 
     console.log(chalk.green.bold('● AgentWork is running'));
     console.log(chalk.gray(`  PID:       ${pid}`));
-    console.log(chalk.gray(`  Dashboard: http://localhost:${DEFAULT_PORT}`));
+    console.log(chalk.gray(`  Dashboard: http://localhost:${resolveServerPort()}`));
 
     // Try to get status from the API
-    const req = http.get(`http://localhost:${DEFAULT_PORT}/api/status`, (res) => {
+    const req = http.get(`http://localhost:${resolveServerPort()}/api/status`, (res) => {
       let data = '';
       res.on('data', (chunk) => (data += chunk));
       res.on('end', () => {
@@ -299,6 +461,16 @@ program
     // Clean log file
     if (fs.existsSync(LOG_FILE)) {
       fs.unlinkSync(LOG_FILE);
+      cleaned++;
+    }
+
+    if (fs.existsSync(PID_FILE)) {
+      fs.unlinkSync(PID_FILE);
+      cleaned++;
+    }
+
+    if (fs.existsSync(RUNTIME_FILE)) {
+      fs.unlinkSync(RUNTIME_FILE);
       cleaned++;
     }
 

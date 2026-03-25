@@ -23,7 +23,7 @@ Autonomous AI agent orchestration platform for software teams. Hire role-based a
 
 Requires **Node.js 18+**.
 
-### Option 1: npm (recommended)
+### Option 1: npm
 
 ```bash
 npm install -g agentwork
@@ -169,7 +169,9 @@ Node.js daemon (port 1248)
 
 ```bash
 agentwork start [-p PORT] [-f]    # Start daemon (default port 1248, -f for foreground)
+agentwork restart [-p PORT] [-f]  # Restart daemon and preserve the previous port by default
 agentwork stop                    # Graceful shutdown
+agentwork update [--tag TAG]      # Install the latest npm release and restart if currently running
 agentwork status                  # PID, URL, active agents
 agentwork logs [-n N] [-f]        # Tail server logs
 agentwork clean                   # Clear temp files and logs
