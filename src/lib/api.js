@@ -95,6 +95,13 @@ export const api = {
   applyMeetingTasks: (id) => request(`/api/meetings/${id}/apply-tasks`, { method: 'POST', body: JSON.stringify({}) }),
   deleteMeeting: (id) => request(`/api/meetings/${id}`, { method: 'DELETE' }),
 
+  // Cron
+  getCronJobs: (params) => {
+    const qs = new URLSearchParams(params || {}).toString();
+    return request(`/api/cron${qs ? '?' + qs : ''}`);
+  },
+  deleteCronJob: (id) => request(`/api/cron/${id}`, { method: 'DELETE' }),
+
   // Settings
   getSettings: () => request('/api/settings'),
   updateSettings: (data) => request('/api/settings', { method: 'PUT', body: JSON.stringify(data) }),

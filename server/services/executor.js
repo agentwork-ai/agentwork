@@ -1,7 +1,8 @@
-const { db, uuidv4, DATA_DIR } = require('../db');
+const { db, uuidv4, DATA_DIR, logAudit } = require('../db');
 const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent, createCodexClient } = require('./ai');
 const { getPluginTools } = require('../plugins');
 const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt, normalizeAgentType } = require('./agent-context');
+const { parsePeriodicTaskRequest } = require('./cron-jobs');
 const { execSync } = require('child_process');
 const fs = require('fs');
 const os = require('os');
@@ -316,6 +317,77 @@ function initExecutor(socketIo) {
   });
 }
 
+function createRecurringTaskFromChat(agent, userMessage) {
+  const parsed = parsePeriodicTaskRequest(userMessage);
+  if (!parsed) return null;
+
+  const id = uuidv4();
+  db.prepare(
+    `INSERT INTO tasks (
+      id, title, description, status, priority, agent_id, project_id,
+      trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    parsed.title,
+    `Recurring automation created from chat.\n\nInstructions:\n${parsed.action_text}\n\nOriginal request:\n${String(userMessage || '').trim()}`,
+    'todo',
+    'medium',
+    agent.id,
+    null,
+    'cron',
+    null,
+    parsed.trigger_cron,
+    'single',
+    '[]',
+    'cron,automation',
+    '[]',
+  );
+
+  const task = db.prepare(
+    'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+  ).get(id);
+
+  if (!task) return null;
+
+  task.execution_logs = JSON.parse(task.execution_logs || '[]');
+  task.attachments = JSON.parse(task.attachments || '[]');
+  task.flow_items = JSON.parse(task.flow_items || '[]');
+  task.depends_on = JSON.parse(task.depends_on || '[]');
+
+  try {
+    require('./scheduler').scheduleTask(task);
+  } catch (err) {
+    console.error(`[Cron] Failed to schedule recurring task ${task.id}:`, err.message);
+  }
+
+  logAudit('create', 'cron_job', task.id, {
+    title: task.title,
+    agent_id: agent.id,
+    trigger_cron: parsed.trigger_cron,
+  });
+
+  if (io) io.emit('task:created', task);
+
+  const timezoneLabel = Intl.DateTimeFormat().resolvedOptions().timeZone || 'server local time';
+  const details = [
+    `I set up a recurring job for myself: "${task.title}".`,
+    `Schedule: ${parsed.schedule_label}.`,
+    `Cron: \`${parsed.trigger_cron}\`.`,
+  ];
+  if (parsed.defaulted_time) {
+    details.push(`No time was specified, so I used ${parsed.schedule_label.replace(/^Every (?:day|weekday|[A-Za-z]+) at /, '')} in ${timezoneLabel}.`);
+  } else {
+    details.push(`Timing uses ${timezoneLabel}.`);
+  }
+  details.push(`You can manage or delete it from the Cron page.`);
+
+  return {
+    task,
+    confirmation: details.join('\n'),
+  };
+}
+
 async function handleDirectChat(agentId, content, platformChatId) {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
   if (!agent) {
@@ -326,6 +398,13 @@ async function handleDirectChat(agentId, content, platformChatId) {
   console.log(`[Chat] Direct message to ${agent.name} (${agent.auth_type}/${agent.provider}): "${content.slice(0, 80)}"`);
 
   try {
+    const recurringTask = createRecurringTaskFromChat(agent, content);
+    if (recurringTask) {
+      sendMessage(agentId, 'agent', recurringTask.confirmation, null, platformChatId);
+      reflectAfterChat(agent, path.join(DATA_DIR, 'agents', agentId), content, recurringTask.confirmation);
+      return;
+    }
+
     if (usesCliRuntime(agent)) {
       await handleCliChat(agent, content, platformChatId);
     } else {

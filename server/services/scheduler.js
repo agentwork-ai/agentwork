@@ -11,6 +11,13 @@ let io = null;
 // Map of taskId → { type: 'timeout'|'cron', handle }
 const activeSchedules = new Map();
 
+function toIsoString(value) {
+  if (!value) return null;
+  if (value instanceof Date) return value.toISOString();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString();
+}
+
 function initScheduler(socketIo) {
   io = socketIo;
 
@@ -90,6 +97,24 @@ function cancelTask(taskId) {
   activeSchedules.delete(taskId);
 }
 
+function getScheduleStatus(taskId, task) {
+  const entry = activeSchedules.get(taskId);
+  const type = entry?.type || task?.trigger_type || 'manual';
+  let nextRun = null;
+
+  if (entry?.type === 'cron' && typeof entry.handle?.getNextRun === 'function') {
+    nextRun = toIsoString(entry.handle.getNextRun());
+  } else if (type === 'schedule') {
+    nextRun = toIsoString(task?.trigger_at);
+  }
+
+  return {
+    active: Boolean(entry),
+    type,
+    next_run: nextRun,
+  };
+}
+
 function triggerTask(taskId) {
   const task = db.prepare(
     'SELECT t.*, a.name as agent_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id WHERE t.id = ?'
@@ -133,4 +158,4 @@ function onTaskCompleted(task) {
   // cron jobs keep running automatically via node-cron
 }
 
-module.exports = { initScheduler, scheduleTask, cancelTask, onTaskCompleted };
+module.exports = { initScheduler, scheduleTask, cancelTask, onTaskCompleted, getScheduleStatus };
