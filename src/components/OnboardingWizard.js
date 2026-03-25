@@ -35,6 +35,7 @@ const TOOL_RESTRICTION_OPTIONS = [
   { name: 'delete_path', label: 'Delete Path', desc: 'Delete files or directories' },
   { name: 'run_bash', label: 'Run Bash', desc: 'Execute shell commands' },
   { name: 'list_directory', label: 'List Directory', desc: 'List files in a directory' },
+  { name: 'browser', label: 'Browser', desc: 'Open pages, inspect them, click, type, and capture screenshots' },
 ];
 
 const OAUTH_PROVIDERS = [
@@ -760,7 +761,7 @@ export default function OnboardingWizard({ onComplete }) {
                   {toolRestrictionsEnabled && (
                     <div className="space-y-3">
                       <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        Limit which tools this agent can use during task execution. Leave all unchecked to allow all tools.
+                        Limit which tools this agent can use during tasks and direct chat. Leave all unchecked to allow all tools.
                       </p>
                       <div className="space-y-2">
                         {TOOL_RESTRICTION_OPTIONS.map((tool) => {

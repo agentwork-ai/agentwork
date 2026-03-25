@@ -1,5 +1,6 @@
 const { db, uuidv4, DATA_DIR, logAudit } = require('../db');
-const { createCompletion, createStreamingCompletion, estimateCost, runClaudeAgent, runCodexAgent, createCodexClient } = require('./ai');
+const { createCompletion, estimateCost, runClaudeAgent, runCodexAgent, createCodexClient } = require('./ai');
+const { runBrowserTool } = require('./browser');
 const { getPluginTools } = require('../plugins');
 const { buildAgentContext, buildTaskSystemPrompt, buildChatSystemPrompt, buildFlowStepSystemPrompt, normalizeAgentType } = require('./agent-context');
 const { parsePeriodicTaskRequest } = require('./cron-jobs');
@@ -388,6 +389,28 @@ function createRecurringTaskFromChat(agent, userMessage) {
   };
 }
 
+function getChatToolsForAgent(agent) {
+  return getToolsForAgent(agent).filter((tool) => !['task_complete', 'request_help'].includes(tool.name));
+}
+
+function buildChatToolsPrompt(toolDefs) {
+  if (!Array.isArray(toolDefs) || toolDefs.length === 0) return '';
+  const hasBrowser = toolDefs.some((tool) => tool.name === 'browser');
+
+  const lines = [
+    '## Chat Tools',
+    'You may use tools during chat when the user needs real browser actions, filesystem work, or command execution.',
+    'After using tools, reply naturally to the user with the result.',
+    ...toolDefs.map((tool) => `- **${tool.name}**: ${tool.description}`),
+  ];
+
+  if (hasBrowser) {
+    lines.push('- For websites, prefer `browser snapshot` before `browser act` so you can act on stable refs.');
+  }
+
+  return lines.join('\n');
+}
+
 async function handleDirectChat(agentId, content, platformChatId) {
   const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
   if (!agent) {
@@ -482,43 +505,66 @@ async function handleCliChat(agent, userMessage, platformChatId) {
 async function handleApiChat(agent, userMessage, platformChatId) {
   const agentId = agent.id;
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
+  const chatWorkDir = resolveChatWorkingDirectory();
   db.prepare("UPDATE agents SET status = 'thinking', updated_at = CURRENT_TIMESTAMP WHERE id = ?").run(agentId);
   io.emit('agent:status_changed', { agentId, status: 'thinking' });
 
   try {
     const agentContext = buildAgentContext(agentId, agent, { includeMemory: true, includeHeartbeat: false });
+    const chatTools = getChatToolsForAgent(agent);
 
     const recentMsgs = db.prepare('SELECT * FROM messages WHERE agent_id = ? ORDER BY created_at DESC LIMIT 20').all(agentId).reverse();
     const messages = [
       {
         role: 'system',
-        content: buildChatSystemPrompt(agent, agentContext),
+        content: [
+          buildChatSystemPrompt(agent, agentContext),
+          buildChatToolsPrompt(chatTools),
+        ].filter(Boolean).join('\n\n'),
       },
       ...recentMsgs.map((m) => ({ role: m.sender === 'user' ? 'user' : 'assistant', content: m.content })),
       { role: 'user', content: userMessage },
     ];
 
-    // Stream response tokens to the UI
-    const msgId = uuidv4();
-    let streamedContent = '';
-    const onChunk = (chunk) => {
-      streamedContent += chunk;
-      if (io) io.emit('chat:stream', { agentId, msgId, chunk, full: streamedContent });
-    };
+    const maxIterations = Math.min(
+      parseInt(db.prepare("SELECT value FROM settings WHERE key = 'max_iterations'").get()?.value || '30', 10),
+      8
+    );
+    let reply = '';
 
-    let response;
-    try {
-      response = await createStreamingCompletion(agent.provider, agent.model, messages, onChunk);
-    } catch (streamErr) {
-      console.log(`[Chat API] Streaming failed for ${agent.name}, falling back:`, streamErr.message);
-      response = await createCompletion(agent.provider, agent.model, messages);
+    for (let iteration = 0; iteration < maxIterations; iteration += 1) {
+      const response = await createCompletion(agent.provider, agent.model, messages, {
+        ...(chatTools.length > 0 ? { tools: chatTools } : {}),
+        fallbackModel: agent.fallback_model,
+      });
+
+      logBudget(agentId, agent.provider, response.model || agent.model, response.inputTokens, response.outputTokens);
+
+      const toolCalls = response.toolCalls || [];
+      if (toolCalls.length === 0) {
+        reply = response.content || '';
+        break;
+      }
+
+      if (response.rawAssistantMsg) messages.push(response.rawAssistantMsg);
+      else messages.push({ role: 'assistant', content: response.content || '' });
+
+      const toolResults = [];
+      for (const toolCall of toolCalls) {
+        const result = await executeTool(toolCall.name, toolCall.input, chatWorkDir, null, agentId);
+        toolResults.push({ id: toolCall.id, result });
+      }
+      appendToolResults(messages, toolResults, agent.provider);
     }
-    logBudget(agentId, agent.provider, agent.model, response.inputTokens, response.outputTokens);
-    sendMessage(agentId, 'agent', response.content, null, platformChatId);
-    if (io) io.emit('chat:stream_end', { agentId, msgId });
+
+    if (!reply.trim()) {
+      throw new Error('Agent completed without returning a chat reply.');
+    }
+
+    sendMessage(agentId, 'agent', reply, null, platformChatId);
 
     // Fire-and-forget memory reflection
-    reflectAfterChat(agent, agentDir, userMessage, response.content);
+    reflectAfterChat(agent, agentDir, userMessage, reply);
   } catch (err) {
     console.error(`[Chat API] Error for agent ${agent.name}:`, err);
     sendMessage(agentId, 'agent', `⚠ Error: ${err.message}`, null, platformChatId);
@@ -1272,6 +1318,44 @@ const AGENT_TOOLS = [
     },
   },
   {
+    name: 'browser',
+    description: 'Control a managed browser session. Supports status/start/stop/tabs/open/focus/close/navigate/snapshot/screenshot/act/wait. Use snapshot first, then act on the returned refs.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['status', 'start', 'stop', 'tabs', 'open', 'focus', 'close', 'navigate', 'snapshot', 'screenshot', 'act', 'wait'],
+          description: 'Browser operation to perform',
+        },
+        profile: { type: 'string', description: 'Optional persistent browser profile name. Defaults to a profile derived from the current agent.' },
+        headless: { type: 'boolean', description: 'Optional override for start; defaults to headless unless AGENTWORK_BROWSER_HEADLESS=false.' },
+        url: { type: 'string', description: 'URL for open or navigate, or URL pattern for wait.' },
+        tabId: { type: 'string', description: 'Specific tab id returned by status or tabs.' },
+        tabIndex: { type: 'integer', description: 'Specific tab index returned by status or tabs.' },
+        ref: { type: 'string', description: 'Element ref returned by browser snapshot.' },
+        toRef: { type: 'string', description: 'Destination ref for browser act kind=drag.' },
+        selector: { type: 'string', description: 'Optional CSS selector fallback for wait or advanced actions when ref is unavailable.' },
+        format: { type: 'string', enum: ['text', 'json'], description: 'Snapshot output format.' },
+        limit: { type: 'integer', description: 'Maximum interactive elements to include in the snapshot.' },
+        fullPage: { type: 'boolean', description: 'For screenshot, capture the full page.' },
+        path: { type: 'string', description: 'Optional absolute or relative output path for screenshots.' },
+        kind: {
+          type: 'string',
+          enum: ['click', 'double_click', 'hover', 'type', 'fill', 'press', 'select', 'check', 'uncheck', 'scroll_into_view', 'drag'],
+          description: 'Interaction kind for browser act.',
+        },
+        text: { type: 'string', description: 'Text for type/fill, or visible text to wait for.' },
+        key: { type: 'string', description: 'Keyboard key for browser act kind=press.' },
+        value: { type: 'string', description: 'Single option value for browser act kind=select.' },
+        values: { type: 'array', items: { type: 'string' }, description: 'Multiple option values for browser act kind=select.' },
+        loadState: { type: 'string', enum: ['load', 'domcontentloaded', 'networkidle'], description: 'Optional load state for browser wait.' },
+        timeoutMs: { type: 'integer', description: 'Optional timeout in milliseconds.' },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'task_complete',
     description: 'Signal that the task is fully done. Call this when all work is finished.',
     parameters: {
@@ -1481,6 +1565,17 @@ async function executeTool(name, input, workDir, taskId, agentId) {
         addLog(taskId, 'info', `read_image: ${input.path} (${(stat.size / 1024).toFixed(1)}KB)`);
         return `Image loaded: ${input.path} (${stat.size} bytes). Describe what needs to be done with this image.`;
       } catch (err) { return `Error: ${err.message}`; }
+    }
+    case 'browser': {
+      try {
+        io.emit('agent:status_changed', { agentId, status: 'executing' });
+        const result = await runBrowserTool(agentId, input);
+        addLog(taskId, 'info', `browser.${input.action || 'status'} executed`);
+        return result;
+      } catch (err) {
+        addLog(taskId, 'error', `browser tool failed: ${err.message}`);
+        return `Browser tool failed: ${err.message}`;
+      }
     }
     case 'message_agent': {
       try {

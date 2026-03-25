@@ -1166,6 +1166,9 @@ Use the actual tool names below when acting:
 - **delete_path**: Remove files or directories
 - **run_bash**: Execute shell commands
 - **list_directory**: Browse the file structure
+- **read_image**: Load an image file for inspection
+- **browser**: Control a managed Chromium session. Prefer \`browser snapshot\` first, then \`browser act\` with the returned refs
+- **message_agent**: Send work or questions to another agent
 - **task_complete**: Call when all requested work is done
 - **request_help**: Only if you are truly blocked${customToolsPrompt || ''}
 
