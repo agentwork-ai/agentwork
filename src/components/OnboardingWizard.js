@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 
 const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
+const ROLE_META_BY_LABEL = Object.fromEntries(agentMetadata.roles.map((role) => [role.label, role]));
 const AGENT_TYPE_PRESETS = agentMetadata.agentTypes;
 const TOOL_RESTRICTION_OPTIONS = [
   { name: 'read_file', label: 'Read File', desc: 'Read file contents' },
@@ -85,6 +86,10 @@ function normalizeAgentType(agentType) {
   return 'smart';
 }
 
+function getRoleMeta(roleLabel) {
+  return ROLE_META_BY_LABEL[roleLabel] || null;
+}
+
 export default function OnboardingWizard({ onComplete }) {
   const [step, setStep] = useState(0);
   const [dontShowAgain, setDontShowAgain] = useState(true);
@@ -112,6 +117,7 @@ export default function OnboardingWizard({ onComplete }) {
     agent_type: 'smart',
     provider: 'anthropic',
     model: getDefaultModelForProvider('anthropic'),
+    personality: '',
     allowed_tools: '',
     skills: [],
   });
@@ -229,6 +235,10 @@ export default function OnboardingWizard({ onComplete }) {
       toast.error('Please enter an agent name');
       return;
     }
+    if (agent.role === 'Custom' && !String(agent.personality || '').trim()) {
+      toast.error('Please add a custom role instruction');
+      return;
+    }
     setSaving(true);
     try {
       const selectedOauth = OAUTH_PROVIDERS.map((option) => ({
@@ -246,6 +256,7 @@ export default function OnboardingWizard({ onComplete }) {
         auth_type: agentAuthType,
         provider: agentAuthType === 'cli' ? 'claude-cli' : agent.provider,
         model: usesCliRuntime ? '' : agent.model,
+        personality: agent.personality,
         allowed_tools: toolRestrictionsEnabled ? agent.allowed_tools : '',
         skills: agent.skills,
       });
@@ -281,6 +292,8 @@ export default function OnboardingWizard({ onComplete }) {
   const providerModels = API_MODELS[agent.provider] || [];
   const canUseCustomModel = providerSupportsCustomModel(agent.provider);
   const modelSelectValue = getModelSelectValue(agent.provider, agent.model);
+  const roleMeta = getRoleMeta(agent.role);
+  const isCustomRole = agent.role === 'Custom';
   const allowedToolSet = new Set(
     (agent.allowed_tools || '').split(',').map((tool) => tool.trim()).filter(Boolean)
   );
@@ -540,7 +553,7 @@ export default function OnboardingWizard({ onComplete }) {
                       onClick={() => setAuthMode('api')}
                     >
                       <div className="flex items-center gap-1.5 font-semibold mb-0.5"><Key size={12} /> API Key</div>
-                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses provider API keys from previous step</span>
+                      <span style={{ color: 'var(--text-tertiary)', fontSize: '10px' }}>Uses provider API keys you can add in the API Keys step next</span>
                     </button>
                     <button
                       type="button"
@@ -592,8 +605,32 @@ export default function OnboardingWizard({ onComplete }) {
                         <option key={r} value={r}>{r}</option>
                       ))}
                     </select>
+                    {roleMeta?.summary ? (
+                      <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>{roleMeta.summary}</p>
+                    ) : null}
+                    {isCustomRole ? (
+                      <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                        Define the exact responsibilities, tone, and decision style this custom role should follow.
+                      </p>
+                    ) : null}
                   </div>
                 </div>
+
+                {isCustomRole ? (
+                  <div>
+                    <label className="label">Custom Role Instruction</label>
+                    <textarea
+                      className="input"
+                      rows={3}
+                      value={agent.personality}
+                      onChange={(e) => setAgent({ ...agent, personality: e.target.value })}
+                      placeholder="Example: Operate as a lifecycle marketer focused on onboarding, messaging tests, retention campaigns, and conversion analysis."
+                    />
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                      Hint: describe the role&apos;s scope, key skills, communication style, and how it should make tradeoffs.
+                    </p>
+                  </div>
+                ) : null}
 
                 <div>
                   <label className="label">Agent Type</label>

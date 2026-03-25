@@ -187,6 +187,26 @@ const ROLE_TEMPLATE_DETAILS = {
       'Document assumptions clearly'
     ],
   },
+  marketing: {
+    mission: 'Create clear positioning, messaging, launch plans, and growth ideas that connect product value to the right audience.',
+    strengths: [
+      'Turn product capabilities into crisp audience-facing messages',
+      'Balance strategy, execution, and measurable growth loops',
+      'Spot weak positioning, vague copy, and launch gaps quickly',
+      'Connect campaigns and content back to product goals'
+    ],
+    abilities: [
+      'Draft positioning, campaign plans, messaging frameworks, and launch checklists',
+      'Define target audiences, channel ideas, and experiment hypotheses',
+      'Refine copy across landing pages, emails, ads, and announcements',
+      'Summarize marketing tradeoffs, risks, and success metrics clearly'
+    ],
+    biases: [
+      'Prefer clarity and relevance over hype',
+      'Tie messaging back to real user value',
+      'Make goals, audience, and call-to-action explicit'
+    ],
+  },
   'engineering-manager': {
     mission: 'Balance delivery, team health, planning, and engineering quality.',
     strengths: [
@@ -507,6 +527,26 @@ const ROLE_TEMPLATE_DETAILS = {
       'Escalate with evidence, not guesswork'
     ],
   },
+  custom: {
+    mission: 'Follow the custom role definition closely and adapt your judgment to the specific operating instructions provided for this agent.',
+    strengths: [
+      'Adapt quickly to specialized responsibilities and constraints',
+      'Translate bespoke role guidance into concrete outputs',
+      'Stay consistent with the requested operating model',
+      'Ask precise questions only when the custom brief is materially incomplete'
+    ],
+    abilities: [
+      'Execute within role-specific rules, deliverables, and success criteria',
+      'Preserve the tone, rigor, and boundaries requested by the user',
+      'Turn custom guidance into practical decisions and next steps',
+      'Surface conflicts between the custom brief and the requested work'
+    ],
+    biases: [
+      'Prefer following the explicit custom brief over generic defaults',
+      'Keep outputs aligned with the role definition the user wrote',
+      'Make assumptions visible when the custom instructions leave gaps'
+    ],
+  },
 };
 
 function normalizeKey(value) {
@@ -572,6 +612,14 @@ function buildRoleFileContent(agent = {}) {
   };
   const details = ROLE_TEMPLATE_DETAILS[roleDef.id] || buildGenericRoleDetails(roleDef.label);
   const agentType = getAgentTypeMeta(agent.agent_type || roleDef.defaultAgentType);
+  const customInstructions = String(agent.personality || '').trim();
+  const customInstructionSection = roleDef.id === 'custom' && customInstructions
+    ? `## Custom Operating Instructions
+
+${customInstructions}
+
+`
+    : '';
 
   return `# ROLE.md - ${roleDef.label}
 
@@ -595,7 +643,7 @@ ${details.abilities.map((item) => `- ${item}`).join('\n')}
 
 ${details.biases.map((item) => `- ${item}`).join('\n')}
 
-## Agent Type Fit
+${customInstructionSection}## Agent Type Fit
 
 - Recommended agent type: ${agentType.label}
 - Why: ${agentType.recommendedFor || agentType.description}
@@ -1176,6 +1224,22 @@ function buildPromptIntro(agent, identity, mode) {
   return intro.join('\n');
 }
 
+function buildCustomInstructionSection(agent) {
+  const personality = String(agent?.personality || '').trim();
+  if (!personality) return '';
+
+  const role = normalizeKey(agent?.role);
+  const heading = role === 'custom' ? '## Custom Role Instruction' : '## Additional Working Style';
+  const preface = role === 'custom'
+    ? 'Follow this custom role brief as part of your operating contract.'
+    : 'Use these agent-specific preferences in addition to your role and workspace files.';
+
+  return `${heading}
+${preface}
+
+${personality}`;
+}
+
 function buildToolSection(customToolsPrompt = '', mode = 'api') {
   if (mode === 'cli') {
     return `## Runtime
@@ -1290,6 +1354,7 @@ function buildTaskSystemPrompt(agent, agentContext, { projectDoc, projectActivit
 
   return [
     buildPromptIntro(agent, identity, 'task'),
+    buildCustomInstructionSection(agent),
     buildToolSection(customToolsPrompt, mode),
     buildSharedRulesSection({ agent, workDir, includeHeartbeat }),
     buildProjectSection(projectDoc, projectActivity),
@@ -1329,6 +1394,7 @@ function buildChatSystemPrompt(agent, agentContext) {
 
   return [
     buildPromptIntro(agent, identity, 'chat'),
+    buildCustomInstructionSection(agent),
     `## Chat Rules
 - Be concise and specific.
 - Use your loaded context files for continuity, but never invent prior facts.
@@ -1346,6 +1412,7 @@ function buildFlowStepSystemPrompt(agent, agentContext, { projectDoc, customTool
 
   return [
     buildPromptIntro(agent, identity, 'task'),
+    buildCustomInstructionSection(agent),
     buildToolSection(customToolsPrompt, mode),
     buildSharedRulesSection({ agent, workDir, includeHeartbeat: false }),
     projectDoc ? `## Project Documentation\n${projectDoc}` : '',

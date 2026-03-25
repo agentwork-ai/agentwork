@@ -23,6 +23,7 @@ import { toast } from 'react-hot-toast';
 const AVATARS = ['🤖', '🧠', '⚡', '🔧', '🎯', '🚀', '💡', '🛠️', '🔬', '🎨', '👾', '🦾'];
 
 const ROLE_PRESETS = agentMetadata.roles.map((role) => role.label);
+const ROLE_META_BY_LABEL = Object.fromEntries(agentMetadata.roles.map((role) => [role.label, role]));
 const AGENT_TYPE_PRESETS = agentMetadata.agentTypes;
 const TOOL_RESTRICTION_OPTIONS = [
   { name: 'read_file', label: 'Read File', desc: 'Read file contents' },
@@ -98,6 +99,10 @@ function getProviderAuthMethod(providerAuth, providerId, methodId) {
   return providerAuth?.providers
     ?.find((provider) => provider.id === providerId)
     ?.methods?.find((method) => method.id === methodId) || null;
+}
+
+function getRoleMeta(roleLabel) {
+  return ROLE_META_BY_LABEL[roleLabel] || null;
 }
 
 export default function AgentsPage() {
@@ -440,6 +445,9 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     setSaving(true);
     try {
       const data = { ...form };
+      if (data.role === 'Custom' && !String(data.personality || '').trim()) {
+        throw new Error('Add a custom role instruction for Custom agents.');
+      }
       data.allowed_tools = toolRestrictionsEnabled ? data.allowed_tools : '';
       if (data.auth_type === 'cli') {
         // CLI mode: model is optional
@@ -559,6 +567,8 @@ function AgentFormModal({ agent, onClose, onSaved }) {
   );
   const authMode = getAuthModeMeta(form.auth_type);
   const roleOptions = ROLE_PRESETS.includes(form.role) ? ROLE_PRESETS : [form.role, ...ROLE_PRESETS];
+  const roleMeta = getRoleMeta(form.role);
+  const isCustomRole = form.role === 'Custom';
   const toggleTool = (toolName) => {
     setForm((current) => {
       const next = new Set(
@@ -627,6 +637,14 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
               {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
+            {roleMeta?.summary ? (
+              <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>{roleMeta.summary}</p>
+            ) : null}
+            {isCustomRole ? (
+              <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>
+                Define the exact responsibilities, tone, and decision style this custom role should follow.
+              </p>
+            ) : null}
           </div>
 
           <div>
@@ -830,9 +848,21 @@ function AgentFormModal({ agent, onClose, onSaved }) {
 
           {/* Personality */}
           <div>
-            <label className="label">Personality / Instructions</label>
-            <textarea className="input" value={form.personality} onChange={(e) => setForm({ ...form, personality: e.target.value })}
-              placeholder="e.g., Methodical, always writes tests, prefers functional patterns..." rows={3} />
+            <label className="label">{isCustomRole ? 'Custom Role Instruction' : 'Personality / Instructions'}</label>
+            <textarea
+              className="input"
+              value={form.personality}
+              onChange={(e) => setForm({ ...form, personality: e.target.value })}
+              placeholder={isCustomRole
+                ? 'Example: Operate as a lifecycle marketer focused on onboarding, messaging tests, retention campaigns, and conversion analysis.'
+                : 'e.g., Methodical, always writes tests, prefers functional patterns...'}
+              rows={3}
+            />
+            {isCustomRole ? (
+              <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                Hint: describe the role&apos;s scope, key skills, communication style, and how it should make tradeoffs.
+              </p>
+            ) : null}
           </div>
 
           <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>

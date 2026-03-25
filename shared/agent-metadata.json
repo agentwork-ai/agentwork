@@ -57,6 +57,12 @@
       "summary": "Translates ambiguous business needs into concrete requirements, process changes, and decision-ready analysis."
     },
     {
+      "id": "marketing",
+      "label": "Marketing",
+      "defaultAgentType": "smart",
+      "summary": "Shapes positioning, messaging, campaigns, launches, and growth experiments around clear audience and product goals."
+    },
+    {
       "id": "engineering-manager",
       "label": "Engineering Manager",
       "defaultAgentType": "smart",
@@ -151,6 +157,12 @@
       "label": "Support Engineer",
       "defaultAgentType": "worker",
       "summary": "Diagnoses customer issues, narrows root causes, and communicates fixes or workarounds clearly."
+    },
+    {
+      "id": "custom",
+      "label": "Custom",
+      "defaultAgentType": "smart",
+      "summary": "Use your own role definition and operating instructions when the built-in roles do not fit."
     }
   ]
 }
