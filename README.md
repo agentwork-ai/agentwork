@@ -4,6 +4,8 @@
 
 Autonomous AI agent orchestration platform for software teams. Hire role-based agents, give them structured workspace memory, let them collaborate in direct chat, mention-based group chat, and autonomous meetings, then turn decisions into project tasks and shipped code.
 
+Website: [agentwork.sh](https://agentwork.sh)
+
 <table>
   <tr>
     <td align="center" valign="top"><strong>Dashboard</strong><br><img src="demo/dashboard.png" width="600" /></td>
