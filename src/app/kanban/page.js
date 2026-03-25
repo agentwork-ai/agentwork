@@ -10,7 +10,7 @@ import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
   Layers, ChevronRight, ChevronDown, Clock, RefreshCw, Play, Lock,
   Search, Filter, Copy, FileText, MessageSquare, Send,
-  CheckSquare, ArrowRight, UserPlus, XCircle,
+  CheckSquare, ArrowRight, UserPlus, XCircle, ImagePlus,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -21,6 +21,184 @@ const COLUMNS = [
   { id: 'blocked', label: 'Blocked / Review', color: '#fa5252' },
   { id: 'done', label: 'Done', color: '#40c057' },
 ];
+const TASK_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
+const MAX_TASK_IMAGE_BYTES = 5 * 1024 * 1024;
+
+function createClientAttachmentId() {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return `att-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function formatBytes(bytes) {
+  const value = Number(bytes || 0);
+  if (!value) return '0 B';
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+
+function getAttachmentPreviewSrc(attachment) {
+  const rawSrc = attachment?.url || attachment?.data_url || '';
+  if (!rawSrc || rawSrc.startsWith('data:') || typeof window === 'undefined') return rawSrc;
+
+  const token = window.localStorage.getItem('agentwork-auth-token');
+  if (!token || !rawSrc.startsWith('/api/')) return rawSrc;
+
+  const separator = rawSrc.includes('?') ? '&' : '?';
+  return `${rawSrc}${separator}token=${encodeURIComponent(token)}`;
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function filesToImageAttachments(fileList) {
+  const files = Array.from(fileList || []);
+  const attachments = [];
+  const errors = [];
+
+  for (const file of files) {
+    if (!TASK_IMAGE_MIME_TYPES.has(file.type)) {
+      errors.push(`${file.name}: unsupported file type`);
+      continue;
+    }
+    if (file.size > MAX_TASK_IMAGE_BYTES) {
+      errors.push(`${file.name}: exceeds 5MB limit`);
+      continue;
+    }
+
+    try {
+      const dataUrl = await readFileAsDataUrl(file);
+      attachments.push({
+        id: createClientAttachmentId(),
+        name: file.name,
+        kind: 'image',
+        mime_type: file.type,
+        size: file.size,
+        data_url: dataUrl,
+        url: dataUrl,
+      });
+    } catch (err) {
+      errors.push(err.message);
+    }
+  }
+
+  return { attachments, errors };
+}
+
+function AttachmentGallery({ attachments }) {
+  if (!attachments?.length) return null;
+
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {attachments.map((attachment) => {
+        const previewSrc = getAttachmentPreviewSrc(attachment);
+        if (!previewSrc) return null;
+        return (
+          <a
+            key={attachment.id}
+            href={previewSrc}
+            target="_blank"
+            rel="noreferrer"
+            className="rounded-lg overflow-hidden border block transition-opacity hover:opacity-90"
+            style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}
+          >
+            <img
+              src={previewSrc}
+              alt={attachment.name || 'Task attachment'}
+              className="w-full h-40 object-cover"
+            />
+            <div className="px-3 py-2 border-t" style={{ borderColor: 'var(--border-light)' }}>
+              <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{attachment.name}</p>
+              <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>{formatBytes(attachment.size)}</p>
+            </div>
+          </a>
+        );
+      })}
+    </div>
+  );
+}
+
+function AttachmentEditor({ attachments, onChange, disabled = false }) {
+  const handleSelectFiles = async (e) => {
+    const { attachments: newAttachments, errors } = await filesToImageAttachments(e.target.files);
+    errors.forEach((message) => toast.error(message));
+    if (newAttachments.length > 0) {
+      onChange([...(attachments || []), ...newAttachments]);
+    }
+    e.target.value = '';
+  };
+
+  const removeAttachment = (attachmentId) => {
+    onChange((attachments || []).filter((attachment) => attachment.id !== attachmentId));
+  };
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <label className="label mb-1">Images</label>
+          <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+            Attach screenshots, mockups, error captures, or design references. PNG, JPG, GIF, and WebP up to 5MB each.
+          </p>
+        </div>
+        <label
+          className="btn btn-secondary text-xs cursor-pointer shrink-0"
+          style={disabled ? { opacity: 0.6, pointerEvents: 'none' } : undefined}
+        >
+          <ImagePlus size={13} /> Add Images
+          <input type="file" accept="image/png,image/jpeg,image/jpg,image/gif,image/webp" multiple className="hidden" onChange={handleSelectFiles} disabled={disabled} />
+        </label>
+      </div>
+
+      {attachments?.length ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {attachments.map((attachment) => {
+            const previewSrc = getAttachmentPreviewSrc(attachment);
+            if (!previewSrc) return null;
+            return (
+              <div
+                key={attachment.id}
+                className="rounded-lg overflow-hidden border"
+                style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}
+              >
+                <img
+                  src={previewSrc}
+                  alt={attachment.name || 'Task attachment'}
+                  className="w-full h-36 object-cover"
+                />
+                <div className="px-3 py-2 border-t flex items-start justify-between gap-2" style={{ borderColor: 'var(--border-light)' }}>
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{attachment.name}</p>
+                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-tertiary)' }}>{formatBytes(attachment.size)}</p>
+                  </div>
+                  <button
+                    type="button"
+                    className="p-1 rounded hover:opacity-70"
+                    style={{ color: 'var(--danger)' }}
+                    onClick={() => removeAttachment(attachment.id)}
+                    disabled={disabled}
+                  >
+                    <Trash2 size={13} />
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      ) : (
+        <div className="rounded-lg px-3 py-4 text-xs text-center" style={{ background: 'var(--bg-secondary)', color: 'var(--text-tertiary)' }}>
+          No images attached.
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function KanbanPage() {
   const socket = useSocket();
@@ -1029,6 +1207,7 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
     agent_id: task.agent_id || '',
     project_id: task.project_id || '',
     tags: task.tags || '',
+    attachments: task.attachments || [],
     flow_items: task.flow_items || [],
     depends_on: task.depends_on || [],
   });
@@ -1110,6 +1289,7 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
       agent_id: task.agent_id || '',
       project_id: task.project_id || '',
       tags: task.tags || '',
+      attachments: task.attachments || [],
       flow_items: task.flow_items || [],
       depends_on: task.depends_on || [],
     });
@@ -1134,6 +1314,7 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
         ...form,
         agent_id: form.agent_id || null,
         project_id: form.project_id || null,
+        attachments: form.attachments || [],
         flow_items: isFlow ? form.flow_items : undefined,
         depends_on: form.depends_on || [],
       };
@@ -1219,6 +1400,10 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
                   <label className="label">Description</label>
                   <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
                 </div>
+                <AttachmentEditor
+                  attachments={form.attachments}
+                  onChange={(attachments) => setForm({ ...form, attachments })}
+                />
                 <div>
                   <label className="label">Tags <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(comma-separated)</span></label>
                   <input className="input text-sm" value={form.tags} onChange={(e) => setForm({ ...form, tags: e.target.value })} placeholder="bug, feature, urgent" />
@@ -1377,6 +1562,12 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
                     <div className="p-3 rounded-lg text-sm" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', borderLeft: '3px solid #40c057' }}>
                       <MarkdownContent content={task.completion_output} />
                     </div>
+                  </div>
+                )}
+                {task.attachments?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium mb-2" style={{ color: 'var(--text-tertiary)' }}>Attached Images</p>
+                    <AttachmentGallery attachments={task.attachments} />
                   </div>
                 )}
                 <div className="grid grid-cols-3 gap-4 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
@@ -1686,6 +1877,7 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
     priority: task?.priority || 'medium',
     agent_id: task?.agent_id || getProjectMainDeveloperId(task?.project_id || defaultProjectId || ''),
     project_id: task?.project_id || defaultProjectId || '',
+    attachments: task?.attachments || [],
     trigger_type: task?.trigger_type || 'manual',
     trigger_at: task?.trigger_at ? task.trigger_at.slice(0, 16) : '',
     trigger_cron: task?.trigger_cron || '',
@@ -1769,6 +1961,7 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
         ...form,
         agent_id: form.agent_id || null,
         project_id: form.project_id || null,
+        attachments: form.attachments || [],
         trigger_at: form.trigger_type === 'schedule' ? (form.trigger_at ? new Date(form.trigger_at).toISOString() : null) : null,
         trigger_cron: form.trigger_type === 'cron' ? form.trigger_cron : '',
         flow_items: form.task_type === 'flow' ? form.flow_items : [],
@@ -1821,6 +2014,10 @@ function TaskFormModal({ task, agents, projects, allTasks, defaultProjectId, onC
             <label className="label">Description</label>
             <textarea className="input" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={3} />
           </div>
+          <AttachmentEditor
+            attachments={form.attachments}
+            onChange={(attachments) => setForm({ ...form, attachments })}
+          />
 
           <div>
             <label className="label">Tags <span className="font-normal text-[10px]" style={{ color: 'var(--text-tertiary)' }}>(comma-separated)</span></label>

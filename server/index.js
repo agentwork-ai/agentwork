@@ -40,6 +40,7 @@ app.prepare().then(() => {
     // Check x-auth-token header first, then cookie
     const header = req.headers['x-auth-token'];
     if (header) return header;
+    if (req.query?.token) return req.query.token;
     const cookies = req.headers.cookie;
     if (cookies) {
       const match = cookies.split(';').map(c => c.trim()).find(c => c.startsWith('auth_token='));

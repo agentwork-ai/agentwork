@@ -16,6 +16,13 @@ const agentSessions = new Map(); // In-memory cache for Codex threads (non-seria
 // Agent context warm-up cache
 const agentContextCache = new Map();
 const CONTEXT_CACHE_TTL = 60000; // 1 minute
+const SUPPORTED_TASK_IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp']);
+const VISION_FALLBACK_MODELS = {
+  anthropic: 'claude-sonnet-4-6',
+  openai: 'gpt-4o',
+  openrouter: 'openai/gpt-4o-mini',
+  google: 'gemini-2.5-flash',
+};
 
 function isCodexAgent(agent) {
   return agent?.provider === 'codex-cli'
@@ -80,6 +87,86 @@ function resolveChatWorkingDirectory() {
 
 function resolveTaskWorkingDirectory(project) {
   return project?.path || resolveConfiguredWorkspaceDir() || process.cwd();
+}
+
+function isImageAttachment(attachment) {
+  if (!attachment) return false;
+  if (String(attachment.mime_type || '').startsWith('image/')) return true;
+  const ext = path.extname(String(attachment.path || attachment.name || '')).toLowerCase();
+  return SUPPORTED_TASK_IMAGE_EXTENSIONS.has(ext);
+}
+
+function describeTaskImageAttachments(task) {
+  const images = Array.isArray(task?.attachments) ? task.attachments.filter(isImageAttachment) : [];
+  if (images.length === 0) return '';
+
+  return [
+    '## Attached Images',
+    'These image files are attached to the task. Use the `read_image` tool on them when visual context matters.',
+    ...images.map((image) => `- ${image.name || path.basename(image.path || '')}: ${image.path}`),
+    '',
+  ].join('\n');
+}
+
+function getImageMimeType(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.gif') return 'image/gif';
+  if (ext === '.webp') return 'image/webp';
+  return '';
+}
+
+async function analyzeImageForAgent(agent, imagePath, question) {
+  const stat = fs.statSync(imagePath);
+  if (stat.size > 5 * 1024 * 1024) throw new Error('image too large (>5MB)');
+
+  const mimeType = getImageMimeType(imagePath);
+  if (!mimeType) throw new Error('unsupported format. Supported: .png, .jpg, .jpeg, .gif, .webp');
+
+  const prompt = question
+    ? `Analyze this task image and answer the request: ${question}`
+    : 'Analyze this task image for a software agent. Describe the relevant UI, visible text, errors, diagrams, code, or design details. Be concrete and concise.';
+  const system = 'You analyze task images for software agents. Focus on concrete visual details that affect execution.';
+  const model = agent.model || VISION_FALLBACK_MODELS[agent.provider] || '';
+  const fallbackModel = VISION_FALLBACK_MODELS[agent.provider] && VISION_FALLBACK_MODELS[agent.provider] !== model
+    ? VISION_FALLBACK_MODELS[agent.provider]
+    : agent.fallback_model;
+  const base64 = fs.readFileSync(imagePath).toString('base64');
+
+  const messages = agent.provider === 'anthropic'
+    ? [
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType,
+                data: base64,
+              },
+            },
+          ],
+        },
+      ]
+    : [
+        { role: 'system', content: system },
+        {
+          role: 'user',
+          content: [
+            { type: 'text', text: prompt },
+            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+          ],
+        },
+      ];
+
+  return createCompletion(agent.provider, model, messages, {
+    maxTokens: 1200,
+    fallbackModel,
+  });
 }
 
 function isGitRepo(workDir) {
@@ -1105,7 +1192,7 @@ async function executeTaskCli(taskId, agentId, agent, task, project, workDir, ex
 
 ${agentContext}
 
-${projectDoc ? `## Project Documentation\n${projectDoc}\n\n` : ''}## Task
+${projectDoc ? `## Project Documentation\n${projectDoc}\n\n` : ''}${describeTaskImageAttachments(task)}## Task
 Title: ${task.title}
 Description: ${task.description || 'No description provided.'}
 
@@ -1311,10 +1398,13 @@ const AGENT_TOOLS = [
   },
   {
     name: 'read_image',
-    description: 'Read an image file and analyze its contents. Supports PNG, JPG, GIF, WebP.',
+    description: 'Read an image file and analyze its contents with a vision-capable model. Supports PNG, JPG, GIF, WebP.',
     parameters: {
       type: 'object',
-      properties: { path: { type: 'string', description: 'Path to the image file relative to working directory' } },
+      properties: {
+        path: { type: 'string', description: 'Path to the image file relative to working directory, or an absolute path from task attachments' },
+        question: { type: 'string', description: 'Optional specific question to answer about the image' },
+      },
       required: ['path'],
     },
   },
@@ -1563,8 +1653,12 @@ async function executeTool(name, input, workDir, taskId, agentId) {
         if (!supported.includes(ext)) return `Error: unsupported format. Supported: ${supported.join(', ')}`;
         const stat = fs.statSync(imgPath);
         if (stat.size > 5 * 1024 * 1024) return 'Error: image too large (>5MB)';
+        const agent = db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId);
+        if (!agent || usesCliRuntime(agent)) return 'Error: image analysis is only available for API-mode agents';
         addLog(taskId, 'info', `read_image: ${input.path} (${(stat.size / 1024).toFixed(1)}KB)`);
-        return `Image loaded: ${input.path} (${stat.size} bytes). Describe what needs to be done with this image.`;
+        const analysis = await analyzeImageForAgent(agent, imgPath, input.question);
+        logBudget(agentId, agent.provider, analysis.model || agent.model, analysis.inputTokens || 0, analysis.outputTokens || 0);
+        return analysis.content || `Image analyzed: ${input.path}`;
       } catch (err) { return `Error: ${err.message}`; }
     }
     case 'browser': {
@@ -1751,7 +1845,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\nWorking directory: ${workDir}\n\nCurrent files:\n${dirListing}\n\nStart immediately. Use the tools to explore, make changes, and complete the task.`,
+      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\n${describeTaskImageAttachments(task)}Working directory: ${workDir}\n\nCurrent files:\n${dirListing}\n\nStart immediately. Use the tools to explore, make changes, and complete the task.`,
     },
   ];
 

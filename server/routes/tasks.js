@@ -1,6 +1,19 @@
 const express = require('express');
 const router = express.Router();
-const { db, uuidv4, logAudit } = require('../db');
+const fs = require('fs');
+const path = require('path');
+const { db, uuidv4, logAudit, DATA_DIR } = require('../db');
+
+const TASK_STORAGE_DIR = path.join(DATA_DIR, 'tasks');
+const IMAGE_MIME_TO_EXT = {
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/jpg': '.jpg',
+  'image/gif': '.gif',
+  'image/webp': '.webp',
+};
+const IMAGE_EXTENSIONS = new Set(Object.values(IMAGE_MIME_TO_EXT));
+const MAX_ATTACHMENT_BYTES = 5 * 1024 * 1024;
 
 // Lazy-loaded to avoid circular dependency
 let _executeTask = null;
@@ -23,6 +36,137 @@ function resolveDefaultTaskAgentId(projectId, providedAgentId) {
   return project?.main_developer_agent_id || null;
 }
 
+function getTaskAttachmentDir(taskId) {
+  return path.join(TASK_STORAGE_DIR, String(taskId), 'attachments');
+}
+
+function ensureTaskAttachmentDir(taskId) {
+  const dir = getTaskAttachmentDir(taskId);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
+}
+
+function buildAttachmentUrl(taskId, attachmentId) {
+  return `/api/tasks/${encodeURIComponent(taskId)}/attachments/${encodeURIComponent(attachmentId)}`;
+}
+
+function sanitizeAttachmentStem(name) {
+  const stem = path.basename(String(name || 'attachment'), path.extname(String(name || '')));
+  return stem
+    .replace(/[^a-zA-Z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'attachment';
+}
+
+function getImageMimeFromPath(filePath) {
+  const ext = path.extname(String(filePath || '')).toLowerCase();
+  for (const [mime, mappedExt] of Object.entries(IMAGE_MIME_TO_EXT)) {
+    if (mappedExt === ext) return mime;
+  }
+  return '';
+}
+
+function parseTaskAttachments(rawValue) {
+  if (Array.isArray(rawValue)) return rawValue;
+  try {
+    const parsed = JSON.parse(rawValue || '[]');
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function normalizeExistingAttachment(taskId, attachment) {
+  if (!attachment?.path) return null;
+  const attachmentId = String(attachment.id || uuidv4());
+  return {
+    id: attachmentId,
+    name: attachment.name || path.basename(attachment.path),
+    kind: 'image',
+    mime_type: attachment.mime_type || getImageMimeFromPath(attachment.path),
+    size: Number(attachment.size || 0),
+    path: attachment.path,
+    url: attachment.url || buildAttachmentUrl(taskId, attachmentId),
+  };
+}
+
+function persistTaskAttachments(taskId, nextAttachments, existingAttachments = []) {
+  const normalizedInput = Array.isArray(nextAttachments) ? nextAttachments : [];
+  const persisted = [];
+  const keptPaths = new Set();
+  const attachmentDir = getTaskAttachmentDir(taskId);
+
+  for (const attachment of normalizedInput) {
+    if (!attachment) continue;
+
+    const attachmentId = String(attachment.id || uuidv4()).trim() || uuidv4();
+    if (attachment.data_url) {
+      const match = String(attachment.data_url).match(/^data:(image\/[a-zA-Z0-9.+-]+);base64,(.+)$/);
+      if (!match) {
+        throw new Error(`Invalid image attachment payload for "${attachment.name || attachmentId}"`);
+      }
+
+      const mimeType = match[1].toLowerCase();
+      const ext = IMAGE_MIME_TO_EXT[mimeType];
+      if (!ext) {
+        throw new Error(`Unsupported image type: ${mimeType}`);
+      }
+
+      const buffer = Buffer.from(match[2], 'base64');
+      if (buffer.length > MAX_ATTACHMENT_BYTES) {
+        throw new Error(`Image "${attachment.name || attachmentId}" exceeds 5MB`);
+      }
+
+      ensureTaskAttachmentDir(taskId);
+      const fileName = `${attachmentId}-${sanitizeAttachmentStem(attachment.name)}${ext}`;
+      const filePath = path.join(attachmentDir, fileName);
+      fs.writeFileSync(filePath, buffer);
+      keptPaths.add(filePath);
+      persisted.push({
+        id: attachmentId,
+        name: attachment.name || fileName,
+        kind: 'image',
+        mime_type: mimeType,
+        size: buffer.length,
+        path: filePath,
+        url: buildAttachmentUrl(taskId, attachmentId),
+      });
+      continue;
+    }
+
+    const normalized = normalizeExistingAttachment(taskId, attachment);
+    if (!normalized) continue;
+    if (!normalized.mime_type || !normalized.mime_type.startsWith('image/')) continue;
+    if (normalized.path.startsWith(attachmentDir) && fs.existsSync(normalized.path)) {
+      keptPaths.add(normalized.path);
+    }
+    persisted.push(normalized);
+  }
+
+  for (const existing of parseTaskAttachments(existingAttachments)) {
+    const existingPath = String(existing?.path || '');
+    if (!existingPath || !existingPath.startsWith(attachmentDir)) continue;
+    if (keptPaths.has(existingPath)) continue;
+    try {
+      if (fs.existsSync(existingPath)) fs.unlinkSync(existingPath);
+    } catch {}
+  }
+
+  try {
+    if (fs.existsSync(attachmentDir) && fs.readdirSync(attachmentDir).length === 0) {
+      fs.rmSync(path.join(TASK_STORAGE_DIR, String(taskId)), { recursive: true, force: true });
+    }
+  } catch {}
+
+  return persisted;
+}
+
+function removeTaskStorage(taskId) {
+  try {
+    fs.rmSync(path.join(TASK_STORAGE_DIR, String(taskId)), { recursive: true, force: true });
+  } catch {}
+}
+
 // Bulk operations on multiple tasks
 router.post('/bulk', (req, res) => {
   const { action, task_ids, data } = req.body;
@@ -38,6 +182,7 @@ router.post('/bulk', (req, res) => {
     const deleteTx = db.transaction((ids) => {
       for (const id of ids) {
         try { require('../services/scheduler').cancelTask(id); } catch {}
+        removeTaskStorage(id);
         deleteStmt.run(id);
         logAudit('delete', 'task', id);
         if (io) io.emit('task:deleted', { id });
@@ -184,16 +329,23 @@ router.get('/:id', (req, res) => {
 // Create task
 router.post('/', (req, res) => {
   const { title, description, status, priority, agent_id, project_id,
-          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on } = req.body;
+          trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on, attachments } = req.body;
 
   if (!title) return res.status(400).json({ error: 'Title is required' });
   const resolvedAgentId = resolveDefaultTaskAgentId(project_id, agent_id);
 
   const id = uuidv4();
+  let persistedAttachments = [];
+  try {
+    persistedAttachments = persistTaskAttachments(id, attachments, []);
+  } catch (err) {
+    removeTaskStorage(id);
+    return res.status(400).json({ error: err.message });
+  }
   db.prepare(
     `INSERT INTO tasks (id, title, description, status, priority, agent_id, project_id,
-      trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      trigger_type, trigger_at, trigger_cron, task_type, flow_items, tags, depends_on, attachments)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
     id, title, description || '',
     status || 'backlog', priority || 'medium',
@@ -204,7 +356,8 @@ router.post('/', (req, res) => {
     task_type || 'single',
     flow_items ? JSON.stringify(flow_items) : '[]',
     tags || '',
-    depends_on ? JSON.stringify(depends_on) : '[]'
+    depends_on ? JSON.stringify(depends_on) : '[]',
+    JSON.stringify(persistedAttachments)
   );
 
   const task = db.prepare(
@@ -266,6 +419,14 @@ router.put('/:id', (req, res) => {
 
   const completedAt = newStatus === 'done' && existing.status !== 'done' ? new Date().toISOString() : existing.completed_at;
   const startedAt = newStatus === 'doing' && existing.status !== 'doing' ? new Date().toISOString() : (existing.started_at || null);
+  let nextAttachments = parseTaskAttachments(existing.attachments);
+  if (attachments !== undefined) {
+    try {
+      nextAttachments = persistTaskAttachments(req.params.id, attachments, existing.attachments);
+    } catch (err) {
+      return res.status(400).json({ error: err.message });
+    }
+  }
 
   db.prepare(
     `UPDATE tasks SET title = ?, description = ?, status = ?, priority = ?, agent_id = ?, project_id = ?,
@@ -281,7 +442,7 @@ router.put('/:id', (req, res) => {
     agent_id !== undefined ? agent_id : existing.agent_id,
     project_id !== undefined ? project_id : existing.project_id,
     execution_logs ? JSON.stringify(execution_logs) : existing.execution_logs,
-    attachments ? JSON.stringify(attachments) : existing.attachments,
+    attachments !== undefined ? JSON.stringify(nextAttachments) : existing.attachments,
     completedAt,
     trigger_type !== undefined ? trigger_type : existing.trigger_type,
     trigger_at !== undefined ? trigger_at : existing.trigger_at,
@@ -334,9 +495,24 @@ router.put('/:id', (req, res) => {
   res.json(task);
 });
 
+router.get('/:id/attachments/:attachmentId', (req, res) => {
+  const task = db.prepare('SELECT attachments FROM tasks WHERE id = ?').get(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const attachment = parseTaskAttachments(task.attachments)
+    .find((item) => String(item?.id || '') === String(req.params.attachmentId));
+  if (!attachment?.path || !fs.existsSync(attachment.path)) {
+    return res.status(404).json({ error: 'Attachment not found' });
+  }
+
+  if (attachment.mime_type) res.type(attachment.mime_type);
+  res.sendFile(attachment.path);
+});
+
 // Delete task
 router.delete('/:id', (req, res) => {
   try { require('../services/scheduler').cancelTask(req.params.id); } catch {}
+  removeTaskStorage(req.params.id);
   db.prepare('DELETE FROM tasks WHERE id = ?').run(req.params.id);
   logAudit('delete', 'task', req.params.id);
   const io = req.app.get('io');
