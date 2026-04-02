@@ -4,12 +4,14 @@ import { useEffect, useState, useCallback } from 'react';
 import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import CodeViewer from '../../components/CodeViewer';
+import DiffViewer from '../../components/DiffViewer';
 import { api } from '../../lib/api';
 import { usePersistentState } from '../../lib/persistentState';
 import { useSocket } from '../providers';
 import {
   Plus, FolderOpen, Trash2, Edit2, ChevronRight, ChevronDown,
-  FileText, Folder, X, Search, RefreshCw, Pencil, Save,
+  FileText, Folder, X, Search, RefreshCw, Pencil, Save, GitBranch,
+  History, FileCode2, CircleDot, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
 
@@ -25,6 +27,35 @@ const DEFAULT_PROJECT_TEMPLATES = [
   { id: 'web-frontend', label: 'Web Frontend', description: 'Frontend SPA / web client structure.' },
   { id: 'go', label: 'Go Service', description: 'Go application or service structure.' },
 ];
+
+function flattenFileTree(nodes = []) {
+  const files = [];
+  for (const node of nodes) {
+    if (node.type === 'file') {
+      files.push(node.path);
+    } else if (node.children?.length) {
+      files.push(...flattenFileTree(node.children));
+    }
+  }
+  return files;
+}
+
+function findPreferredProjectFile(tree, preferredPath = '') {
+  const allFiles = flattenFileTree(tree);
+  if (preferredPath && allFiles.includes(preferredPath)) return preferredPath;
+  const projectDoc = allFiles.find((filePath) => filePath.endsWith('/PROJECT.md') || filePath === 'PROJECT.md');
+  return projectDoc || allFiles[0] || null;
+}
+
+function getGitFileIndicator(fileEntry) {
+  if (!fileEntry) return null;
+  if (fileEntry.status === 'modified') return { label: 'M', color: '#fab005' };
+  if (fileEntry.status === 'added') return { label: 'A', color: '#40c057' };
+  if (fileEntry.status === 'deleted') return { label: 'D', color: '#fa5252' };
+  if (fileEntry.status === 'untracked') return { label: 'U', color: '#4c6ef5' };
+  if (fileEntry.status === 'renamed') return { label: 'R', color: '#7950f2' };
+  return { label: fileEntry.code?.trim() || '•', color: 'var(--text-tertiary)' };
+}
 
 export default function ProjectsPage() {
   const socket = useSocket();
@@ -43,6 +74,12 @@ export default function ProjectsPage() {
   const [editMode, setEditMode] = useState(false);
   const [editContent, setEditContent] = useState('');
   const [saving, setSaving] = useState(false);
+  const [gitStatus, setGitStatus] = useState(null);
+  const [gitLoading, setGitLoading] = useState(false);
+  const [gitDiff, setGitDiff] = useState('');
+  const [gitDiffRef, setGitDiffRef] = useState('HEAD');
+  const [gitDiffLoading, setGitDiffLoading] = useState(false);
+  const [contentTab, setContentTab] = useState('code');
 
   const loadProjects = useCallback(async () => {
     try {
@@ -103,16 +140,72 @@ export default function ProjectsPage() {
     selectProject(restoredProject);
   }, [loading, projectStateReady, projects, persistedProjectId, selected]);
 
-  const selectProject = async (project) => {
+  const loadGitData = useCallback(async (projectId) => {
+    setGitLoading(true);
+    try {
+      const status = await api.getProjectGitStatus(projectId);
+      setGitStatus(status);
+      return status;
+    } catch (err) {
+      toast.error(err.message);
+      setGitStatus(null);
+      return null;
+    } finally {
+      setGitLoading(false);
+    }
+  }, []);
+
+  const loadGitDiff = useCallback(async (projectId, ref) => {
+    setGitDiffLoading(true);
+    try {
+      const data = await api.getProjectDiff(projectId, ref);
+      setGitDiff(data.diff || '');
+      setGitDiffRef(data.ref || ref || 'HEAD');
+    } catch (err) {
+      toast.error(err.message);
+      setGitDiff('');
+      setGitDiffRef(ref || 'HEAD');
+    } finally {
+      setGitDiffLoading(false);
+    }
+  }, []);
+
+  const selectProject = async (project, options = {}) => {
+    const { preserveOpenFile = false } = options;
     setSelected(project);
     setPersistedProjectId(project.id);
-    setFileContent(null);
+    setEditMode(false);
+    setEditContent('');
     setSearchQuery('');
     setSearchResults(null);
+    setContentTab('code');
     try {
-      const tree = await api.getProjectFiles(project.id, 4);
+      const [tree, nextGitStatus] = await Promise.all([
+        api.getProjectFiles(project.id, 4),
+        loadGitData(project.id),
+      ]);
       setFileTree(tree);
-    } catch { setFileTree([]); }
+      const preferredPath = preserveOpenFile && fileContent?.path?.startsWith(project.path)
+        ? fileContent.path
+        : '';
+      const nextPath = findPreferredProjectFile(tree, preferredPath);
+      if (nextPath) {
+        openFile(nextPath);
+      } else {
+        setFileContent(null);
+      }
+      if (nextGitStatus?.isGitRepo) {
+        loadGitDiff(project.id);
+      } else {
+        setGitDiff('');
+        setGitDiffRef('HEAD');
+      }
+    } catch {
+      setFileTree([]);
+      setFileContent(null);
+      setGitStatus(null);
+      setGitDiff('');
+    }
   };
 
   const deleteProject = async (id) => {
@@ -124,9 +217,10 @@ export default function ProjectsPage() {
   const openFile = async (path) => {
     try {
       const data = await api.readFile(path);
-      setFileContent({ path, ...data });
-      setEditMode(false);
-      setEditContent('');
+    setFileContent({ path, ...data });
+    setContentTab('code');
+    setEditMode(false);
+    setEditContent('');
     } catch (err) {
       toast.error(err.message);
     }
@@ -203,17 +297,40 @@ export default function ProjectsPage() {
                   <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
                     <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>File Explorer</span>
                     <div className="flex gap-1">
-                      <button onClick={() => selectProject(selected)} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }} title="Refresh">
+                      <button onClick={() => selectProject(selected, { preserveOpenFile: true })} className="p-1 rounded" style={{ color: 'var(--text-tertiary)' }} title="Refresh">
                         <RefreshCw size={13} />
                       </button>
                     </div>
                   </div>
+                  {gitStatus?.isGitRepo && (
+                    <div className="px-3 py-2 border-b space-y-1.5" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+                      <div className="flex items-center gap-2">
+                        <GitBranch size={12} style={{ color: 'var(--accent)' }} />
+                        <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{gitStatus.branch}</span>
+                        {!gitLoading && (
+                          <span className="text-[10px] ml-auto px-1.5 py-0.5 rounded" style={{
+                            background: gitStatus.clean ? '#40c05720' : '#fab00520',
+                            color: gitStatus.clean ? '#40c057' : '#fab005',
+                          }}>
+                            {gitStatus.clean ? 'Clean' : `${gitStatus.changedCount} changed`}
+                          </span>
+                        )}
+                      </div>
+                      {(gitStatus.ahead > 0 || gitStatus.behind > 0 || gitStatus.upstream) && (
+                        <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                          {gitStatus.upstream ? `${gitStatus.upstream}` : 'No upstream'}
+                          {gitStatus.ahead > 0 ? ` · ↑${gitStatus.ahead}` : ''}
+                          {gitStatus.behind > 0 ? ` · ↓${gitStatus.behind}` : ''}
+                        </p>
+                      )}
+                    </div>
+                  )}
                   {/* Search input */}
                   <div className="p-2 border-b" style={{ borderColor: 'var(--border)' }}>
                     <div className="relative">
                       <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-tertiary)' }} />
                       <input
-                        className="input text-xs pl-7 pr-7 py-1.5"
+                        className="input text-xs pl-8 pr-8 py-1.5"
                         placeholder="Search files... (Enter)"
                         value={searchQuery}
                         onChange={(e) => setSearchQuery(e.target.value)}
@@ -256,7 +373,10 @@ export default function ProjectsPage() {
                             <button
                               key={r.path}
                               className="flex flex-col gap-0.5 py-1.5 px-2 rounded text-xs w-full text-left hover:opacity-80 transition-colors"
-                              style={{ color: 'var(--text-secondary)' }}
+                              style={{
+                                color: 'var(--text-secondary)',
+                                background: fileContent?.path === r.path ? 'var(--accent-light)' : 'transparent',
+                              }}
                               onClick={() => {
                                 if (r.type === 'file') openFile(r.path);
                               }}
@@ -281,7 +401,15 @@ export default function ProjectsPage() {
                         </div>
                       )
                     ) : fileTree ? (
-                      fileTree.map((node) => <FileNode key={node.path} node={node} onOpen={openFile} />)
+                      fileTree.map((node) => (
+                        <FileNode
+                          key={node.path}
+                          node={node}
+                          onOpen={openFile}
+                          selectedPath={fileContent?.path || ''}
+                          gitFiles={gitStatus?.files || {}}
+                        />
+                      ))
                     ) : (
                       <p className="text-xs text-center py-4" style={{ color: 'var(--text-tertiary)' }}>Loading...</p>
                     )}
@@ -290,7 +418,60 @@ export default function ProjectsPage() {
 
                 {/* File content */}
                 <div className="flex-1 flex flex-col min-w-0">
-                  {fileContent ? (
+                  <div className="p-2 border-b flex items-center justify-between gap-3 shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+                    <div className="flex items-center gap-1">
+                      <button
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        style={{
+                          background: contentTab === 'code' ? 'var(--accent-light)' : 'transparent',
+                          color: contentTab === 'code' ? 'var(--accent)' : 'var(--text-secondary)',
+                        }}
+                        onClick={() => setContentTab('code')}
+                      >
+                        <FileCode2 size={12} className="inline mr-1" /> Editor
+                      </button>
+                      <button
+                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-colors"
+                        style={{
+                          background: contentTab === 'diff' ? 'var(--accent-light)' : 'transparent',
+                          color: contentTab === 'diff' ? 'var(--accent)' : 'var(--text-secondary)',
+                        }}
+                        onClick={() => setContentTab('diff')}
+                      >
+                        <GitBranch size={12} className="inline mr-1" /> Diff
+                      </button>
+                    </div>
+                    {selected?.path ? (
+                      <span className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{selected.path}</span>
+                    ) : null}
+                  </div>
+                  {contentTab === 'diff' ? (
+                    <div className="flex-1 overflow-auto p-4">
+                      {gitLoading || gitDiffLoading ? (
+                        <p className="text-sm text-center py-8" style={{ color: 'var(--text-tertiary)' }}>Loading git diff...</p>
+                      ) : gitStatus?.isGitRepo ? (
+                        <div className="space-y-4">
+                          <div className="flex items-center justify-between gap-3 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border)' }}>
+                            <div>
+                              <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Diff Base</p>
+                              <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{gitDiffRef}</p>
+                            </div>
+                            <button
+                              className="btn btn-secondary text-xs"
+                              onClick={() => loadGitDiff(selected.id)}
+                            >
+                              <RefreshCw size={12} /> Refresh Diff
+                            </button>
+                          </div>
+                          <DiffViewer diff={gitDiff} defaultExpanded={false} />
+                        </div>
+                      ) : (
+                        <div className="flex h-full items-center justify-center">
+                          <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>This project is not a git repository.</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : fileContent ? (
                     <>
                       <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
                         <span className="text-xs font-mono truncate" style={{ color: 'var(--text-secondary)' }}>{fileContent.path}</span>
@@ -375,6 +556,108 @@ export default function ProjectsPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Git inspector */}
+                <div className="w-80 border-l flex flex-col shrink-0" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+                  <div className="p-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border)' }}>
+                    <span className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>Git & IDE</span>
+                    <button
+                      onClick={() => {
+                        loadGitData(selected.id);
+                        loadGitDiff(selected.id);
+                      }}
+                      className="p-1 rounded"
+                      style={{ color: 'var(--text-tertiary)' }}
+                      title="Refresh git info"
+                    >
+                      <RefreshCw size={13} />
+                    </button>
+                  </div>
+                  <div className="flex-1 overflow-auto p-3 space-y-4">
+                    {gitStatus?.isGitRepo ? (
+                      <>
+                        <div className="rounded-xl p-3" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                          <div className="flex items-center gap-2">
+                            <GitBranch size={14} style={{ color: 'var(--accent)' }} />
+                            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{gitStatus.branch}</span>
+                          </div>
+                          <div className="flex gap-2 mt-3 flex-wrap">
+                            <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: gitStatus.clean ? '#40c05720' : '#fab00520', color: gitStatus.clean ? '#40c057' : '#fab005' }}>
+                              {gitStatus.clean ? 'Working tree clean' : `${gitStatus.changedCount} changed`}
+                            </span>
+                            {gitStatus.upstream ? (
+                              <span className="text-[10px] px-2 py-1 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                {gitStatus.upstream} {gitStatus.ahead > 0 ? `↑${gitStatus.ahead}` : ''} {gitStatus.behind > 0 ? `↓${gitStatus.behind}` : ''}
+                              </span>
+                            ) : null}
+                          </div>
+                          {gitStatus.diffSummary ? (
+                            <pre className="mt-3 text-[10px] whitespace-pre-wrap" style={{ color: 'var(--text-tertiary)', fontFamily: 'monospace' }}>{gitStatus.diffSummary}</pre>
+                          ) : null}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <CircleDot size={13} style={{ color: 'var(--accent)' }} />
+                            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Changed Files</p>
+                          </div>
+                          {Object.entries(gitStatus.files || {}).length > 0 ? (
+                            <div className="space-y-1">
+                              {Object.entries(gitStatus.files).map(([relativePath, info]) => {
+                                const indicator = getGitFileIndicator(info);
+                                const absolutePath = `${selected.path.replace(/\/$/, '')}/${relativePath}`;
+                                return (
+                                  <button
+                                    key={relativePath}
+                                    className="w-full flex items-center gap-2 px-2.5 py-2 rounded-lg text-left transition-colors"
+                                    style={{
+                                      background: fileContent?.path === absolutePath ? 'var(--accent-light)' : 'var(--bg-elevated)',
+                                      border: '1px solid var(--border)',
+                                    }}
+                                    onClick={() => openFile(absolutePath)}
+                                  >
+                                    <span className="w-5 text-center text-[10px] font-bold shrink-0" style={{ color: indicator?.color || 'var(--text-tertiary)' }}>
+                                      {indicator?.label || '•'}
+                                    </span>
+                                    <span className="flex-1 min-w-0 text-xs truncate" style={{ color: 'var(--text-primary)' }}>{relativePath}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>No changed files.</p>
+                          )}
+                        </div>
+
+                        <div>
+                          <div className="flex items-center gap-2 mb-2">
+                            <History size={13} style={{ color: 'var(--accent)' }} />
+                            <p className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Recent History</p>
+                          </div>
+                          {gitStatus.recentCommits?.length ? (
+                            <div className="space-y-1.5">
+                              {gitStatus.recentCommits.map((commit) => (
+                                <div key={`${commit.hash}-${commit.subject}`} className="rounded-lg p-2.5" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)' }}>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent)' }}>{commit.hash}</span>
+                                    <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{commit.relativeDate}</span>
+                                  </div>
+                                  <p className="text-xs mt-1" style={{ color: 'var(--text-primary)' }}>{commit.subject}</p>
+                                </div>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>No commit history available.</p>
+                          )}
+                        </div>
+                      </>
+                    ) : (
+                      <div className="rounded-xl p-4 text-sm" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border)', color: 'var(--text-tertiary)' }}>
+                        This project is not inside a git repository yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
               </>
             ) : (
               <div className="flex-1 flex items-center justify-center">
@@ -401,18 +684,32 @@ export default function ProjectsPage() {
   );
 }
 
-function FileNode({ node, onOpen, depth = 0 }) {
+function FileNode({ node, onOpen, depth = 0, selectedPath = '', gitFiles = {} }) {
   const [expanded, setExpanded] = useState(depth < 1);
 
   if (node.type === 'file') {
+    const relativePath = node.path.split('/').slice(-Math.max(depth + 1, 1)).join('/');
+    const gitEntry = Object.entries(gitFiles).find(([filePath]) => node.path.endsWith(`/${filePath}`) || node.path === filePath)?.[1];
+    const indicator = getGitFileIndicator(gitEntry);
+    const isSelected = selectedPath === node.path;
     return (
       <button
         className="flex items-center gap-1.5 py-1 px-2 rounded text-xs w-full text-left hover:opacity-80 transition-colors"
-        style={{ paddingLeft: `${depth * 16 + 8}px`, color: 'var(--text-secondary)' }}
+        style={{
+          paddingLeft: `${depth * 16 + 8}px`,
+          color: isSelected ? 'var(--accent)' : 'var(--text-secondary)',
+          background: isSelected ? 'var(--accent-light)' : 'transparent',
+        }}
         onClick={() => onOpen(node.path)}
+        title={relativePath}
       >
         <FileText size={13} className="shrink-0" style={{ color: 'var(--text-tertiary)' }} />
         <span className="truncate">{node.name}</span>
+        {indicator && (
+          <span className="ml-auto text-[10px] font-bold shrink-0" style={{ color: indicator.color }}>
+            {indicator.label}
+          </span>
+        )}
       </button>
     );
   }
@@ -429,7 +726,14 @@ function FileNode({ node, onOpen, depth = 0 }) {
         <span className="truncate">{node.name}</span>
       </button>
       {expanded && node.children?.map((child) => (
-        <FileNode key={child.path} node={child} onOpen={onOpen} depth={depth + 1} />
+        <FileNode
+          key={child.path}
+          node={child}
+          onOpen={onOpen}
+          depth={depth + 1}
+          selectedPath={selectedPath}
+          gitFiles={gitFiles}
+        />
       ))}
     </div>
   );

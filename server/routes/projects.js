@@ -8,6 +8,7 @@ const {
 } = require('../services/project-doc');
 const fs = require('fs');
 const path = require('path');
+const { execSync } = require('child_process');
 
 function resolveAgentId(value) {
   const agentId = String(value || '').trim();
@@ -271,20 +272,98 @@ router.get('/:id/git-status', (req, res) => {
   if (!project) return res.status(404).json({ error: 'Project not found' });
 
   try {
-    const { execSync } = require('child_process');
     execSync('git rev-parse --is-inside-work-tree', { cwd: project.path, stdio: 'pipe' });
 
-    const status = execSync('git status --porcelain', { cwd: project.path, encoding: 'utf8', timeout: 5000 });
+    const status = execSync('git status --porcelain=1 --branch', { cwd: project.path, encoding: 'utf8', timeout: 5000 });
     const branch = execSync('git branch --show-current', { cwd: project.path, encoding: 'utf8', timeout: 5000 }).trim();
+    const lines = status.split('\n').filter(Boolean);
+    const branchLine = lines.find((line) => line.startsWith('## ')) || '';
+    const upstreamMatch = branchLine.match(/\.{3}([^\s]+)(?:\s|$)/);
+    const aheadMatch = branchLine.match(/ahead (\d+)/);
+    const behindMatch = branchLine.match(/behind (\d+)/);
     const files = {};
-    for (const line of status.split('\n').filter(Boolean)) {
-      const code = line.slice(0, 2).trim();
-      const filePath = line.slice(3);
-      files[filePath] = code === 'M' ? 'modified' : code === 'A' ? 'added' : code === 'D' ? 'deleted' : code === '??' ? 'untracked' : code;
+    for (const line of lines) {
+      if (line.startsWith('## ')) continue;
+      const indexStatus = line.slice(0, 1);
+      const workingTreeStatus = line.slice(1, 2);
+      const filePath = line.slice(3).split(' -> ').pop();
+      const normalized = line.startsWith('??')
+        ? 'untracked'
+        : workingTreeStatus === 'M' || indexStatus === 'M'
+        ? 'modified'
+        : workingTreeStatus === 'A' || indexStatus === 'A'
+        ? 'added'
+        : workingTreeStatus === 'D' || indexStatus === 'D'
+        ? 'deleted'
+        : workingTreeStatus === 'R' || indexStatus === 'R'
+        ? 'renamed'
+        : `${indexStatus}${workingTreeStatus}`.trim() || 'changed';
+      files[filePath] = {
+        indexStatus,
+        workingTreeStatus,
+        status: normalized,
+        code: line.slice(0, 2),
+      };
     }
-    res.json({ isGitRepo: true, branch, files, changedCount: Object.keys(files).length });
+
+    let recentCommits = [];
+    try {
+      recentCommits = execSync(
+        'git log --decorate --date=relative --pretty=format:%h%x09%cr%x09%s -8',
+        { cwd: project.path, encoding: 'utf8', timeout: 5000 }
+      )
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => {
+          const [hash, relativeDate, ...subjectParts] = line.split('\t');
+          return { hash, relativeDate, subject: subjectParts.join('\t') };
+        });
+    } catch {}
+
+    let diffSummary = '';
+    try {
+      diffSummary = execSync('git diff --stat HEAD', {
+        cwd: project.path,
+        encoding: 'utf8',
+        timeout: 5000,
+        maxBuffer: 1024 * 1024,
+      }).trim();
+    } catch {
+      try {
+        diffSummary = execSync('git diff --stat', {
+          cwd: project.path,
+          encoding: 'utf8',
+          timeout: 5000,
+          maxBuffer: 1024 * 1024,
+        }).trim();
+      } catch {}
+    }
+
+    res.json({
+      isGitRepo: true,
+      branch,
+      upstream: upstreamMatch ? upstreamMatch[1] : null,
+      ahead: aheadMatch ? parseInt(aheadMatch[1], 10) : 0,
+      behind: behindMatch ? parseInt(behindMatch[1], 10) : 0,
+      files,
+      changedCount: Object.keys(files).length,
+      recentCommits,
+      diffSummary,
+      clean: Object.keys(files).length === 0,
+    });
   } catch {
-    res.json({ isGitRepo: false, branch: null, files: {}, changedCount: 0 });
+    res.json({
+      isGitRepo: false,
+      branch: null,
+      upstream: null,
+      ahead: 0,
+      behind: 0,
+      files: {},
+      changedCount: 0,
+      recentCommits: [],
+      diffSummary: '',
+      clean: true,
+    });
   }
 });
 

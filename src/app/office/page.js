@@ -34,8 +34,28 @@ export default function OfficePage() {
     const onStatusChanged = ({ agentId, status }) => {
       setAgents((prev) => prev.map((a) => (a.id === agentId ? { ...a, status } : a)));
     };
+    const onTaskUpdated = (task) => {
+      setTasks((prev) => prev.map((item) => (item.id === task.id ? task : item)));
+    };
+    const onTaskCreated = (task) => {
+      setTasks((prev) => {
+        if (prev.some((item) => item.id === task.id)) return prev;
+        return [task, ...prev];
+      });
+    };
+    const onTaskDeleted = ({ id }) => {
+      setTasks((prev) => prev.filter((task) => task.id !== id));
+    };
     socket.on('agent:status_changed', onStatusChanged);
-    return () => socket.off('agent:status_changed', onStatusChanged);
+    socket.on('task:updated', onTaskUpdated);
+    socket.on('task:created', onTaskCreated);
+    socket.on('task:deleted', onTaskDeleted);
+    return () => {
+      socket.off('agent:status_changed', onStatusChanged);
+      socket.off('task:updated', onTaskUpdated);
+      socket.off('task:created', onTaskCreated);
+      socket.off('task:deleted', onTaskDeleted);
+    };
   }, [socket]);
 
   // Grid positions for agents
@@ -52,6 +72,12 @@ export default function OfficePage() {
   const agentTasks = selectedAgent
     ? tasks.filter((t) => t.agent_id === selectedAgent.id && t.status === 'doing')
     : [];
+
+  const getAgentActiveTask = (agentId) => (
+    tasks
+      .filter((task) => task.agent_id === agentId && task.status === 'doing')
+      .sort((a, b) => new Date(b.started_at || b.updated_at || 0).getTime() - new Date(a.started_at || a.updated_at || 0).getTime())[0] || null
+  );
 
   return (
     <div className="flex h-screen">
@@ -94,6 +120,7 @@ export default function OfficePage() {
                   const cfg = STATUS_CONFIG[agent.status] || STATUS_CONFIG.offline;
                   const StatusIcon = cfg.icon;
                   const isActive = agent.status !== 'offline';
+                  const activeTask = getAgentActiveTask(agent.id);
 
                   return (
                     <div
@@ -125,6 +152,20 @@ export default function OfficePage() {
                       <p className="text-[10px] text-center mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                         {agent.role}
                       </p>
+
+                      {activeTask && (
+                        <div
+                          className="mt-2 w-full rounded-lg px-2.5 py-2 text-left"
+                          style={{ background: 'var(--bg-secondary)', border: `1px solid ${cfg.color}30` }}
+                        >
+                          <p className="text-[10px] uppercase tracking-wide font-semibold" style={{ color: cfg.color }}>
+                            Working On
+                          </p>
+                          <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-primary)' }}>
+                            {activeTask.title}
+                          </p>
+                        </div>
+                      )}
 
                       {/* Status */}
                       <div className="flex items-center gap-1.5 mt-3 px-2.5 py-1 rounded-full" style={{ background: `${cfg.color}18` }}>
