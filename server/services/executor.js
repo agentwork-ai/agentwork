@@ -258,13 +258,7 @@ function gitSyncFromMain(workDir, logFn, taskId) {
  */
 function gitCreateBranch(workDir, taskId, taskTitle, logFn) {
   if (getSetting('auto_git_branch') !== 'true') return null;
-
-  // Auto-init if needed
-  gitAutoInit(workDir, logFn, taskId);
   if (!isGitRepo(workDir)) return null;
-
-  // Sync from main first
-  gitSyncFromMain(workDir, logFn, taskId);
 
   try {
     const branchName = `agentwork/${slugify(taskTitle)}-${taskId.slice(0, 8)}`;
@@ -283,6 +277,10 @@ function gitCreateBranch(workDir, taskId, taskTitle, logFn) {
 function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
   if (getSetting('auto_git_branch') !== 'true' || !branchName) return;
   if (!isGitRepo(workDir)) return;
+  if (getSetting('auto_commit_code') !== 'true') {
+    logFn(taskId, 'info', 'Git: auto-commit disabled, leaving task changes uncommitted');
+    return;
+  }
 
   try {
     // Check if there are changes to commit
@@ -332,8 +330,8 @@ function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
       logFn(taskId, 'info', 'Git: no remote configured, will merge locally');
     }
 
-    // Always merge locally if PR wasn't merged remotely
-    if (!prMerged) {
+    // Only merge locally if auto-merge is enabled and remote merge did not happen
+    if (!prMerged && getSetting('auto_git_merge') === 'true') {
       const mainBranch = getMainBranch(workDir);
       try {
         execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
@@ -350,17 +348,39 @@ function gitCommitAndPR(workDir, taskId, taskTitle, branchName, logFn) {
           logFn(taskId, 'warning', 'Git: could not auto-resolve merge conflict');
         }
       }
-    } else {
+    } else if (prMerged) {
       // PR was merged remotely — just checkout main and pull
       try {
         const mainBranch = getMainBranch(workDir);
         execSync(`git checkout ${mainBranch}`, { cwd: workDir, stdio: 'pipe' });
         execSync('git pull 2>/dev/null || true', { cwd: workDir, stdio: 'pipe', shell: true });
       } catch {}
+    } else {
+      logFn(taskId, 'info', 'Git: auto-merge disabled, leaving branch open after commit/push');
     }
   } catch (err) {
     logFn(taskId, 'warning', `Git commit failed: ${err.message}`);
     try { execSync('git checkout - 2>/dev/null || true', { cwd: workDir, stdio: 'pipe', shell: true }); } catch {}
+  }
+}
+
+function gitCommitCurrentBranch(workDir, taskId, taskTitle, logFn) {
+  if (getSetting('auto_commit_code') !== 'true') return;
+  if (!isGitRepo(workDir)) return;
+
+  try {
+    const status = execSync('git status --porcelain', { cwd: workDir, encoding: 'utf8' }).trim();
+    if (!status) {
+      logFn(taskId, 'info', 'Git: no changes to commit');
+      return;
+    }
+
+    execSync('git add -A', { cwd: workDir, stdio: 'pipe' });
+    const commitMsg = `feat: ${taskTitle}\n\nCompleted by AgentWork task ${taskId}`;
+    execSync(`git commit -m "${commitMsg.replace(/"/g, '\\"')}"`, { cwd: workDir, stdio: 'pipe' });
+    logFn(taskId, 'info', 'Git: committed changes on current branch');
+  } catch (err) {
+    logFn(taskId, 'warning', `Git commit failed: ${err.message}`);
   }
 }
 
@@ -746,6 +766,11 @@ async function _executeTask(taskId, agentId) {
       fs.mkdirSync(workDir, { recursive: true });
     }
 
+    if (!isFlow) {
+      gitAutoInit(workDir, addLog, taskId);
+      gitSyncFromMain(workDir, addLog, taskId);
+    }
+
     // Auto-create git branch before execution
     if (!isFlow) {
       gitBranch = gitCreateBranch(workDir, taskId, task.title, addLog);
@@ -767,8 +792,12 @@ async function _executeTask(taskId, agentId) {
 
     // Auto-commit, push, and create PR after task completion
     const finalTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId);
-    if (finalTask?.status === 'done' && gitBranch && project?.path) {
-      gitCommitAndPR(project.path, taskId, task.title, gitBranch, addLog);
+    if (finalTask?.status === 'done' && project?.path) {
+      if (gitBranch) {
+        gitCommitAndPR(project.path, taskId, task.title, gitBranch, addLog);
+      } else {
+        gitCommitCurrentBranch(project.path, taskId, task.title, addLog);
+      }
     }
 
     activeExecutions.delete(taskId);
@@ -1778,6 +1807,7 @@ function appendToolResults(messages, toolResults, provider) {
 // ─── API-mode task execution ───
 
 async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState) {
+  const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const isRecurring = task.trigger_type === 'cron';
   const agentContext = buildAgentContext(agentId, agent, {
     includeMemory: !isRecurring,

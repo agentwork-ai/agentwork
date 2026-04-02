@@ -243,6 +243,7 @@ const defaultSettings = {
   dashboard_password: '',
   accent_color: 'blue',
   auto_git_branch: 'true',
+  auto_commit_code: 'true',
   auto_git_sync: 'true',
   auto_git_merge: 'true',
   auto_git_init: 'true',

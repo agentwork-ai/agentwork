@@ -613,6 +613,20 @@ export default function SettingsPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
+                      Auto Commit Code
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                      Commit task changes automatically when the task finishes successfully
+                    </p>
+                  </div>
+                  <ToggleSwitch
+                    checked={settings.auto_commit_code !== 'false'}
+                    onChange={(v) => updateField('auto_commit_code', v ? 'true' : 'false')}
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
                       Auto Sync from Main
                     </p>
                     <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
