@@ -89,6 +89,58 @@ function resolveTaskWorkingDirectory(project) {
   return project?.path || resolveConfiguredWorkspaceDir() || process.cwd();
 }
 
+function normalizeTaskText(...parts) {
+  return parts
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function normalizeRoleLabel(role) {
+  const normalized = String(role || '').trim().toLowerCase();
+  return normalized;
+}
+
+function isTechnicalRole(role) {
+  const normalized = normalizeRoleLabel(role);
+  return new Set([
+    'cto',
+    'tech lead',
+    'frontend developer',
+    'backend developer',
+    'full stack developer',
+    'mobile developer',
+    'devops engineer',
+    'qa engineer',
+    'data engineer',
+    'machine learning engineer',
+    'security engineer',
+    'solutions architect',
+    'engineering manager',
+    'support engineer',
+  ]).has(normalized);
+}
+
+function inferTaskExecutionMode(task, agent, project) {
+  const text = normalizeTaskText(task?.title, task?.description);
+  const explicitCodingSignals = [
+    'create branch',
+    'git branch',
+    'open pr',
+    'pull request',
+    'commit code',
+    'write code',
+    'implement in code',
+    'change the code',
+    'modify the code',
+  ];
+
+  if (isTechnicalRole(agent?.role)) return 'coding';
+  if (explicitCodingSignals.some((signal) => text.includes(signal))) return 'coding';
+  if (!project?.path) return 'general';
+  return 'general';
+}
+
 function isImageAttachment(attachment) {
   if (!attachment) return false;
   if (String(attachment.mime_type || '').startsWith('image/')) return true;
@@ -729,6 +781,8 @@ async function _executeTask(taskId, agentId) {
   const isFlow = (task.task_type || 'single') === 'flow';
   const agent = agentId ? db.prepare('SELECT * FROM agents WHERE id = ?').get(agentId) : null;
   const project = task.project_id ? db.prepare('SELECT * FROM projects WHERE id = ?').get(task.project_id) : null;
+  const executionMode = inferTaskExecutionMode(task, agent, project);
+  const shouldUseGitAutomation = !isFlow && executionMode === 'coding';
 
   if (!isFlow && !agent) return;
 
@@ -766,22 +820,24 @@ async function _executeTask(taskId, agentId) {
       fs.mkdirSync(workDir, { recursive: true });
     }
 
-    if (!isFlow) {
+    if (shouldUseGitAutomation) {
       gitAutoInit(workDir, addLog, taskId);
       gitSyncFromMain(workDir, addLog, taskId);
     }
 
     // Auto-create git branch before execution
-    if (!isFlow) {
+    if (shouldUseGitAutomation) {
       gitBranch = gitCreateBranch(workDir, taskId, task.title, addLog);
+    } else if (!isFlow) {
+      addLog(taskId, 'info', `Execution mode: ${executionMode}. Skipping automatic git branch workflow.`);
     }
 
     if (isFlow) {
       await executeFlowTask(taskId, agentId, task, project, execState);
     } else if (usesCliRuntime(agent)) {
-      await executeTaskCli(taskId, agentId, agent, task, project, workDir, execState);
+      await executeTaskCli(taskId, agentId, agent, task, project, workDir, execState, executionMode);
     } else {
-      await executeTaskApi(taskId, agentId, agent, task, project, workDir, execState);
+      await executeTaskApi(taskId, agentId, agent, task, project, workDir, execState, executionMode);
     }
   } catch (err) {
     addLog(taskId, 'error', `Execution error: ${err.message}`);
@@ -792,7 +848,7 @@ async function _executeTask(taskId, agentId) {
 
     // Auto-commit, push, and create PR after task completion
     const finalTask = db.prepare('SELECT status FROM tasks WHERE id = ?').get(taskId);
-    if (finalTask?.status === 'done' && project?.path) {
+    if (finalTask?.status === 'done' && project?.path && shouldUseGitAutomation) {
       if (gitBranch) {
         gitCommitAndPR(project.path, taskId, task.title, gitBranch, addLog);
       } else {
@@ -1192,7 +1248,7 @@ function ensureGitRepo(workDir, taskId) {
   }
 }
 
-async function executeTaskCli(taskId, agentId, agent, task, project, workDir, execState) {
+async function executeTaskCli(taskId, agentId, agent, task, project, workDir, execState, executionMode = 'coding') {
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const isRecurring = task.trigger_type === 'cron';
   const agentContext = buildAgentContext(agentId, agent, {
@@ -1227,7 +1283,9 @@ Description: ${task.description || 'No description provided.'}
 
 Working directory: ${workDir}
 
-${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the live checklist and ignore stale work if that file is empty.\n\n' : ''}Please complete this task autonomously. Analyze the codebase, plan your approach, make the necessary changes, and verify they work.`;
+${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the live checklist and ignore stale work if that file is empty.\n\n' : ''}${executionMode === 'coding'
+  ? 'Please complete this task autonomously. Analyze the codebase, plan your approach, make the necessary changes, and verify they work.'
+  : 'Please complete this task autonomously. Use the appropriate workflow for the request. If the task is research, browsing, summarization, or analysis, do that directly and do not assume code changes, git branches, or file edits are needed.'}`;
 
   addLog(taskId, 'info', `Prompt length: ${prompt.length} chars`);
 
@@ -1810,7 +1868,7 @@ function appendToolResults(messages, toolResults, provider) {
 
 // ─── API-mode task execution ───
 
-async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState) {
+async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState, executionMode = 'coding') {
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const isRecurring = task.trigger_type === 'cron';
   const agentContext = buildAgentContext(agentId, agent, {
@@ -1873,13 +1931,16 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     customToolsPrompt,
     workDir: project?.path || workDir,
     includeHeartbeat: isRecurring,
+    executionMode,
   });
 
   const messages = [
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\n${describeTaskImageAttachments(task)}Working directory: ${workDir}\n\nCurrent files:\n${dirListing}\n\nStart immediately. Use the tools to explore, make changes, and complete the task.`,
+      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\n${describeTaskImageAttachments(task)}Working directory: ${workDir}\n\nCurrent files:\n${dirListing}\n\n${executionMode === 'coding'
+        ? 'Start immediately. Use the tools to explore, make changes, and complete the task.'
+        : 'Start immediately. Use the tools needed for the request. Do not assume code changes, git branches, or file edits unless the task explicitly requires them.'}`,
     },
   ];
 
@@ -2429,4 +2490,16 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 function getActiveExecutions() { return Array.from(activeExecutions.keys()); }
 
-module.exports = { initExecutor, executeTask, getActiveExecutions, handleDirectChat };
+function stopTask(taskId) {
+  const id = String(taskId || '').trim();
+  if (!id) return false;
+
+  const execState = activeExecutions.get(id);
+  if (!execState) return false;
+
+  execState.aborted = true;
+  if (execState.abortController) execState.abortController.abort();
+  return true;
+}
+
+module.exports = { initExecutor, executeTask, stopTask, getActiveExecutions, handleDirectChat };

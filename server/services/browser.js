@@ -78,6 +78,30 @@ function getPlaywright() {
   }
 }
 
+function isMissingBrowserExecutableError(err) {
+  const message = String(err?.message || '');
+  return message.includes("Executable doesn't exist")
+    || message.includes('Please run the following command to download new browsers')
+    || message.includes('Failed to launch browser');
+}
+
+function buildMissingBrowserInstallMessage(err, headless) {
+  const modeHint = headless
+    ? ''
+    : ' If AgentWork is running in a headless session, set AGENTWORK_BROWSER_HEADLESS=true and restart.';
+  return `Browser control requires a Playwright browser binary or an installed Chrome-compatible browser. Run \`npx playwright install chromium\` and retry.${modeHint} Original error: ${err.message}`;
+}
+
+function getLaunchOptions(profile, headless, extra = {}) {
+  return {
+    headless,
+    acceptDownloads: true,
+    viewport: DEFAULT_VIEWPORT,
+    downloadsPath: getDownloadDir(profile),
+    ...extra,
+  };
+}
+
 function clampTimeout(value, fallback = DEFAULT_WAIT_TIMEOUT_MS) {
   const parsed = parseInt(String(value || fallback), 10);
   if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
@@ -167,19 +191,27 @@ async function ensureSession(agentId, options = {}) {
   const { chromium } = getPlaywright();
   let context;
   try {
-    context = await chromium.launchPersistentContext(getProfileDir(profile), {
-      headless,
-      acceptDownloads: true,
-      viewport: DEFAULT_VIEWPORT,
-      downloadsPath: getDownloadDir(profile),
-    });
+    context = await chromium.launchPersistentContext(
+      getProfileDir(profile),
+      getLaunchOptions(profile, headless)
+    );
   } catch (err) {
-    if (!headless) {
+    if (isMissingBrowserExecutableError(err)) {
+      try {
+        context = await chromium.launchPersistentContext(
+          getProfileDir(profile),
+          getLaunchOptions(profile, headless, { channel: 'chrome' })
+        );
+      } catch (fallbackErr) {
+        throw new Error(buildMissingBrowserInstallMessage(fallbackErr, headless));
+      }
+    } else if (!headless) {
       throw new Error(
         `Failed to launch a visible browser window: ${err.message}. If AgentWork is running in a headless session, set AGENTWORK_BROWSER_HEADLESS=true and restart.`
       );
+    } else {
+      throw err;
     }
-    throw err;
   }
 
   session = {

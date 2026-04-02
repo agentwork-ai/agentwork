@@ -10,7 +10,7 @@ import { useSocket } from '../providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
   Layers, ChevronRight, ChevronDown, Clock, RefreshCw, Play, Lock,
-  Search, Filter, Copy, FileText, MessageSquare, Send,
+  Search, Filter, Copy, FileText, MessageSquare, Send, Square,
   CheckSquare, ArrowRight, UserPlus, XCircle, ImagePlus,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
@@ -1254,6 +1254,7 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
     return match ? match.value : (task?.trigger_cron ? '__custom__' : '0 9 * * *');
   });
   const [saving, setSaving] = useState(false);
+  const [stopping, setStopping] = useState(false);
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
   const [logTypeFilter, setLogTypeFilter] = useState('all');
   const [logSearchText, setLogSearchText] = useState('');
@@ -1385,6 +1386,19 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
     }
   };
 
+  const stopExecution = async () => {
+    if (stopping) return;
+    setStopping(true);
+    try {
+      await api.stopTask(task.id);
+      toast.success('Stop requested');
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setStopping(false);
+    }
+  };
+
   const statusColor = COLUMNS.find((c) => c.id === task.status)?.color || '#868e96';
 
   return (
@@ -1400,6 +1414,11 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
             <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{task.title}</h3>
           </div>
           <div className="flex items-center gap-2">
+            {isDoing && !editing && (
+              <button className="btn btn-secondary text-xs" onClick={stopExecution} disabled={stopping}>
+                <Square size={13} /> {stopping ? 'Stopping...' : 'Stop'}
+              </button>
+            )}
             {task.status === 'blocked' && !editing && (
               <button className="btn btn-primary text-xs" onClick={() => {
                 setEditing(true);

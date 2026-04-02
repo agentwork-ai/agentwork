@@ -24,6 +24,14 @@ function getExecuteTask() {
   return _executeTask;
 }
 
+let _stopTask = null;
+function getStopTask() {
+  if (!_stopTask) {
+    _stopTask = require('../services/executor').stopTask;
+  }
+  return _stopTask;
+}
+
 function getProjectById(projectId) {
   const id = String(projectId || '').trim();
   if (!id) return null;
@@ -507,6 +515,30 @@ router.get('/:id/attachments/:attachmentId', (req, res) => {
 
   if (attachment.mime_type) res.type(attachment.mime_type);
   res.sendFile(attachment.path);
+});
+
+router.post('/:id/stop', (req, res) => {
+  const task = db.prepare(
+    'SELECT t.*, a.name as agent_name, a.avatar as agent_avatar, p.name as project_name FROM tasks t LEFT JOIN agents a ON t.agent_id = a.id LEFT JOIN projects p ON t.project_id = p.id WHERE t.id = ?'
+  ).get(req.params.id);
+
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (task.status !== 'doing') return res.status(400).json({ error: 'Task is not currently executing' });
+
+  const stopTask = getStopTask();
+  const stopped = stopTask ? stopTask(task.id) : false;
+  if (!stopped) return res.status(400).json({ error: 'Task is not currently executing' });
+
+  task.execution_logs = JSON.parse(task.execution_logs || '[]');
+  task.attachments = JSON.parse(task.attachments || '[]');
+  task.flow_items = JSON.parse(task.flow_items || '[]');
+  task.depends_on = JSON.parse(task.depends_on || '[]');
+
+  logAudit('stop', 'task', task.id, { title: task.title });
+  const io = req.app.get('io');
+  if (io) io.emit('task:stop_requested', { id: task.id });
+
+  return res.json({ success: true, task });
 });
 
 // Delete task

@@ -1349,8 +1349,9 @@ function buildProjectSection(projectDoc, projectActivity) {
   return sections.join('\n\n');
 }
 
-function buildTaskSystemPrompt(agent, agentContext, { projectDoc, projectActivity, customToolsPrompt, workDir, mode = 'api', includeHeartbeat = false }) {
+function buildTaskSystemPrompt(agent, agentContext, { projectDoc, projectActivity, customToolsPrompt, workDir, mode = 'api', includeHeartbeat = false, executionMode = 'coding' }) {
   const identity = loadPromptIdentity(agent.id, agent);
+  const isCodingTask = executionMode !== 'general';
 
   return [
     buildPromptIntro(agent, identity, 'task'),
@@ -1363,7 +1364,9 @@ function buildTaskSystemPrompt(agent, agentContext, { projectDoc, projectActivit
       ? `## Completion
 Use tools to do the work. When everything requested is complete, call \`task_complete\` with a concrete summary.`
       : `## Completion
-Complete the task end-to-end: inspect the codebase, make the changes, and verify the result before you stop.`,
+${isCodingTask
+  ? 'Complete the task end-to-end: inspect the codebase, make the changes, and verify the result before you stop.'
+  : 'Complete the task end-to-end using the right workflow for the request. Do not assume code changes, git branches, or file edits are required unless the task explicitly calls for them.'}`,
   ]
     .filter(Boolean)
     .join('\n\n')

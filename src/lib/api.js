@@ -54,6 +54,7 @@ export const api = {
   createTask: (data) => request('/api/tasks', { method: 'POST', body: JSON.stringify(data) }),
   updateTask: (id, data) => request(`/api/tasks/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTask: (id) => request(`/api/tasks/${id}`, { method: 'DELETE' }),
+  stopTask: (id) => request(`/api/tasks/${id}/stop`, { method: 'POST', body: JSON.stringify({}) }),
   bulkTaskAction: (action, taskIds, data) =>
     request('/api/tasks/bulk', { method: 'POST', body: JSON.stringify({ action, task_ids: taskIds, data }) }),
   getTaskReplay: (id) => request(`/api/tasks/${id}/replay`),
