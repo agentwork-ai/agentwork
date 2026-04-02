@@ -479,6 +479,7 @@ async function generateAgentTurn(agent, systemPrompt, userPrompt, sessionKey) {
             workingDirectory: workDir,
             approvalPolicy: 'never',
             sandboxMode: 'danger-full-access',
+            skipGitRepoCheck: true,
           }),
         };
         meetingRuntimeSessions.set(sessionKey, session);

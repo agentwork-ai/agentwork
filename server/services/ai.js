@@ -579,6 +579,7 @@ async function runCodexAgent(prompt, workDir, onEvent, abortController) {
     workingDirectory: workDir,
     approvalPolicy: 'never',
     sandboxMode: 'danger-full-access',
+    skipGitRepoCheck: true,
   });
 
   const { events } = await thread.runStreamed(prompt, {

@@ -587,7 +587,7 @@ async function handleCliChat(agent, userMessage, platformChatId) {
       let session = agentSessions.get(agentId);
       if (!session?.thread) {
         const client = createCodexClient(Codex);
-        const thread = client.startThread({ workingDirectory: chatWorkDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
+        const thread = client.startThread({ workingDirectory: chatWorkDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access', skipGitRepoCheck: true });
         session = { thread };
         agentSessions.set(agentId, session);
       }
@@ -1112,7 +1112,7 @@ Complete your step autonomously.`;
   if (isCodex) {
     const { Codex } = await import('@openai/codex-sdk');
     const client = createCodexClient(Codex);
-    const thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
+    const thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access', skipGitRepoCheck: true });
     const streamedTurn = await thread.runStreamed(prompt, { signal: abortController.signal });
     for await (const event of streamedTurn.events) {
       if (event.type === 'item.completed') {
@@ -1233,11 +1233,15 @@ ${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the li
 
   const abortController = new AbortController();
   execState.abortController = abortController;
+  let lastAssistantText = '';
 
   const onEvent = (event) => {
     if (execState.aborted) return;
     switch (event.type) {
-      case 'text': addLog(taskId, 'response', event.content); break;
+      case 'text':
+        addLog(taskId, 'response', event.content);
+        if (String(event.content || '').trim()) lastAssistantText = String(event.content).trim();
+        break;
       case 'command':
         io.emit('agent:status_changed', { agentId, status: 'executing' });
         addLog(taskId, 'command', event.content);
@@ -1280,7 +1284,7 @@ ${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the li
       let client, thread;
       try {
         client = createCodexClient(Codex);
-        thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access' });
+        thread = client.startThread({ workingDirectory: workDir, approvalPolicy: 'never', sandboxMode: 'danger-full-access', skipGitRepoCheck: true });
         addLog(taskId, 'info', 'Codex thread created');
       } catch (initErr) {
         addLog(taskId, 'error', `Failed to create Codex thread: ${initErr.message}`);
@@ -1357,11 +1361,11 @@ ${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the li
       }
     }
 
-    const cliCompletionMsg = `I've completed the task: ${task.title}`;
+    const cliCompletionMsg = lastAssistantText || 'Task completed.';
     const cliDoneStatus = task.trigger_type === 'cron' ? 'todo' : 'done';
     moveTask(taskId, cliDoneStatus, cliCompletionMsg);
     sendMessage(agentId, 'agent', cliCompletionMsg, taskId);
-    reflectAfterTask(agent, agentDir, task.title, 'Completed via CLI agent.', project);
+    reflectAfterTask(agent, agentDir, task.title, cliCompletionMsg, project);
     try { require('./scheduler').onTaskCompleted(task); } catch {}
   } catch (err) {
     if (err.name === 'AbortError') {
@@ -1954,7 +1958,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
           moveTask(taskId, doneStatus, 'HEARTBEAT_OK');
         } else {
           addLog(taskId, 'success', 'Task completed!');
-          const completionMsg = `I've completed the task: ${task.title}\n\n${summary}`;
+          const completionMsg = String(summary || '').trim() || 'Task completed.';
           moveTask(taskId, doneStatus, completionMsg);
           sendMessage(agentId, 'agent', completionMsg, taskId);
           reflectAfterTask(agent, agentDir, task.title, summary, project);
@@ -1995,7 +1999,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
           moveTask(taskId, textDoneStatus, 'HEARTBEAT_OK');
         } else {
           addLog(taskId, 'success', 'Task completed (text signal)!');
-          const textCompletionMsg = `I've completed the task: ${task.title}\n\n${textSummary}`;
+          const textCompletionMsg = String(textSummary || '').trim() || 'Task completed.';
           moveTask(taskId, textDoneStatus, textCompletionMsg);
           sendMessage(agentId, 'agent', textCompletionMsg, taskId);
           reflectAfterTask(agent, agentDir, task.title, extractSummary(response.content), project);

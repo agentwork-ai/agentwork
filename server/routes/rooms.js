@@ -237,6 +237,7 @@ async function getRoomAgentResponse(agent, room, roomMessages, mentionDirectory,
             workingDirectory: workDir,
             approvalPolicy: 'never',
             sandboxMode: 'danger-full-access',
+            skipGitRepoCheck: true,
           }),
         };
         roomCliSessions.set(cacheKey, session);
