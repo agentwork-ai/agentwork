@@ -1,17 +1,50 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import { api } from '../../lib/api';
 import { API_PROVIDER_DEFS } from '../../lib/llmProviders';
 import { useTheme, useAuth } from '../providers';
 import {
-  Key, Globe, DollarSign, Shield, Palette, Bell,
-  FolderOpen, Save, Eye, EyeOff, TrendingUp, LogOut, BarChart3,
-  FileText, Trash2, Copy, GitBranch,
+  BarChart3,
+  Bell,
+  Copy,
+  Eye,
+  EyeOff,
+  FileText,
+  FolderOpen,
+  GitBranch,
+  Globe,
+  Key,
+  Link2,
+  LogOut,
+  Palette,
+  Save,
+  Shield,
+  Trash2,
+  TrendingUp,
+  Wallet,
 } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+
+const SECTION_DEFS = [
+  { id: 'providers', title: 'Model Providers', description: 'API keys and local model endpoints.', icon: Key },
+  { id: 'oauth', title: 'Connected Accounts', description: 'Reusable OAuth and CLI sign-ins.', icon: Link2 },
+  { id: 'budget', title: 'Spend Controls', description: 'Budgets, trends, and token usage.', icon: Wallet },
+  { id: 'runtime', title: 'Runtime & Access', description: 'Execution limits, auth, and safety.', icon: Shield },
+  { id: 'git', title: 'Git Automation', description: 'Branching, sync, merge, and commit behavior.', icon: GitBranch },
+  { id: 'templates', title: 'Task Blueprints', description: 'Reusable task and flow templates.', icon: Copy },
+  { id: 'preferences', title: 'Workspace & Preferences', description: 'Interface, notifications, and defaults.', icon: Palette },
+];
+
+const ACCENT_OPTIONS = [
+  { value: 'blue', label: 'Blue' },
+  { value: 'green', label: 'Green' },
+  { value: 'orange', label: 'Orange' },
+  { value: 'red', label: 'Red' },
+  { value: 'pink', label: 'Pink' },
+];
 
 export default function SettingsPage() {
   const { theme, toggleTheme } = useTheme();
@@ -29,6 +62,7 @@ export default function SettingsPage() {
   const [codexOauthFlow, setCodexOauthFlow] = useState(null);
   const [codexManualInput, setCodexManualInput] = useState('');
   const [templates, setTemplates] = useState([]);
+  const [activeSection, setActiveSection] = useState(SECTION_DEFS[0].id);
 
   const applyProviderAuthState = useCallback((auth) => {
     setProviderAuth(auth);
@@ -56,22 +90,41 @@ export default function SettingsPage() {
 
   useEffect(() => { load(); }, [load]);
 
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter((entry) => entry.isIntersecting)
+          .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+        if (visible?.target?.id) setActiveSection(visible.target.id);
+      },
+      { rootMargin: '-20% 0px -55% 0px', threshold: [0.15, 0.35, 0.6] }
+    );
+
+    SECTION_DEFS.forEach((section) => {
+      const node = document.getElementById(section.id);
+      if (node) observer.observe(node);
+    });
+
+    return () => observer.disconnect();
+  }, []);
+
   const updateField = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));
   };
+
+  const localModelBaseUrl = settings.custom_base_url || settings.ollama_base_url || 'http://127.0.0.1:11434/v1';
 
   const save = async () => {
     setSaving(true);
     try {
       await api.updateSettings(settings);
-      // If dashboard password was changed, update the auth token
       if (settings.dashboard_password) {
         const result = await api.login(settings.dashboard_password);
         if (result.success && result.token) {
           localStorage.setItem('agentwork-auth-token', result.token);
         }
       } else {
-        // Password cleared, remove token
         localStorage.removeItem('agentwork-auth-token');
       }
       toast.success('Settings saved');
@@ -184,80 +237,184 @@ export default function SettingsPage() {
     };
   }, [applyProviderAuthState, codexOauthFlow?.id, codexOauthFlow?.status, providerAuth]);
 
+  const jumpToSection = (sectionId) => {
+    document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  const configuredProviderCount = useMemo(
+    () => API_PROVIDER_DEFS.filter((provider) => String(settings[provider.keySetting] || '').trim()).length,
+    [settings]
+  );
+
   return (
     <div className="flex h-screen">
       <Sidebar />
       <div className="flex flex-col flex-1 min-w-0">
         <div className="flex items-center justify-between px-6 py-3 border-b" style={{ borderColor: 'var(--border)' }}>
-          <h1 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>Settings</h1>
+          <div>
+            <h1 className="font-semibold text-lg" style={{ color: 'var(--text-primary)' }}>Settings</h1>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+              Organize providers, security, budgets, automation, and workspace defaults in one place.
+            </p>
+          </div>
           <button className="btn btn-primary text-sm" onClick={save} disabled={saving}>
-            <Save size={16} /> {saving ? 'Saving...' : 'Save'}
+            <Save size={16} /> {saving ? 'Saving...' : 'Save changes'}
           </button>
         </div>
 
-        <main className="flex-1 overflow-auto p-6" style={{ background: 'var(--bg-primary)' }}>
-          <div className="max-w-2xl mx-auto space-y-6">
+        <main className="flex-1 overflow-auto p-4 md:p-6" style={{ background: 'var(--bg-primary)' }}>
+          <div className="max-w-7xl mx-auto space-y-6">
+            <div
+              className="rounded-[28px] p-5 md:p-6 border"
+              style={{
+                borderColor: 'var(--border)',
+                background: 'linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-secondary) 100%)',
+              }}
+            >
+              <div className="grid gap-4 lg:grid-cols-[minmax(0,1.7fr),minmax(320px,1fr)] lg:items-end">
+                <div>
+                  <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-tertiary)' }}>
+                    Control Room
+                  </p>
+                  <h2 className="text-2xl md:text-3xl font-semibold mt-2" style={{ color: 'var(--text-primary)' }}>
+                    Tune how AgentWork connects, spends, executes, and ships.
+                  </h2>
+                  <p className="text-sm mt-3 max-w-2xl" style={{ color: 'var(--text-secondary)' }}>
+                    The page is split into focused sections so you can jump straight to provider setup, runtime guardrails,
+                    git automation, and workspace-level preferences without scrolling through one long form.
+                  </p>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <StatTile label="API keys" value={configuredProviderCount} hint="Configured providers" />
+                  <StatTile
+                    label="Budget"
+                    value={budget ? `$${budget.monthly.total.toFixed(2)}` : '...'}
+                    hint="Current monthly spend"
+                  />
+                  <StatTile label="Templates" value={templates.length} hint="Saved task blueprints" />
+                  <StatTile
+                    label="Runtime"
+                    value={`${settings.max_concurrent_executions || '3'}x`}
+                    hint="Max concurrent executions"
+                  />
+                </div>
+              </div>
+            </div>
 
-            {/* API Providers */}
-            <Section icon={<Key size={18} />} title="API Providers">
-              <div className="space-y-4">
-                {API_PROVIDER_DEFS.map((provider) => (
-                  <div key={provider.id}>
-                    <label className="label">{provider.keyLabel}</label>
-                    <div className="flex gap-2">
-                      <input
-                        className="input flex-1 font-mono text-sm"
-                        type={showKeys[provider.id] ? 'text' : 'password'}
+            <div className="grid gap-6 lg:grid-cols-[240px,minmax(0,1fr)]">
+              <aside className="space-y-4">
+                <div className="lg:sticky lg:top-4 space-y-4">
+                  <div className="rounded-3xl border p-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+                    <p className="text-[11px] uppercase tracking-[0.18em] px-2 pb-2" style={{ color: 'var(--text-tertiary)' }}>
+                      Sections
+                    </p>
+                    <div className="space-y-1">
+                      {SECTION_DEFS.map((section) => {
+                        const Icon = section.icon;
+                        const active = activeSection === section.id;
+                        return (
+                          <button
+                            key={section.id}
+                            className="w-full text-left rounded-2xl px-3 py-3 transition-colors"
+                            style={{
+                              background: active ? 'var(--accent-light)' : 'transparent',
+                              color: active ? 'var(--accent)' : 'var(--text-secondary)',
+                            }}
+                            onClick={() => jumpToSection(section.id)}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div
+                                className="w-8 h-8 rounded-xl flex items-center justify-center shrink-0"
+                                style={{ background: active ? 'rgba(255,255,255,0.75)' : 'var(--bg-secondary)' }}
+                              >
+                                <Icon size={15} />
+                              </div>
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium truncate">{section.title}</p>
+                                <p className="text-[11px] truncate" style={{ color: active ? 'var(--accent)' : 'var(--text-tertiary)' }}>
+                                  {section.description}
+                                </p>
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="rounded-3xl border p-4 hidden lg:block" style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Save discipline</p>
+                    <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+                      Changes are local until you hit save. Settings update live across the dashboard after persistence.
+                    </p>
+                  </div>
+                </div>
+              </aside>
+
+              <div className="space-y-6 min-w-0">
+                <MobileSectionTabs activeSection={activeSection} onSelect={jumpToSection} />
+
+                <SectionPanel
+                  id="providers"
+                  icon={<Key size={18} />}
+                  title="Model Providers"
+                  description="Keep provider credentials and local endpoints in one place. The local endpoint is shared for Ollama, LM Studio, and other OpenAI-compatible local runtimes."
+                >
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    {API_PROVIDER_DEFS.map((provider) => (
+                      <ProviderCard
+                        key={provider.id}
+                        provider={provider}
                         value={settings[provider.keySetting] || ''}
-                        onChange={(e) => updateField(provider.keySetting, e.target.value)}
-                        placeholder={provider.keyPlaceholder}
+                        showValue={showKeys[provider.id]}
+                        onToggleVisibility={() => setShowKeys((prev) => ({ ...prev, [provider.id]: !prev[provider.id] }))}
+                        onChange={(value) => updateField(provider.keySetting, value)}
                       />
-                      <button
-                        className="btn btn-ghost"
-                        onClick={() => setShowKeys((p) => ({ ...p, [provider.id]: !p[provider.id] }))}
-                      >
-                        {showKeys[provider.id] ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                    {provider.baseUrlSetting ? (
-                      <div className="mt-2">
-                        <label className="label">{provider.baseUrlLabel}</label>
-                        <input
-                          className="input flex-1 font-mono text-sm"
-                          value={settings[provider.baseUrlSetting] || ''}
-                          onChange={(e) => updateField(provider.baseUrlSetting, e.target.value)}
-                          placeholder={provider.baseUrlPlaceholder}
-                        />
-                      </div>
-                    ) : null}
-                    {provider.helperText ? (
-                      <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                        {provider.helperText}
-                      </p>
-                    ) : null}
-                  </div>
-                ))}
-                <div className="pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
-                  <div className="flex items-center justify-between gap-3 mb-3">
-                    <div>
-                      <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Saved provider sign-ins</p>
-                      <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                        Connect reusable provider authentication here, then assign it to OAuth-backed agents when you hire them.
-                      </p>
-                    </div>
+                    ))}
                   </div>
 
-                  <div className="space-y-3">
-                    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div>
-                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Anthropic setup-token</p>
-                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            Save an Anthropic setup-token here if you want reusable sign-in based auth for Anthropic agents. AgentWork uses this token in the Anthropic API path.
-                          </p>
-                        </div>
-                        <AuthMethodBadge method={getAuthMethod('anthropic', 'setup-token')} />
+                  <div className="grid gap-4 lg:grid-cols-2 mt-5">
+                    <InfoCard
+                      icon={<Globe size={16} />}
+                      title="Local model endpoint"
+                      description="Use one OpenAI-compatible base URL for Ollama, LM Studio, or another local gateway."
+                    >
+                      <Field
+                        label="Base URL"
+                        value={localModelBaseUrl}
+                        onChange={(value) => updateField('custom_base_url', value)}
+                        placeholder="http://127.0.0.1:11434/v1"
+                        monospace
+                      />
+                    </InfoCard>
+
+                    <InfoCard
+                      icon={<FolderOpen size={16} />}
+                      title="Provider notes"
+                      description="Ollama auth is optional. Most hosted providers require a key. OpenRouter can cover several model families through one credential."
+                    >
+                      <div className="grid grid-cols-2 gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        <MetaPill label="OpenRouter" value="multi-provider access" />
+                        <MetaPill label="Ollama" value="local or cloud" />
+                        <MetaPill label="Gemini" value="API key or OAuth" />
+                        <MetaPill label="Codex" value="browser OAuth" />
                       </div>
+                    </InfoCard>
+                  </div>
+                </SectionPanel>
+
+                <SectionPanel
+                  id="oauth"
+                  icon={<Link2 size={18} />}
+                  title="Connected Accounts"
+                  description="Store reusable sign-ins once, then assign them to agents that need browser or CLI-backed authentication."
+                >
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    <AuthCard
+                      title="Anthropic setup-token"
+                      description="Reuse setup-token based auth for Anthropic-backed agents."
+                      method={getAuthMethod('anthropic', 'setup-token')}
+                    >
                       <div className="flex gap-2">
                         <input
                           className="input flex-1 font-mono text-sm"
@@ -268,105 +425,69 @@ export default function SettingsPage() {
                         />
                         <button
                           className="btn btn-ghost"
-                          onClick={() => setShowKeys((p) => ({ ...p, anthropic_setup_token: !p.anthropic_setup_token }))}
+                          onClick={() => setShowKeys((prev) => ({ ...prev, anthropic_setup_token: !prev.anthropic_setup_token }))}
                         >
                           {showKeys.anthropic_setup_token ? <EyeOff size={16} /> : <Eye size={16} />}
                         </button>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-3">
                         <button
                           className="btn btn-primary text-sm"
                           disabled={authBusy.anthropic_token}
-                          onClick={() =>
-                            runAuthAction(
-                              'anthropic_token',
-                              () => api.saveAnthropicSetupToken(anthropicSetupToken),
-                              'Anthropic setup-token saved'
-                            )
-                          }
+                          onClick={() => runAuthAction('anthropic_token', () => api.saveAnthropicSetupToken(anthropicSetupToken), 'Anthropic setup-token saved')}
                         >
                           {authBusy.anthropic_token ? 'Saving...' : 'Save token'}
                         </button>
                         {getAuthMethod('anthropic', 'setup-token')?.configured && (
                           <button
                             className="btn btn-ghost text-sm"
-                            onClick={() =>
-                              runAuthAction(
-                                'anthropic_clear',
-                                () => api.clearProviderAuth('anthropic'),
-                                'Anthropic setup-token cleared'
-                              )
-                            }
+                            onClick={() => runAuthAction('anthropic_clear', () => api.clearProviderAuth('anthropic'), 'Anthropic setup-token cleared')}
                           >
                             Clear
                           </button>
                         )}
                       </div>
-                      <AuthMethodMeta method={getAuthMethod('anthropic', 'setup-token')} />
-                    </div>
+                    </AuthCard>
 
-                    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div>
-                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>OpenAI Codex OAuth</p>
-                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            Browser-based Codex sign-in. AgentWork stores the OAuth profile directly, then syncs it into local Codex auth for chat and task runs.
-                          </p>
-                        </div>
-                        <AuthMethodBadge method={getAuthMethod('openai', 'openai-codex')} />
-                      </div>
+                    <AuthCard
+                      title="OpenAI Codex OAuth"
+                      description="Browser-based sign-in for Codex-backed task runs and chat."
+                      method={getAuthMethod('openai', 'openai-codex')}
+                    >
                       <div className="flex flex-wrap gap-2">
-                        <button
-                          className="btn btn-primary text-sm"
-                          disabled={authBusy.codex_login}
-                          onClick={startCodexOAuth}
-                        >
+                        <button className="btn btn-primary text-sm" disabled={authBusy.codex_login} onClick={startCodexOAuth}>
                           {authBusy.codex_login ? 'Opening...' : 'Connect in browser'}
                         </button>
                         <button
                           className="btn btn-ghost text-sm"
                           disabled={authBusy.codex_import}
-                          onClick={() =>
-                            runAuthAction(
-                              'codex_import',
-                              () => api.importCodexOAuth(),
-                              'Codex OAuth imported from ~/.codex/auth.json'
-                            )
-                          }
+                          onClick={() => runAuthAction('codex_import', () => api.importCodexOAuth(), 'Codex OAuth imported from ~/.codex/auth.json')}
                         >
                           {authBusy.codex_import ? 'Importing...' : 'Import existing auth.json'}
                         </button>
                         {getAuthMethod('openai', 'openai-codex')?.configured && (
                           <button
                             className="btn btn-ghost text-sm"
-                            onClick={() =>
-                              runAuthAction(
-                                'codex_clear',
-                                () => api.clearProviderAuth('openai-codex'),
-                                'Codex OAuth profile cleared'
-                              )
-                            }
+                            onClick={() => runAuthAction('codex_clear', () => api.clearProviderAuth('openai-codex'), 'Codex OAuth profile cleared')}
                           >
                             Clear
                           </button>
                         )}
                       </div>
+
                       {codexOauthFlow?.id ? (
-                        <div
-                          className="mt-3 p-3 rounded-lg border space-y-3"
-                          style={{ borderColor: 'var(--border)', background: 'var(--bg-primary)' }}
-                        >
+                        <div className="mt-3 p-3 rounded-2xl border space-y-3" style={{ borderColor: 'var(--border)', background: 'var(--bg-primary)' }}>
                           <div className="space-y-1">
                             <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
                               {codexOauthFlow.callbackReady
-                                ? 'Finish the OpenAI sign-in in the browser tab that was opened. If the localhost callback does not complete, paste the full redirect URL or the authorization code below.'
-                                : 'The localhost callback on port 1455 is not available. Finish the OpenAI sign-in in the browser, then paste the full redirect URL or the authorization code below.'}
+                                ? 'Finish sign-in in the opened browser tab. If the callback does not complete, paste the full redirect URL or the authorization code below.'
+                                : 'The localhost callback on port 1455 is unavailable. Finish sign-in in the browser, then paste the redirect URL or authorization code below.'}
                             </p>
                             <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
                               Expected callback: <code>http://localhost:1455/auth/callback</code>
                             </p>
                             {codexOauthFlow.error ? (
-                              <p className="text-[11px]" style={{ color: 'var(--danger)' }}>
-                                {codexOauthFlow.error}
-                              </p>
+                              <p className="text-[11px]" style={{ color: 'var(--danger)' }}>{codexOauthFlow.error}</p>
                             ) : null}
                           </div>
                           <div className="flex flex-wrap gap-2">
@@ -376,11 +497,7 @@ export default function SettingsPage() {
                               onChange={(e) => setCodexManualInput(e.target.value)}
                               placeholder="Paste redirect URL or authorization code"
                             />
-                            <button
-                              className="btn btn-secondary text-sm"
-                              disabled={!codexManualInput.trim() || authBusy.codex_manual}
-                              onClick={completeCodexOAuth}
-                            >
+                            <button className="btn btn-secondary text-sm" disabled={!codexManualInput.trim() || authBusy.codex_manual} onClick={completeCodexOAuth}>
                               {authBusy.codex_manual ? 'Completing...' : 'Complete manually'}
                             </button>
                             <button
@@ -396,350 +513,383 @@ export default function SettingsPage() {
                           </div>
                         </div>
                       ) : null}
-                      <AuthMethodMeta method={getAuthMethod('openai', 'openai-codex')} />
-                    </div>
+                    </AuthCard>
 
-                    <div className="p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
-                      <div className="flex items-start justify-between gap-3 mb-2">
-                        <div>
-                          <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Gemini CLI OAuth</p>
-                          <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                            Import local Gemini CLI OAuth credentials here to reuse them for Google-backed agents.
-                          </p>
-                        </div>
-                        <AuthMethodBadge method={getAuthMethod('google', 'google-gemini-cli')} />
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        <input
-                          className="input font-mono text-sm min-w-[220px] flex-1"
-                          value={googleProjectId}
-                          onChange={(e) => setGoogleProjectId(e.target.value)}
-                          placeholder="Optional GOOGLE_CLOUD_PROJECT"
-                        />
+                    <AuthCard
+                      title="Gemini CLI OAuth"
+                      description="Import local Gemini CLI credentials for Google-backed agents."
+                      method={getAuthMethod('google', 'google-gemini-cli')}
+                    >
+                      <Field
+                        label="Optional project override"
+                        value={googleProjectId}
+                        onChange={setGoogleProjectId}
+                        placeholder="GOOGLE_CLOUD_PROJECT"
+                        monospace
+                      />
+                      <div className="flex flex-wrap gap-2 mt-3">
                         <button
                           className="btn btn-primary text-sm"
                           disabled={authBusy.gemini_import}
-                          onClick={() =>
-                            runAuthAction(
-                              'gemini_import',
-                              () => api.importGeminiOAuth(googleProjectId),
-                              'Gemini OAuth imported from local auth'
-                            )
-                          }
+                          onClick={() => runAuthAction('gemini_import', () => api.importGeminiOAuth(googleProjectId), 'Gemini OAuth imported from local auth')}
                         >
                           {authBusy.gemini_import ? 'Importing...' : 'Import from ~/.gemini'}
                         </button>
                         {getAuthMethod('google', 'google-gemini-cli')?.configured && (
                           <button
                             className="btn btn-ghost text-sm"
-                            onClick={() =>
-                              runAuthAction(
-                                'gemini_clear',
-                                () => api.clearProviderAuth('google-gemini-cli'),
-                                'Gemini OAuth profile cleared'
-                              )
-                            }
+                            onClick={() => runAuthAction('gemini_clear', () => api.clearProviderAuth('google-gemini-cli'), 'Gemini OAuth profile cleared')}
                           >
                             Clear
                           </button>
                         )}
                       </div>
-                      <AuthMethodMeta method={getAuthMethod('google', 'google-gemini-cli')} />
-                    </div>
+                    </AuthCard>
                   </div>
-                </div>
-                <div>
-                  <label className="label">Custom Base URL (for local LLMs like Ollama/LMStudio)</label>
-                  <input
-                    className="input font-mono text-sm"
-                    value={settings.custom_base_url || ''}
-                    onChange={(e) => updateField('custom_base_url', e.target.value)}
-                    placeholder="http://localhost:11434/v1"
-                  />
-                </div>
-              </div>
-            </Section>
+                </SectionPanel>
 
-            {/* Budget */}
-            <Section icon={<DollarSign size={18} />} title="Budget Limits">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Daily Budget (USD)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    value={settings.daily_budget_usd || '10'}
-                    onChange={(e) => updateField('daily_budget_usd', e.target.value)}
-                  />
-                  {budget && (
-                    <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                      Used today: ${budget.daily.total.toFixed(4)} / ${budget.daily.limit.toFixed(2)}
-                    </p>
-                  )}
-                </div>
-                <div>
-                  <label className="label">Monthly Budget (USD)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    step="0.01"
-                    value={settings.monthly_budget_usd || '100'}
-                    onChange={(e) => updateField('monthly_budget_usd', e.target.value)}
-                  />
-                  {budget && (
-                    <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                      Used this month: ${budget.monthly.total.toFixed(4)} / ${budget.monthly.limit.toFixed(2)}
-                    </p>
-                  )}
-                </div>
-              </div>
-              {budget && (
-                <div className="mt-4 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
-                  <div className="flex items-center gap-2 mb-2">
-                    <TrendingUp size={14} style={{ color: 'var(--accent)' }} />
-                    <span className="text-xs font-semibold" style={{ color: 'var(--text-secondary)' }}>Token Usage</span>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                    <div>Today: {formatTokens(budget.daily.input_tokens + budget.daily.output_tokens)} tokens</div>
-                    <div>This month: {formatTokens(budget.monthly.input_tokens + budget.monthly.output_tokens)} tokens</div>
-                  </div>
-                </div>
-              )}
-            </Section>
-
-            {/* Budget Analytics */}
-            <Section icon={<BarChart3 size={18} />} title="Budget Analytics">
-              <BudgetAnalytics history={budgetHistory} byAgent={budgetByAgent} />
-            </Section>
-
-            {/* Execution */}
-            <Section icon={<TrendingUp size={18} />} title="Execution">
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="label">Max Iterations per Task</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="1"
-                    max="200"
-                    value={settings.max_iterations || '30'}
-                    onChange={(e) => updateField('max_iterations', e.target.value)}
-                  />
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    API-mode agents stop after this many tool-call loops (default: 30)
-                  </p>
-                </div>
-                <div>
-                  <label className="label">Task Timeout (minutes)</label>
-                  <input
-                    className="input"
-                    type="number"
-                    min="0"
-                    max="1440"
-                    value={settings.task_timeout_minutes || '0'}
-                    onChange={(e) => updateField('task_timeout_minutes', e.target.value)}
-                  />
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    Auto-block tasks running longer than this (0 = no timeout)
-                  </p>
-                </div>
-              </div>
-            </Section>
-
-            {/* Security */}
-            <Section icon={<Shield size={18} />} title="Security">
-              <div className="space-y-4">
-                <div>
-                  <label className="label">Dashboard Password</label>
-                  <div className="flex gap-2">
-                    <input
-                      className="input flex-1 font-mono text-sm"
-                      type={showKeys.dashboard_password ? 'text' : 'password'}
-                      value={settings.dashboard_password || ''}
-                      onChange={(e) => updateField('dashboard_password', e.target.value)}
-                      placeholder="Leave empty to disable"
-                    />
-                    <button className="btn btn-ghost" onClick={() => setShowKeys((p) => ({ ...p, dashboard_password: !p.dashboard_password }))}>
-                      {showKeys.dashboard_password ? <EyeOff size={16} /> : <Eye size={16} />}
-                    </button>
-                  </div>
-                  <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
-                    Protect the dashboard with a password. Leave empty to disable authentication.
-                    After saving, you will need to log in with this password.
-                  </p>
-                </div>
-                {settings.dashboard_password && (
-                  <div className="flex">
-                    <button className="btn btn-ghost text-sm flex items-center gap-1.5" onClick={logout}>
-                      <LogOut size={14} /> Sign Out
-                    </button>
-                  </div>
-                )}
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Require confirmation for destructive commands
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Agents will ask before running rm, drop, delete, etc.
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    checked={settings.require_confirmation_destructive === 'true'}
-                    onChange={(v) => updateField('require_confirmation_destructive', v ? 'true' : 'false')}
-                  />
-                </div>
-              </div>
-            </Section>
-
-            {/* Git Behavior */}
-            <Section icon={<GitBranch size={18} />} title="Git Behavior">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Auto Git Branch + PR
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Create a feature branch before each task, commit + push + open PR when done
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    checked={settings.auto_git_branch === 'true'}
-                    onChange={(v) => updateField('auto_git_branch', v ? 'true' : 'false')}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Auto Commit Code
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Commit task changes automatically when the task finishes successfully
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    checked={settings.auto_commit_code !== 'false'}
-                    onChange={(v) => updateField('auto_commit_code', v ? 'true' : 'false')}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Auto Sync from Main
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Pull latest from main/master before starting each task, auto-resolve conflicts
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    checked={settings.auto_git_sync === 'true'}
-                    onChange={(v) => updateField('auto_git_sync', v ? 'true' : 'false')}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Auto Merge to Main
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Merge completed task branches back to main (via PR or local merge)
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    checked={settings.auto_git_merge === 'true'}
-                    onChange={(v) => updateField('auto_git_merge', v ? 'true' : 'false')}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>
-                      Auto Init Git
-                    </p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                      Initialize a git repo if the project directory doesn't have one
-                    </p>
-                  </div>
-                  <ToggleSwitch
-                    checked={settings.auto_git_init === 'true'}
-                    onChange={(v) => updateField('auto_git_init', v ? 'true' : 'false')}
-                  />
-                </div>
-              </div>
-            </Section>
-
-            {/* Task Templates */}
-            <Section icon={<Copy size={18} />} title="Task Templates">
-              {templates.length === 0 ? (
-                <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
-                  No templates yet. Save a task as a template from the Kanban board task detail view.
-                </p>
-              ) : (
-                <div className="space-y-2">
-                  <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
-                    {templates.length} template{templates.length !== 1 ? 's' : ''}. Use "From Template" when creating new tasks on the Kanban board.
-                  </p>
-                  {templates.map((t) => (
-                    <div key={t.id} className="flex items-center gap-3 p-3 rounded-lg" style={{ background: 'var(--bg-secondary)' }}>
-                      <FileText size={16} style={{ color: 'var(--accent)' }} className="shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{t.name}</p>
-                        <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
-                          {t.priority} priority{t.task_type === 'flow' ? ' · Flow' : ''}{t.tags ? ` · ${t.tags}` : ''}
-                        </p>
+                <SectionPanel
+                  id="budget"
+                  icon={<Wallet size={18} />}
+                  title="Spend Controls"
+                  description="Set global budget caps, review current usage, and inspect where spend is accumulating."
+                >
+                  <div className="grid gap-4 lg:grid-cols-2">
+                    <InfoCard icon={<Wallet size={16} />} title="Budget caps" description="Hard limits used to guard monthly and daily spend.">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Field
+                          label="Daily budget (USD)"
+                          type="number"
+                          step="0.01"
+                          value={settings.daily_budget_usd || '10'}
+                          onChange={(value) => updateField('daily_budget_usd', value)}
+                        />
+                        <Field
+                          label="Monthly budget (USD)"
+                          type="number"
+                          step="0.01"
+                          value={settings.monthly_budget_usd || '100'}
+                          onChange={(value) => updateField('monthly_budget_usd', value)}
+                        />
                       </div>
-                      <button
-                        className="btn btn-ghost text-xs shrink-0"
-                        style={{ color: 'var(--danger)' }}
-                        onClick={async () => {
-                          if (!confirm(`Delete template "${t.name}"?`)) return;
-                          try {
-                            await api.deleteTemplate(t.id);
-                            setTemplates((prev) => prev.filter((x) => x.id !== t.id));
-                            toast.success('Template deleted');
-                          } catch (err) { toast.error(err.message); }
-                        }}
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </Section>
+                      {budget ? (
+                        <div className="grid grid-cols-2 gap-3 mt-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                          <MetaPill label="Today" value={`$${budget.daily.total.toFixed(4)} / $${budget.daily.limit.toFixed(2)}`} />
+                          <MetaPill label="Month" value={`$${budget.monthly.total.toFixed(4)} / $${budget.monthly.limit.toFixed(2)}`} />
+                        </div>
+                      ) : null}
+                    </InfoCard>
 
-            {/* Preferences */}
-            <Section icon={<Palette size={18} />} title="Preferences">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Dark Mode</p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Toggle between light and dark theme</p>
+                    <InfoCard icon={<TrendingUp size={16} />} title="Usage snapshot" description="Quick readout of token and cost activity.">
+                      {budget ? (
+                        <div className="grid grid-cols-2 gap-3">
+                          <MetricCard label="Today's tokens" value={formatTokens(budget.daily.input_tokens + budget.daily.output_tokens)} />
+                          <MetricCard label="Monthly tokens" value={formatTokens(budget.monthly.input_tokens + budget.monthly.output_tokens)} />
+                          <MetricCard label="Today's spend" value={`$${budget.daily.total.toFixed(2)}`} />
+                          <MetricCard label="Monthly spend" value={`$${budget.monthly.total.toFixed(2)}`} />
+                        </div>
+                      ) : (
+                        <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>Budget data will appear after the first paid model calls.</p>
+                      )}
+                    </InfoCard>
                   </div>
-                  <ToggleSwitch checked={theme === 'dark'} onChange={toggleTheme} />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Notification Sounds</p>
-                    <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Play sounds when agents need attention</p>
+
+                  <div className="mt-5">
+                    <InfoCard icon={<BarChart3 size={16} />} title="Spend analytics" description="Trend line for daily cost and a ranked breakdown by agent.">
+                      <BudgetAnalytics history={budgetHistory} byAgent={budgetByAgent} />
+                    </InfoCard>
                   </div>
-                  <ToggleSwitch
-                    checked={settings.notification_sounds === 'true'}
-                    onChange={(v) => updateField('notification_sounds', v ? 'true' : 'false')}
-                  />
-                </div>
-                <div>
-                  <label className="label">Default Workspace Directory</label>
-                  <input
-                    className="input font-mono text-sm"
-                    value={settings.default_workspace || ''}
-                    onChange={(e) => updateField('default_workspace', e.target.value)}
-                    placeholder="/Users/you/projects"
-                  />
-                </div>
+                </SectionPanel>
+
+                <SectionPanel
+                  id="runtime"
+                  icon={<Shield size={18} />}
+                  title="Runtime & Access"
+                  description="Tune execution limits, dashboard access, concurrency, rate limiting, and logging behavior."
+                >
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <InfoCard icon={<TrendingUp size={16} />} title="Execution limits" description="Bound how much work the scheduler and API-mode agents can do at once.">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Field
+                          label="Max iterations per task"
+                          type="number"
+                          value={settings.max_iterations || '30'}
+                          onChange={(value) => updateField('max_iterations', value)}
+                        />
+                        <Field
+                          label="Task timeout (minutes)"
+                          type="number"
+                          value={settings.task_timeout_minutes || '0'}
+                          onChange={(value) => updateField('task_timeout_minutes', value)}
+                        />
+                        <Field
+                          label="Max concurrent executions"
+                          type="number"
+                          value={settings.max_concurrent_executions || '3'}
+                          onChange={(value) => updateField('max_concurrent_executions', value)}
+                        />
+                        <Field
+                          label="Rate limit between model calls (ms)"
+                          type="number"
+                          value={settings.rate_limit_ms || '0'}
+                          onChange={(value) => updateField('rate_limit_ms', value)}
+                        />
+                      </div>
+                    </InfoCard>
+
+                    <InfoCard icon={<Shield size={16} />} title="Dashboard access" description="Protect the dashboard and decide how careful the runtime should be with destructive commands.">
+                      <Field
+                        label="Dashboard password"
+                        type={showKeys.dashboard_password ? 'text' : 'password'}
+                        value={settings.dashboard_password || ''}
+                        onChange={(value) => updateField('dashboard_password', value)}
+                        placeholder="Leave empty to disable"
+                        trailing={(
+                          <button className="btn btn-ghost" onClick={() => setShowKeys((prev) => ({ ...prev, dashboard_password: !prev.dashboard_password }))}>
+                            {showKeys.dashboard_password ? <EyeOff size={16} /> : <Eye size={16} />}
+                          </button>
+                        )}
+                        monospace
+                      />
+                      {settings.dashboard_password ? (
+                        <div className="mt-3">
+                          <button className="btn btn-ghost text-sm flex items-center gap-1.5" onClick={logout}>
+                            <LogOut size={14} /> Sign out
+                          </button>
+                        </div>
+                      ) : null}
+                      <div className="mt-4 space-y-3">
+                        <ToggleRow
+                          title="Confirm destructive commands"
+                          description="Ask before running rm, drop, delete, and similar high-risk actions."
+                          checked={settings.require_confirmation_destructive === 'true'}
+                          onChange={(v) => updateField('require_confirmation_destructive', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Verbose AI logging"
+                          description="Log expanded provider request metadata for debugging and audits."
+                          checked={settings.verbose_ai_logging === 'true'}
+                          onChange={(v) => updateField('verbose_ai_logging', v ? 'true' : 'false')}
+                        />
+                      </div>
+                    </InfoCard>
+                  </div>
+                </SectionPanel>
+
+                <SectionPanel
+                  id="git"
+                  icon={<GitBranch size={18} />}
+                  title="Git Automation"
+                  description="Control how tasks initialize repositories, sync from main, branch, commit, push, and merge."
+                >
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <InfoCard icon={<GitBranch size={16} />} title="Task branch flow" description="Use task-scoped branches and PRs when you want execution isolated from the main line.">
+                      <div className="space-y-3">
+                        <ToggleRow
+                          title="Auto branch + PR"
+                          description="Create a task branch before work starts, then push and open a PR after completion."
+                          checked={settings.auto_git_branch === 'true'}
+                          onChange={(v) => updateField('auto_git_branch', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Auto commit code"
+                          description="Commit successful task changes automatically, even if branch creation is disabled."
+                          checked={settings.auto_commit_code !== 'false'}
+                          onChange={(v) => updateField('auto_commit_code', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Auto merge back to main"
+                          description="Merge completed task branches after push or PR completion."
+                          checked={settings.auto_git_merge === 'true'}
+                          onChange={(v) => updateField('auto_git_merge', v ? 'true' : 'false')}
+                        />
+                      </div>
+                    </InfoCard>
+
+                    <InfoCard icon={<FolderOpen size={16} />} title="Repository prep" description="Prepare the working tree before an agent starts making changes.">
+                      <div className="space-y-3">
+                        <ToggleRow
+                          title="Auto sync from main"
+                          description="Pull latest changes before starting each task and attempt stash-based recovery."
+                          checked={settings.auto_git_sync === 'true'}
+                          onChange={(v) => updateField('auto_git_sync', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Auto initialize git"
+                          description="Create a repository automatically if the project path does not already have one."
+                          checked={settings.auto_git_init === 'true'}
+                          onChange={(v) => updateField('auto_git_init', v ? 'true' : 'false')}
+                        />
+                      </div>
+                    </InfoCard>
+                  </div>
+                </SectionPanel>
+
+                <SectionPanel
+                  id="templates"
+                  icon={<Copy size={18} />}
+                  title="Task Blueprints"
+                  description="Reusable single-task and multi-step flow templates for recurring work patterns."
+                >
+                  <InfoCard icon={<FileText size={16} />} title="Saved templates" description="These are available from the Kanban board when creating new tasks.">
+                    {templates.length === 0 ? (
+                      <p className="text-sm" style={{ color: 'var(--text-tertiary)' }}>
+                        No templates yet. Save a task as a template from the Kanban board task detail view.
+                      </p>
+                    ) : (
+                      <div className="space-y-2">
+                        <p className="text-xs mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                          {templates.length} template{templates.length !== 1 ? 's' : ''} available for reuse.
+                        </p>
+                        {templates.map((template) => (
+                          <div
+                            key={template.id}
+                            className="flex items-center gap-3 p-3 rounded-2xl"
+                            style={{ background: 'var(--bg-secondary)' }}
+                          >
+                            <FileText size={16} style={{ color: 'var(--accent)' }} className="shrink-0" />
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{template.name}</p>
+                              <p className="text-xs truncate" style={{ color: 'var(--text-tertiary)' }}>
+                                {template.priority} priority{template.task_type === 'flow' ? ' · Flow' : ''}{template.tags ? ` · ${template.tags}` : ''}
+                              </p>
+                            </div>
+                            <button
+                              className="btn btn-ghost text-xs shrink-0"
+                              style={{ color: 'var(--danger)' }}
+                              onClick={async () => {
+                                if (!confirm(`Delete template "${template.name}"?`)) return;
+                                try {
+                                  await api.deleteTemplate(template.id);
+                                  setTemplates((prev) => prev.filter((item) => item.id !== template.id));
+                                  toast.success('Template deleted');
+                                } catch (err) {
+                                  toast.error(err.message);
+                                }
+                              }}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </InfoCard>
+                </SectionPanel>
+
+                <SectionPanel
+                  id="preferences"
+                  icon={<Palette size={18} />}
+                  title="Workspace & Preferences"
+                  description="Personalize the UI, set notification behavior, and define default directories and visual accents."
+                >
+                  <div className="grid gap-4 xl:grid-cols-2">
+                    <InfoCard icon={<Palette size={16} />} title="Interface" description="Visual defaults for your own dashboard workspace.">
+                      <div className="space-y-3">
+                        <ToggleRow
+                          title="Dark mode"
+                          description="Switch between the light and dark dashboard theme."
+                          checked={theme === 'dark'}
+                          onChange={toggleTheme}
+                        />
+                        <ToggleRow
+                          title="Notification sounds"
+                          description="Play sounds when agents need attention or workflows require review."
+                          checked={settings.notification_sounds === 'true'}
+                          onChange={(v) => updateField('notification_sounds', v ? 'true' : 'false')}
+                        />
+                        <SelectField
+                          label="Accent color"
+                          value={settings.accent_color || 'blue'}
+                          onChange={(value) => updateField('accent_color', value)}
+                          options={ACCENT_OPTIONS}
+                        />
+                        <Field
+                          label="Default workspace directory"
+                          value={settings.default_workspace || ''}
+                          onChange={(value) => updateField('default_workspace', value)}
+                          placeholder="/Users/you/projects"
+                          monospace
+                        />
+                      </div>
+                    </InfoCard>
+
+                    <InfoCard icon={<Bell size={16} />} title="Alerts & email" description="Notification routing and SMTP values for dashboard-driven alerts.">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <Field
+                          label="Notification email"
+                          value={settings.notification_email || ''}
+                          onChange={(value) => updateField('notification_email', value)}
+                          placeholder="ops@example.com"
+                        />
+                        <Field
+                          label="From address"
+                          value={settings.smtp_from || ''}
+                          onChange={(value) => updateField('smtp_from', value)}
+                          placeholder="AgentWork <noreply@example.com>"
+                        />
+                        <Field
+                          label="SMTP host"
+                          value={settings.smtp_host || ''}
+                          onChange={(value) => updateField('smtp_host', value)}
+                          placeholder="smtp.example.com"
+                        />
+                        <Field
+                          label="SMTP port"
+                          value={settings.smtp_port || '587'}
+                          onChange={(value) => updateField('smtp_port', value)}
+                          placeholder="587"
+                        />
+                        <Field
+                          label="SMTP user"
+                          value={settings.smtp_user || ''}
+                          onChange={(value) => updateField('smtp_user', value)}
+                          placeholder="smtp-user"
+                        />
+                        <Field
+                          label="SMTP password"
+                          type={showKeys.smtp_pass ? 'text' : 'password'}
+                          value={settings.smtp_pass || ''}
+                          onChange={(value) => updateField('smtp_pass', value)}
+                          placeholder="••••••••"
+                          trailing={(
+                            <button className="btn btn-ghost" onClick={() => setShowKeys((prev) => ({ ...prev, smtp_pass: !prev.smtp_pass }))}>
+                              {showKeys.smtp_pass ? <EyeOff size={16} /> : <Eye size={16} />}
+                            </button>
+                          )}
+                        />
+                      </div>
+                      <div className="mt-4 space-y-3">
+                        <ToggleRow
+                          title="Notify when tasks complete"
+                          description="Use email notifications for successful runs."
+                          checked={settings.notify_task_complete === 'true'}
+                          onChange={(v) => updateField('notify_task_complete', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Notify when tasks block"
+                          description="Send alerts when an agent asks for help or gets blocked."
+                          checked={settings.notify_task_blocked === 'true'}
+                          onChange={(v) => updateField('notify_task_blocked', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Notify on budget threshold"
+                          description="Alert when budget usage crosses configured limits."
+                          checked={settings.notify_budget_threshold === 'true'}
+                          onChange={(v) => updateField('notify_budget_threshold', v ? 'true' : 'false')}
+                        />
+                        <ToggleRow
+                          title="Notify on agent messages"
+                          description="Alert when agents send direct messages that need attention."
+                          checked={settings.notify_agent_messages === 'true'}
+                          onChange={(v) => updateField('notify_agent_messages', v ? 'true' : 'false')}
+                        />
+                      </div>
+                    </InfoCard>
+                  </div>
+                </SectionPanel>
               </div>
-            </Section>
+            </div>
           </div>
         </main>
         <BottomBar />
@@ -748,15 +898,198 @@ export default function SettingsPage() {
   );
 }
 
-function Section({ icon, title, children }) {
+function MobileSectionTabs({ activeSection, onSelect }) {
   return (
-    <div className="card p-5">
-      <div className="flex items-center gap-2 mb-4">
-        <span style={{ color: 'var(--accent)' }}>{icon}</span>
-        <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h2>
+    <div className="lg:hidden -mx-1 overflow-x-auto pb-1">
+      <div className="flex gap-2 min-w-max px-1">
+        {SECTION_DEFS.map((section) => {
+          const active = activeSection === section.id;
+          return (
+            <button
+              key={section.id}
+              className="px-3 py-2 rounded-full text-sm whitespace-nowrap"
+              style={{
+                background: active ? 'var(--accent-light)' : 'var(--bg-secondary)',
+                color: active ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+              onClick={() => onSelect(section.id)}
+            >
+              {section.title}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SectionPanel({ id, icon, title, description, children }) {
+  return (
+    <section id={id} className="rounded-[28px] border p-5 md:p-6 scroll-mt-6" style={{ borderColor: 'var(--border)', background: 'var(--bg-elevated)' }}>
+      <div className="flex items-start gap-4 mb-5">
+        <div
+          className="w-11 h-11 rounded-2xl flex items-center justify-center shrink-0"
+          style={{ background: 'var(--accent-light)', color: 'var(--accent)' }}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h2>
+          <p className="text-sm mt-1 max-w-3xl" style={{ color: 'var(--text-tertiary)' }}>{description}</p>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
+function InfoCard({ icon, title, description, children }) {
+  return (
+    <div className="rounded-3xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+      <div className="flex items-start gap-3 mb-4">
+        <div
+          className="w-9 h-9 rounded-2xl flex items-center justify-center shrink-0"
+          style={{ background: 'var(--bg-elevated)', color: 'var(--accent)' }}
+        >
+          {icon}
+        </div>
+        <div className="min-w-0">
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{description}</p>
+        </div>
       </div>
       {children}
     </div>
+  );
+}
+
+function ProviderCard({ provider, value, showValue, onToggleVisibility, onChange }) {
+  return (
+    <div className="rounded-3xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{provider.label}</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>
+            {provider.helperText || 'Stored locally and reused by provider-backed agents.'}
+          </p>
+        </div>
+        <AuthStateTag active={Boolean(String(value || '').trim())} activeLabel="Key added" inactiveLabel="Empty" />
+      </div>
+      <div className="flex gap-2">
+        <input
+          className="input flex-1 font-mono text-sm"
+          type={showValue ? 'text' : 'password'}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={provider.keyPlaceholder}
+        />
+        <button className="btn btn-ghost" onClick={onToggleVisibility}>
+          {showValue ? <EyeOff size={16} /> : <Eye size={16} />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AuthCard({ title, description, method, children }) {
+  return (
+    <div className="rounded-3xl border p-4" style={{ borderColor: 'var(--border)', background: 'var(--bg-secondary)' }}>
+      <div className="flex items-start justify-between gap-3 mb-3">
+        <div>
+          <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</p>
+          <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{description}</p>
+        </div>
+        <AuthMethodBadge method={method} />
+      </div>
+      {children}
+      <AuthMethodMeta method={method} />
+    </div>
+  );
+}
+
+function ToggleRow({ title, description, checked, onChange }) {
+  return (
+    <div className="flex items-center justify-between gap-4">
+      <div className="min-w-0">
+        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{title}</p>
+        <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{description}</p>
+      </div>
+      <ToggleSwitch checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+function Field({ label, value, onChange, placeholder, type = 'text', trailing = null, monospace = false, step = undefined }) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <div className="flex gap-2">
+        <input
+          className={`input flex-1 ${monospace ? 'font-mono text-sm' : ''}`}
+          type={type}
+          step={step}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          placeholder={placeholder}
+        />
+        {trailing}
+      </div>
+    </div>
+  );
+}
+
+function SelectField({ label, value, onChange, options }) {
+  return (
+    <div>
+      <label className="label">{label}</label>
+      <select className="input" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((option) => (
+          <option key={option.value} value={option.value}>{option.label}</option>
+        ))}
+      </select>
+    </div>
+  );
+}
+
+function StatTile({ label, value, hint }) {
+  return (
+    <div className="rounded-2xl p-3" style={{ background: 'rgba(255,255,255,0.55)', border: '1px solid var(--border)' }}>
+      <p className="text-[11px] uppercase tracking-[0.18em]" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+      <p className="text-xl font-semibold mt-2" style={{ color: 'var(--text-primary)' }}>{value}</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--text-tertiary)' }}>{hint}</p>
+    </div>
+  );
+}
+
+function MetricCard({ label, value }) {
+  return (
+    <div className="rounded-2xl p-3" style={{ background: 'var(--bg-primary)' }}>
+      <p className="text-[11px] uppercase tracking-[0.14em]" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+      <p className="text-lg font-semibold mt-2" style={{ color: 'var(--text-primary)' }}>{value}</p>
+    </div>
+  );
+}
+
+function MetaPill({ label, value }) {
+  return (
+    <div className="rounded-2xl px-3 py-2" style={{ background: 'var(--bg-primary)' }}>
+      <p className="text-[10px] uppercase tracking-[0.16em]" style={{ color: 'var(--text-tertiary)' }}>{label}</p>
+      <p className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{value}</p>
+    </div>
+  );
+}
+
+function AuthStateTag({ active, activeLabel, inactiveLabel }) {
+  return (
+    <span
+      className="px-2.5 py-1 rounded-full text-[11px] font-medium shrink-0"
+      style={{
+        background: active ? '#2f9e4420' : 'var(--bg-tertiary)',
+        color: active ? '#2f9e44' : 'var(--text-tertiary)',
+      }}
+    >
+      {active ? activeLabel : inactiveLabel}
+    </span>
   );
 }
 
@@ -804,7 +1137,7 @@ function AuthMethodMeta({ method }) {
   if (parts.length === 0) return null;
 
   return (
-    <p className="text-xs mt-2" style={{ color: 'var(--text-tertiary)' }}>
+    <p className="text-xs mt-3" style={{ color: 'var(--text-tertiary)' }}>
       {parts.join(' · ')}
     </p>
   );
@@ -832,21 +1165,19 @@ function BudgetAnalytics({ history, byAgent }) {
 
   return (
     <div className="space-y-5">
-      {/* Sparkline: daily spend over last 30 days */}
       {hasHistory && (
         <div>
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-            Daily Spend (Last 30 Days)
+            Daily spend over the last 30 days
           </p>
           <SpendSparkline data={history} />
         </div>
       )}
 
-      {/* Mini bar chart: top 5 agents by spend */}
       {hasAgentData && (
         <div>
           <p className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
-            Top Agents by Spend
+            Top agents by spend
           </p>
           <AgentSpendBars data={byAgent.slice(0, 5)} />
         </div>
@@ -856,42 +1187,34 @@ function BudgetAnalytics({ history, byAgent }) {
 }
 
 function SpendSparkline({ data }) {
-  // Sort chronologically (API returns DESC)
   const sorted = [...data].sort((a, b) => (a.date > b.date ? 1 : -1));
   const costs = sorted.map((d) => d.cost || 0);
   const maxCost = Math.max(...costs, 0.001);
-  const totalSpend = costs.reduce((s, c) => s + c, 0);
+  const totalSpend = costs.reduce((sum, cost) => sum + cost, 0);
 
-  const W = 200;
-  const H = 40;
+  const W = 240;
+  const H = 48;
   const padY = 2;
 
-  // Build polyline points
-  const points = costs.map((c, i) => {
+  const points = costs.map((cost, i) => {
     const x = costs.length === 1 ? W / 2 : (i / (costs.length - 1)) * W;
-    const y = H - padY - ((c / maxCost) * (H - padY * 2));
+    const y = H - padY - ((cost / maxCost) * (H - padY * 2));
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ');
 
-  // Build gradient fill polygon (area under the line)
-  const fillPoints = `0,${H} ${costs.map((c, i) => {
+  const fillPoints = `0,${H} ${costs.map((cost, i) => {
     const x = costs.length === 1 ? W / 2 : (i / (costs.length - 1)) * W;
-    const y = H - padY - ((c / maxCost) * (H - padY * 2));
+    const y = H - padY - ((cost / maxCost) * (H - padY * 2));
     return `${x.toFixed(1)},${y.toFixed(1)}`;
   }).join(' ')} ${W},${H}`;
 
   return (
     <div className="flex items-center gap-3">
-      <svg
-        width={W}
-        height={H}
-        viewBox={`0 0 ${W} ${H}`}
-        style={{ background: 'var(--bg-secondary)', borderRadius: '6px' }}
-      >
+      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{ background: 'var(--bg-primary)', borderRadius: '10px' }}>
         <defs>
           <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.3" />
-            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.02" />
+            <stop offset="0%" stopColor="var(--accent)" stopOpacity="0.28" />
+            <stop offset="100%" stopColor="var(--accent)" stopOpacity="0.03" />
           </linearGradient>
         </defs>
         <polygon points={fillPoints} fill="url(#sparkFill)" />
@@ -903,7 +1226,6 @@ function SpendSparkline({ data }) {
           strokeLinecap="round"
           strokeLinejoin="round"
         />
-        {/* Dot on the last point */}
         {costs.length > 0 && (() => {
           const lastIdx = costs.length - 1;
           const cx = costs.length === 1 ? W / 2 : (lastIdx / (costs.length - 1)) * W;
@@ -912,9 +1234,7 @@ function SpendSparkline({ data }) {
         })()}
       </svg>
       <div className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
-        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-          ${totalSpend.toFixed(2)}
-        </div>
+        <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>${totalSpend.toFixed(2)}</div>
         <div>30-day total</div>
       </div>
     </div>
@@ -922,15 +1242,15 @@ function SpendSparkline({ data }) {
 }
 
 function AgentSpendBars({ data }) {
-  const maxCost = Math.max(...data.map((d) => d.total_cost || 0), 0.001);
+  const maxCost = Math.max(...data.map((item) => item.total_cost || 0), 0.001);
 
   return (
     <div className="space-y-2">
-      {data.map((agent, i) => {
+      {data.map((agent, index) => {
         const pct = Math.max(((agent.total_cost || 0) / maxCost) * 100, 2);
-        const color = AGENT_COLORS[i % AGENT_COLORS.length];
+        const color = AGENT_COLORS[index % AGENT_COLORS.length];
         return (
-          <div key={agent.agent_id || i}>
+          <div key={agent.agent_id || index}>
             <div className="flex items-center justify-between mb-0.5">
               <span className="text-xs flex items-center gap-1 truncate" style={{ color: 'var(--text-secondary)' }}>
                 <span>{agent.avatar || ''}</span>
@@ -940,14 +1260,8 @@ function AgentSpendBars({ data }) {
                 ${(agent.total_cost || 0).toFixed(4)}
               </span>
             </div>
-            <div
-              className="h-2 rounded-full overflow-hidden"
-              style={{ background: 'var(--bg-tertiary)' }}
-            >
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{ width: `${pct}%`, background: color }}
-              />
+            <div className="h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-primary)' }}>
+              <div className="h-full rounded-full transition-all duration-500" style={{ width: `${pct}%`, background: color }} />
             </div>
           </div>
         );

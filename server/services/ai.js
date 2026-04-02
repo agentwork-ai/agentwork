@@ -26,6 +26,7 @@ function getProviderBaseUrl(provider, customBaseUrl = '') {
   }
 
   if (config?.baseUrlSetting) {
+    if (provider === 'ollama' && trimmedCustomBaseUrl) return trimmedCustomBaseUrl;
     const configured = String(getSetting(config.baseUrlSetting) || '').trim();
     if (configured) return configured;
   }
