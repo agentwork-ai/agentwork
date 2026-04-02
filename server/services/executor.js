@@ -1251,6 +1251,9 @@ function ensureGitRepo(workDir, taskId) {
 async function executeTaskCli(taskId, agentId, agent, task, project, workDir, execState, executionMode = 'coding') {
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const isRecurring = task.trigger_type === 'cron';
+  const promptWorkDir = project?.path ? workDir : '';
+  const isProjectScoped = Boolean(project?.path);
+  const shouldPreferBrowserWorkflow = executionMode === 'general' && !isProjectScoped;
   const agentContext = buildAgentContext(agentId, agent, {
     includeMemory: !isRecurring,
     includeHeartbeat: isRecurring,
@@ -1260,7 +1263,9 @@ async function executeTaskCli(taskId, agentId, agent, task, project, workDir, ex
   const sdkName = isCodex ? 'Codex' : 'Claude';
 
   addLog(taskId, 'info', `Using ${sdkName} Agent SDK (CLI mode)`);
-  addLog(taskId, 'info', `Provider: ${agent.provider} | Working dir: ${workDir}`);
+  addLog(taskId, 'info', isProjectScoped
+    ? `Provider: ${agent.provider} | Working dir: ${workDir}`
+    : `Provider: ${agent.provider}`);
 
   // Codex requires a git repo
   if (isCodex) {
@@ -1281,9 +1286,7 @@ ${projectDoc ? `## Project Documentation\n${projectDoc}\n\n` : ''}${describeTask
 Title: ${task.title}
 Description: ${task.description || 'No description provided.'}
 
-Working directory: ${workDir}
-
-${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the live checklist and ignore stale work if that file is empty.\n\n' : ''}${executionMode === 'coding'
+${promptWorkDir ? `Working directory: ${promptWorkDir}\n\n` : ''}${shouldPreferBrowserWorkflow ? 'This task is not tied to a project workspace. Prefer browser/web research workflow over local file inspection unless the user explicitly asks for filesystem work.\n\n' : ''}${isRecurring ? 'This is a recurring scheduled run. Treat HEARTBEAT.md as the live checklist and ignore stale work if that file is empty.\n\n' : ''}${executionMode === 'coding'
   ? 'Please complete this task autonomously. Analyze the codebase, plan your approach, make the necessary changes, and verify they work.'
   : 'Please complete this task autonomously. Use the appropriate workflow for the request. If the task is research, browsing, summarization, or analysis, do that directly and do not assume code changes, git branches, or file edits are needed.'}`;
 
@@ -1871,6 +1874,9 @@ function appendToolResults(messages, toolResults, provider) {
 async function executeTaskApi(taskId, agentId, agent, task, project, workDir, execState, executionMode = 'coding') {
   const agentDir = path.join(DATA_DIR, 'agents', agentId);
   const isRecurring = task.trigger_type === 'cron';
+  const promptWorkDir = project?.path ? workDir : '';
+  const isProjectScoped = Boolean(project?.path);
+  const shouldPreferBrowserWorkflow = executionMode === 'general' && !isProjectScoped;
   const agentContext = buildAgentContext(agentId, agent, {
     includeMemory: !isRecurring,
     includeHeartbeat: isRecurring,
@@ -1890,12 +1896,16 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
   }
 
   addLog(taskId, 'info', `API mode: ${agent.provider} / ${agent.model}`);
-  addLog(taskId, 'info', `Working directory: ${workDir}`);
+  if (isProjectScoped) {
+    addLog(taskId, 'info', `Working directory: ${workDir}`);
+  }
 
   let dirListing = '';
-  try {
-    dirListing = execSync('ls -la', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1000);
-  } catch {}
+  if (isProjectScoped) {
+    try {
+      dirListing = execSync('ls -la', { cwd: workDir, encoding: 'utf8', timeout: 5000 }).slice(0, 1000);
+    } catch {}
+  }
 
   // Build recent project activity context so agents know what others did
   let projectActivity = '';
@@ -1929,7 +1939,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     projectDoc,
     projectActivity,
     customToolsPrompt,
-    workDir: project?.path || workDir,
+    workDir: promptWorkDir,
     includeHeartbeat: isRecurring,
     executionMode,
   });
@@ -1938,7 +1948,7 @@ async function executeTaskApi(taskId, agentId, agent, task, project, workDir, ex
     { role: 'system', content: systemPrompt },
     {
       role: 'user',
-      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\n${describeTaskImageAttachments(task)}Working directory: ${workDir}\n\nCurrent files:\n${dirListing}\n\n${executionMode === 'coding'
+      content: `Complete this task:\n\nTitle: ${task.title}\nDescription: ${task.description || 'No description provided.'}\n\n${describeTaskImageAttachments(task)}${promptWorkDir ? `Working directory: ${promptWorkDir}\n\n` : ''}${dirListing ? `Current files:\n${dirListing}\n\n` : ''}${shouldPreferBrowserWorkflow ? 'This task is not attached to a project. Prefer browser/web research workflow over local file inspection unless the user explicitly asks for filesystem work.\n\n' : ''}${executionMode === 'coding'
         ? 'Start immediately. Use the tools to explore, make changes, and complete the task.'
         : 'Start immediately. Use the tools needed for the request. Do not assume code changes, git branches, or file edits unless the task explicitly requires them.'}`,
     },

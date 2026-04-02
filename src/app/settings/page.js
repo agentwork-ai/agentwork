@@ -93,14 +93,23 @@ export default function SettingsPage() {
   useEffect(() => { load(); }, [load]);
 
   useEffect(() => {
+    const scrollContainer = document.querySelector('main');
+    if (!scrollContainer) return undefined;
+
     const observer = new IntersectionObserver(
       (entries) => {
+        const isNearBottom = scrollContainer.scrollTop + scrollContainer.clientHeight >= scrollContainer.scrollHeight - 24;
+        if (isNearBottom) {
+          setActiveSection(SECTION_DEFS[SECTION_DEFS.length - 1].id);
+          return;
+        }
+
         const visible = entries
           .filter((entry) => entry.isIntersecting)
           .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
         if (visible?.target?.id) setActiveSection(visible.target.id);
       },
-      { rootMargin: '-20% 0px -55% 0px', threshold: [0.15, 0.35, 0.6] }
+      { root: scrollContainer, rootMargin: '-20% 0px -55% 0px', threshold: [0.15, 0.35, 0.6] }
     );
 
     SECTION_DEFS.forEach((section) => {
@@ -109,7 +118,7 @@ export default function SettingsPage() {
     });
 
     return () => observer.disconnect();
-  }, []);
+  }, [setActiveSection]);
 
   useEffect(() => {
     if (!activeSectionReady) return;
@@ -254,6 +263,7 @@ export default function SettingsPage() {
   }, [applyProviderAuthState, codexOauthFlow?.id, codexOauthFlow?.status, providerAuth]);
 
   const jumpToSection = (sectionId) => {
+    setActiveSection(sectionId);
     document.getElementById(sectionId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 

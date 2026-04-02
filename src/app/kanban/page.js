@@ -22,6 +22,8 @@ const COLUMNS = [
   { id: 'blocked', label: 'Blocked / Review', color: '#fa5252' },
   { id: 'done', label: 'Done', color: '#40c057' },
 ];
+const NO_PROJECT_FILTER_ID = '__no_project__';
+const NO_PROJECT_LABEL = 'Standalone Tasks';
 const TASK_IMAGE_MIME_TYPES = new Set(['image/png', 'image/jpeg', 'image/jpg', 'image/gif', 'image/webp']);
 const MAX_TASK_IMAGE_BYTES = 5 * 1024 * 1024;
 
@@ -235,6 +237,7 @@ export default function KanbanPage() {
   useEffect(() => {
     if (!dataLoaded) return;
     if (!selectedProjectId) return;
+    if (selectedProjectId === NO_PROJECT_FILTER_ID) return;
     if (projects.some((project) => project.id === selectedProjectId)) return;
     setSelectedProjectId(null);
   }, [dataLoaded, projects, selectedProjectId, setSelectedProjectId]);
@@ -397,7 +400,9 @@ export default function KanbanPage() {
   }, [quickAddCol]);
 
   const openQuickAdd = (colId) => {
-    const nextProjectId = selectedProjectId || '';
+    const nextProjectId = selectedProjectId && selectedProjectId !== NO_PROJECT_FILTER_ID
+      ? selectedProjectId
+      : '';
     setQuickAddTitle('');
     setQuickAddPriority('medium');
     setQuickAddProjectId(nextProjectId);
@@ -433,14 +438,18 @@ export default function KanbanPage() {
   };
 
   // Filter tasks by selected project
-  const visibleTasks = selectedProjectId
-    ? tasks.filter((t) => t.project_id === selectedProjectId)
-    : tasks;
+  const visibleTasks = selectedProjectId === NO_PROJECT_FILTER_ID
+    ? tasks.filter((t) => !t.project_id)
+    : selectedProjectId
+      ? tasks.filter((t) => t.project_id === selectedProjectId)
+      : tasks;
 
   const selectedProject = projects.find((p) => p.id === selectedProjectId) || null;
+  const isStandaloneFilter = selectedProjectId === NO_PROJECT_FILTER_ID;
 
   // Task counts per project for the panel
   const countByProject = (pid) => tasks.filter((t) => t.project_id === pid).length;
+  const standaloneTaskCount = tasks.filter((t) => !t.project_id).length;
 
   // Swimlane toggle
   const toggleSwimlane = (key) => {
@@ -534,7 +543,29 @@ export default function KanbanPage() {
           </button>
 
           {/* Divider */}
-          {projects.length > 0 && (
+          {(standaloneTaskCount > 0 || projects.length > 0) && (
+            <div className="mx-3 my-1 border-t" style={{ borderColor: 'var(--border)' }} />
+          )}
+
+          {/* Standalone tasks */}
+          {standaloneTaskCount > 0 && (
+            <button
+              onClick={() => setSelectedProjectId(NO_PROJECT_FILTER_ID)}
+              className="w-full flex items-center gap-2 px-3 py-2 text-sm transition-colors"
+              style={{
+                background: isStandaloneFilter ? 'var(--accent-light)' : 'transparent',
+                color: isStandaloneFilter ? 'var(--accent)' : 'var(--text-secondary)',
+              }}
+            >
+              <FileText size={14} className="shrink-0" style={{ opacity: isStandaloneFilter ? 1 : 0.6 }} />
+              <span className="flex-1 text-left truncate">{NO_PROJECT_LABEL}</span>
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>
+                {standaloneTaskCount}
+              </span>
+            </button>
+          )}
+
+          {projects.length > 0 && standaloneTaskCount > 0 && (
             <div className="mx-3 my-1 border-t" style={{ borderColor: 'var(--border)' }} />
           )}
 
@@ -575,6 +606,11 @@ export default function KanbanPage() {
                 <FolderOpen size={16} style={{ color: 'var(--accent)' }} />
                 <h1 className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>{selectedProject.name}</h1>
                 <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>{selectedProject.path}</span>
+              </>
+            ) : isStandaloneFilter ? (
+              <>
+                <FileText size={16} style={{ color: 'var(--accent)' }} />
+                <h1 className="font-semibold text-base" style={{ color: 'var(--text-primary)' }}>{NO_PROJECT_LABEL}</h1>
               </>
             ) : (
               <>
@@ -896,7 +932,7 @@ export default function KanbanPage() {
           agents={agents}
           projects={projects}
           allTasks={tasks}
-          defaultProjectId={selectedProjectId}
+          defaultProjectId={selectedProjectId === NO_PROJECT_FILTER_ID ? null : selectedProjectId}
           onClose={() => { setShowForm(false); setEditTask(null); }}
           onSaved={() => { setShowForm(false); setEditTask(null); loadData(); }}
         />

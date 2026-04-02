@@ -1338,8 +1338,10 @@ ${heartbeatLines.join('\n')}
 ${fileRolesByType[agentType].join('\n')}
 
 ## Workspace
-${workDir ? `Working directory: ${workDir}` : 'Use the provided working directory.'}
-Treat this as the default starting directory, not a filesystem boundary. You may inspect or operate on other local paths when the task requires it.`;
+${workDir
+  ? `Working directory: ${workDir}
+Treat this as the default starting directory, not a filesystem boundary. You may inspect or operate on other local paths when the task requires it.`
+  : 'No fixed working directory is assigned for this task. Use local paths only when the task actually requires them.'}`;
 }
 
 function buildProjectSection(projectDoc, projectActivity) {

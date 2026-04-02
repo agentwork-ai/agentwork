@@ -8,7 +8,7 @@ const OUTPUT_ROOT = path.join(BROWSER_ROOT, 'output');
 const DOWNLOAD_ROOT = path.join(BROWSER_ROOT, 'downloads');
 const DEFAULT_VIEWPORT = { width: 1440, height: 960 };
 const DEFAULT_SNAPSHOT_LIMIT = 120;
-const DEFAULT_WAIT_TIMEOUT_MS = 15000;
+const DEFAULT_WAIT_TIMEOUT_MS = 60000;
 
 const sessions = new Map();
 let pageCounter = 0;
