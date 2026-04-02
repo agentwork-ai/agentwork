@@ -128,7 +128,6 @@ app.prepare().then(() => {
   server.use('/api/settings', require('./routes/settings'));
   server.use('/api/chat', require('./routes/chat'));
   server.use('/api/meetings', require('./routes/meetings'));
-  server.use('/api/cron', require('./routes/cron'));
   server.use('/api/files', require('./routes/files'));
   server.use('/api/templates', require('./routes/templates'));
   server.use('/api/rooms', require('./routes/rooms'));
@@ -230,8 +229,6 @@ app.prepare().then(() => {
         { method: 'POST', path: '/api/meetings/:id/start', description: 'Start running the meeting' },
         { method: 'POST', path: '/api/meetings/:id/apply-tasks', description: 'Apply proposed tasks to the project board' },
         { method: 'DELETE', path: '/api/meetings/:id', description: 'Delete meeting draft/history' },
-        { method: 'GET', path: '/api/cron', description: 'List recurring cron jobs', query: 'project_id, agent_id' },
-        { method: 'DELETE', path: '/api/cron/:id', description: 'Delete a recurring cron job' },
         { method: 'GET', path: '/api/settings', description: 'Get all settings' },
         { method: 'PUT', path: '/api/settings', description: 'Update settings' },
         { method: 'GET', path: '/api/settings/provider-auth', description: 'Get provider auth overview' },
