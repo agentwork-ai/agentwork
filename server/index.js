@@ -190,7 +190,6 @@ app.prepare().then(() => {
         { method: 'GET', path: '/api/projects/:id/health', description: 'Project health score' },
         { method: 'GET', path: '/api/projects/:id/git-status', description: 'Git status' },
         { method: 'GET', path: '/api/projects/:id/diff', description: 'Git diff', query: 'ref' },
-        { method: 'POST', path: '/api/projects/:id/regenerate-doc', description: 'Regenerate PROJECT.md' },
         { method: 'GET', path: '/api/tasks', description: 'List tasks', query: 'project_id, status, agent_id' },
         { method: 'POST', path: '/api/tasks', description: 'Create task' },
         { method: 'POST', path: '/api/tasks/bulk', description: 'Bulk operations', body: '{ action, task_ids, data }' },

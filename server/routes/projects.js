@@ -191,25 +191,6 @@ router.get('/:id/health', (req, res) => {
   });
 });
 
-// Regenerate PROJECT.md
-router.post('/:id/regenerate-doc', (req, res) => {
-  const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);
-  if (!project) return res.status(404).json({ error: 'Project not found' });
-
-  try {
-    generateProjectDoc(
-      project.path,
-      project.name,
-      project.description,
-      project.project_template,
-      { force: true }
-    );
-    res.json({ success: true, message: 'PROJECT.md regenerated' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
-  }
-});
-
 // Search files in project
 router.get('/:id/search', (req, res) => {
   const project = db.prepare('SELECT * FROM projects WHERE id = ?').get(req.params.id);

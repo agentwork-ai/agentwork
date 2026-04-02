@@ -1243,8 +1243,15 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
     project_id: task.project_id || '',
     tags: task.tags || '',
     attachments: task.attachments || [],
+    trigger_type: task.trigger_type || 'manual',
+    trigger_at: task.trigger_at ? task.trigger_at.slice(0, 16) : '',
+    trigger_cron: task.trigger_cron || '',
     flow_items: task.flow_items || [],
     depends_on: task.depends_on || [],
+  });
+  const [cronPreset, setCronPreset] = useState(() => {
+    const match = CRON_PRESETS.find((p) => p.value === task?.trigger_cron && p.value !== '__custom__');
+    return match ? match.value : (task?.trigger_cron ? '__custom__' : '0 9 * * *');
   });
   const [saving, setSaving] = useState(false);
   const [activeTab, setActiveTab] = useState(isDoing ? 'logs' : 'details');
@@ -1325,9 +1332,14 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
       project_id: task.project_id || '',
       tags: task.tags || '',
       attachments: task.attachments || [],
+      trigger_type: task.trigger_type || 'manual',
+      trigger_at: task.trigger_at ? task.trigger_at.slice(0, 16) : '',
+      trigger_cron: task.trigger_cron || '',
       flow_items: task.flow_items || [],
       depends_on: task.depends_on || [],
     });
+    const match = CRON_PRESETS.find((p) => p.value === task?.trigger_cron && p.value !== '__custom__');
+    setCronPreset(match ? match.value : (task?.trigger_cron ? '__custom__' : '0 9 * * *'));
   }, [task]);
 
   const addFlowItem = () => setForm((f) => ({
@@ -1341,6 +1353,11 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
     return { ...f, flow_items: items };
   });
 
+  const handleCronPreset = (val) => {
+    setCronPreset(val);
+    if (val !== '__custom__') setForm((f) => ({ ...f, trigger_cron: val }));
+  };
+
   const saveChanges = async () => {
     setSaving(true);
     try {
@@ -1350,6 +1367,8 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
         agent_id: form.agent_id || null,
         project_id: form.project_id || null,
         attachments: form.attachments || [],
+        trigger_at: form.trigger_type === 'schedule' ? (form.trigger_at ? new Date(form.trigger_at).toISOString() : null) : null,
+        trigger_cron: form.trigger_type === 'cron' ? form.trigger_cron : '',
         flow_items: isFlow ? form.flow_items : undefined,
         depends_on: form.depends_on || [],
       };
@@ -1468,6 +1487,29 @@ function TaskDetailModal({ task, agents, projects, allTasks, socket, onClose, on
                     </select>
                   </div>
                 </div>
+                {task.trigger_type === 'cron' && (
+                  <div>
+                    <label className="label">Cron Schedule</label>
+                    <div className="space-y-2">
+                      <select className="input" value={cronPreset} onChange={(e) => handleCronPreset(e.target.value)}>
+                        {CRON_PRESETS.map((preset) => <option key={preset.value} value={preset.value}>{preset.label}</option>)}
+                      </select>
+                      {cronPreset === '__custom__' && (
+                        <input
+                          className="input font-mono text-sm"
+                          placeholder="e.g. 0 9 * * 1-5"
+                          value={form.trigger_cron}
+                          onChange={(e) => setForm((current) => ({ ...current, trigger_cron: e.target.value }))}
+                        />
+                      )}
+                      {form.trigger_cron && (
+                        <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                          Expression: <code className="font-mono">{form.trigger_cron}</code>
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
                 {isFlow && (
                   <div className="pt-2 border-t" style={{ borderColor: 'var(--border)' }}>
                     <div className="flex items-center justify-between mb-2">
