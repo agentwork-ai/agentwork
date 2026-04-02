@@ -1,10 +1,11 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import { api } from '../../lib/api';
 import { API_PROVIDER_DEFS } from '../../lib/llmProviders';
+import { usePersistentState } from '../../lib/persistentState';
 import { useTheme, useAuth } from '../providers';
 import {
   BarChart3,
@@ -62,7 +63,8 @@ export default function SettingsPage() {
   const [codexOauthFlow, setCodexOauthFlow] = useState(null);
   const [codexManualInput, setCodexManualInput] = useState('');
   const [templates, setTemplates] = useState([]);
-  const [activeSection, setActiveSection] = useState(SECTION_DEFS[0].id);
+  const [activeSection, setActiveSection, activeSectionReady] = usePersistentState('agentwork:settings:active-section', SECTION_DEFS[0].id);
+  const restoredSectionRef = useRef(false);
 
   const applyProviderAuthState = useCallback((auth) => {
     setProviderAuth(auth);
@@ -108,6 +110,20 @@ export default function SettingsPage() {
 
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!activeSectionReady) return;
+    if (!SECTION_DEFS.some((section) => section.id === activeSection)) {
+      setActiveSection(SECTION_DEFS[0].id);
+      return;
+    }
+    if (restoredSectionRef.current) return;
+
+    requestAnimationFrame(() => {
+      document.getElementById(activeSection)?.scrollIntoView({ block: 'start' });
+      restoredSectionRef.current = true;
+    });
+  }, [activeSection, activeSectionReady, setActiveSection]);
 
   const updateField = (key, value) => {
     setSettings((prev) => ({ ...prev, [key]: value }));

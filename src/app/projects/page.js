@@ -5,6 +5,7 @@ import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import CodeViewer from '../../components/CodeViewer';
 import { api } from '../../lib/api';
+import { usePersistentState } from '../../lib/persistentState';
 import { useSocket } from '../providers';
 import {
   Plus, FolderOpen, Trash2, Edit2, ChevronRight, ChevronDown,
@@ -29,6 +30,7 @@ export default function ProjectsPage() {
   const socket = useSocket();
   const [projects, setProjects] = useState([]);
   const [selected, setSelected] = useState(null);
+  const [persistedProjectId, setPersistedProjectId, projectStateReady] = usePersistentState('agentwork:projects:selected-project-id', null);
   const [showForm, setShowForm] = useState(false);
   const [editProject, setEditProject] = useState(null);
   const [fileTree, setFileTree] = useState(null);
@@ -62,15 +64,48 @@ export default function ProjectsPage() {
       'project:updated': () => loadProjects(),
       'project:deleted': ({ id }) => {
         setProjects((prev) => prev.filter((p) => p.id !== id));
-        if (selected?.id === id) { setSelected(null); setFileTree(null); }
+        if (selected?.id === id) {
+          setSelected(null);
+          setFileTree(null);
+          setFileContent(null);
+          setPersistedProjectId(null);
+        }
       },
     };
     Object.entries(handlers).forEach(([e, h]) => socket.on(e, h));
     return () => Object.entries(handlers).forEach(([e, h]) => socket.off(e, h));
-  }, [socket, selected, loadProjects]);
+  }, [socket, selected, loadProjects, setPersistedProjectId]);
+
+  useEffect(() => {
+    if (loading) return;
+    if (!projectStateReady) return;
+    if (!selected && !persistedProjectId) return;
+
+    if (selected) {
+      const nextSelected = projects.find((project) => project.id === selected.id);
+      if (nextSelected) {
+        if (nextSelected !== selected) setSelected(nextSelected);
+        return;
+      }
+      setSelected(null);
+      setFileTree(null);
+      setFileContent(null);
+    }
+
+    if (!persistedProjectId) return;
+
+    const restoredProject = projects.find((project) => project.id === persistedProjectId);
+    if (!restoredProject) {
+      setPersistedProjectId(null);
+      return;
+    }
+
+    selectProject(restoredProject);
+  }, [loading, projectStateReady, projects, persistedProjectId, selected]);
 
   const selectProject = async (project) => {
     setSelected(project);
+    setPersistedProjectId(project.id);
     setFileContent(null);
     setSearchQuery('');
     setSearchResults(null);

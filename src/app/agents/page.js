@@ -105,6 +105,11 @@ function getRoleMeta(roleLabel) {
   return ROLE_META_BY_LABEL[roleLabel] || null;
 }
 
+function getDefaultAgentTypeForRole(roleLabel) {
+  const defaultType = getRoleMeta(roleLabel)?.defaultAgentType;
+  return defaultType === 'worker' ? 'worker' : 'smart';
+}
+
 export default function AgentsPage() {
   const socket = useSocket();
   const [agents, setAgents] = useState([]);
@@ -410,7 +415,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     if (nextType === 'api') {
       setForm((current) => ({
         ...current,
-        agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
+        agent_type: current.agent_type === 'cli' ? getDefaultAgentTypeForRole(current.role) : current.agent_type,
         auth_type: 'api',
         provider: 'anthropic',
         model: 'claude-sonnet-4-6',
@@ -433,7 +438,7 @@ function AgentFormModal({ agent, onClose, onSaved }) {
     if (!fallback) return;
     setForm((current) => ({
       ...current,
-      agent_type: current.agent_type === 'cli' ? 'smart' : current.agent_type,
+      agent_type: current.agent_type === 'cli' ? getDefaultAgentTypeForRole(current.role) : current.agent_type,
       auth_type: 'oauth',
       provider: fallback.id,
       model: fallback.runtime === 'cli' ? '' : getDefaultModelForProvider(fallback.id),
@@ -544,10 +549,6 @@ function AgentFormModal({ agent, onClose, onSaved }) {
             </button>
           </div>
 
-          <p className="text-xs mt-4" style={{ color: 'var(--text-tertiary)' }}>
-            Every hired agent is bootstrapped with `AGENTS.md`, `ROLE.md`, `SOUL.md`, `IDENTITY.md`, `USER.md`, `TOOLS.md`, `HEARTBEAT.md`, and `MEMORY.md`.
-          </p>
-
           <div className="flex justify-end mt-5">
             <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
           </div>
@@ -634,7 +635,20 @@ function AgentFormModal({ agent, onClose, onSaved }) {
           {/* Role */}
           <div>
             <label className="label">Role</label>
-            <select className="input" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+            <select
+              className="input"
+              value={form.role}
+              onChange={(e) => {
+                const nextRole = e.target.value;
+                setForm((current) => ({
+                  ...current,
+                  role: nextRole,
+                  agent_type: current.auth_type === 'cli'
+                    ? current.agent_type
+                    : getDefaultAgentTypeForRole(nextRole),
+                }));
+              }}
+            >
               {roleOptions.map((r) => <option key={r} value={r}>{r}</option>)}
             </select>
             {roleMeta?.summary ? (

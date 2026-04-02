@@ -5,6 +5,7 @@ import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import MarkdownContent from '../../components/MarkdownContent';
 import { api } from '../../lib/api';
+import { usePersistentState } from '../../lib/persistentState';
 import { useSocket } from '../providers';
 import {
   Plus, X, FolderOpen, Edit2, Trash2, Save,
@@ -205,7 +206,8 @@ export default function KanbanPage() {
   const [tasks, setTasks] = useState([]);
   const [agents, setAgents] = useState([]);
   const [projects, setProjects] = useState([]);
-  const [selectedProjectId, setSelectedProjectId] = useState(null); // null = All
+  const [dataLoaded, setDataLoaded] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = usePersistentState('agentwork:kanban:selected-project-id', null); // null = All
   const [showForm, setShowForm] = useState(false);
   const [editTask, setEditTask] = useState(null);
   const [viewTask, setViewTask] = useState(null);
@@ -225,9 +227,17 @@ export default function KanbanPage() {
     setTasks(t);
     setAgents(a);
     setProjects(p);
+    setDataLoaded(true);
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  useEffect(() => {
+    if (!dataLoaded) return;
+    if (!selectedProjectId) return;
+    if (projects.some((project) => project.id === selectedProjectId)) return;
+    setSelectedProjectId(null);
+  }, [dataLoaded, projects, selectedProjectId, setSelectedProjectId]);
 
   useEffect(() => {
     if (!socket) return;
@@ -713,6 +723,7 @@ export default function KanbanPage() {
                           onPriorityChange={changePriority}
                           onAgentChange={changeAgent}
                           onProjectChange={changeProject}
+                          onExecute={(taskId) => moveTask(taskId, 'doing')}
                           isSelected={selectedTasks.has(task.id)}
                           selectionActive={selectedTasks.size > 0}
                           onToggleSelect={() => toggleTaskSelection(task.id)}
@@ -786,6 +797,7 @@ export default function KanbanPage() {
                                     onPriorityChange={changePriority}
                                     onAgentChange={changeAgent}
                                     onProjectChange={changeProject}
+                                    onExecute={(taskId) => moveTask(taskId, 'doing')}
                                     isSelected={selectedTasks.has(task.id)}
                                     selectionActive={selectedTasks.size > 0}
                                     onToggleSelect={() => toggleTaskSelection(task.id)}
@@ -912,8 +924,9 @@ export default function KanbanPage() {
 const PRIORITIES = ['low', 'medium', 'high', 'critical'];
 const PRIORITY_COLORS = { low: '#868e96', medium: '#fab005', high: '#fa5252', critical: '#e03131' };
 
-function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange, isSelected, selectionActive, onToggleSelect }) {
+function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, onClick, onPriorityChange, onAgentChange, onProjectChange, onExecute, isSelected, selectionActive, onToggleSelect }) {
   const isDoing = task.status === 'doing';
+  const isReadyToExecute = task.status === 'backlog' || task.status === 'todo';
   const [openDropdown, setOpenDropdown] = useState(null); // 'priority' | 'project' | 'agent' | null
   const [hovered, setHovered] = useState(false);
   const cardRef = useRef(null);
@@ -1007,13 +1020,35 @@ function TaskCard({ task, projects, agents, allTasks, showProject, onDragStart, 
           </button>
         )}
         <p className="text-sm font-medium flex-1" style={{ color: 'var(--text-primary)' }}>{task.title}</p>
-        {unmetDeps.length > 0 && (
-          <span title={`Blocked by: ${unmetDeps.map((d) => d.title).join(', ')}`}
-            className="shrink-0 mt-0.5"
-            style={{ color: '#fa5252' }}>
-            <Lock size={13} />
-          </span>
-        )}
+        <div className="flex items-center gap-1 shrink-0">
+          {isReadyToExecute && (
+            <button
+              type="button"
+              className="w-7 h-7 rounded-lg flex items-center justify-center transition-colors"
+              style={{
+                background: '#fab00520',
+                color: '#fab005',
+                border: '1px solid #fab00540',
+              }}
+              title="Execute task"
+              onClick={(e) => {
+                e.stopPropagation();
+                onExecute(task.id);
+              }}
+            >
+              <Play size={13} fill="currentColor" />
+            </button>
+          )}
+          {unmetDeps.length > 0 && (
+            <span
+              title={`Blocked by: ${unmetDeps.map((d) => d.title).join(', ')}`}
+              className="shrink-0 mt-0.5"
+              style={{ color: '#fa5252' }}
+            >
+              <Lock size={13} />
+            </span>
+          )}
+        </div>
       </div>
       {task.description && (
         <p className="text-xs mt-1 line-clamp-2" style={{ color: 'var(--text-tertiary)' }}>{task.description}</p>

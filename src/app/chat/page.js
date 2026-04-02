@@ -6,6 +6,7 @@ import Sidebar from '../../components/Sidebar';
 import BottomBar from '../../components/BottomBar';
 import MarkdownContent from '../../components/MarkdownContent';
 import { api } from '../../lib/api';
+import { usePersistentState } from '../../lib/persistentState';
 import { useSocket, useUnread } from '../providers';
 import {
   Send,
@@ -229,8 +230,10 @@ export default function ChatPage() {
   const { unread, clearUnread } = useUnread();
   const [agents, setAgents] = useState([]);
   const [rooms, setRooms] = useState([]);
-  const [sidebarMode, setSidebarMode] = useState('agents');
-  const [selectedChat, setSelectedChat] = useState(null);
+  const [agentsLoaded, setAgentsLoaded] = useState(false);
+  const [roomsLoaded, setRoomsLoaded] = useState(false);
+  const [sidebarMode, setSidebarMode] = usePersistentState('agentwork:chat:sidebar-mode', 'agents');
+  const [selectedChat, setSelectedChat, selectedChatReady] = usePersistentState('agentwork:chat:selected-chat', null);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
@@ -243,6 +246,7 @@ export default function ChatPage() {
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const messagesEndRef = useRef(null);
   const groupTextareaRef = useRef(null);
+  const loadedChatKeyRef = useRef(null);
 
   const selectedAgent = selectedChat?.kind === 'agent'
     ? agents.find((agent) => agent.id === selectedChat.id) || null
@@ -259,20 +263,88 @@ export default function ChatPage() {
     try {
       const data = await api.getAgents();
       setAgents(data);
-    } catch {}
+    } catch {} finally {
+      setAgentsLoaded(true);
+    }
   }, []);
 
   const loadRooms = useCallback(async () => {
     try {
       const data = await api.getRooms();
       setRooms(data);
-    } catch {}
+    } catch {} finally {
+      setRoomsLoaded(true);
+    }
   }, []);
 
   useEffect(() => {
     loadAgents();
     loadRooms();
   }, [loadAgents, loadRooms]);
+
+  const resetConversationState = useCallback(() => {
+    setMessages([]);
+    setInput('');
+    setSearchResults(null);
+    setSearchQuery('');
+    setRoomTypingAgents([]);
+    setIsTyping(false);
+    setMentionState(null);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedChatReady) return;
+    if (!selectedChat?.kind || !selectedChat?.id) {
+      loadedChatKeyRef.current = null;
+      return;
+    }
+    if (selectedChat.kind === 'agent' && !agentsLoaded) return;
+    if (selectedChat.kind === 'room' && !roomsLoaded) return;
+
+    const exists = selectedChat.kind === 'agent'
+      ? agents.some((agent) => agent.id === selectedChat.id)
+      : rooms.some((room) => room.id === selectedChat.id);
+
+    if (!exists) {
+      loadedChatKeyRef.current = null;
+      setSelectedChat(null);
+      resetConversationState();
+      return;
+    }
+
+    const chatKey = `${selectedChat.kind}:${selectedChat.id}`;
+    if (loadedChatKeyRef.current === chatKey) return;
+
+    const loadSelectedChat = async () => {
+      resetConversationState();
+      setSidebarMode(selectedChat.kind === 'room' ? 'rooms' : 'agents');
+
+      try {
+        const loaded = selectedChat.kind === 'room'
+          ? await api.getRoomMessages(selectedChat.id)
+          : await api.getMessages(selectedChat.id);
+        setMessages(loaded);
+        if (selectedChat.kind === 'agent') clearUnread(selectedChat.id);
+        loadedChatKeyRef.current = chatKey;
+      } catch {
+        setMessages([]);
+        loadedChatKeyRef.current = chatKey;
+      }
+    };
+
+    loadSelectedChat();
+  }, [
+    agents,
+    agentsLoaded,
+    rooms,
+    roomsLoaded,
+    clearUnread,
+    resetConversationState,
+    selectedChat,
+    selectedChatReady,
+    setSelectedChat,
+    setSidebarMode,
+  ]);
 
   useEffect(() => {
     setActiveMentionIndex(0);
@@ -323,9 +395,9 @@ export default function ChatPage() {
     const onRoomDeleted = ({ id }) => {
       setRooms((current) => current.filter((room) => room.id !== id));
       if (selectedChat?.kind === 'room' && selectedChat.id === id) {
+        loadedChatKeyRef.current = null;
         setSelectedChat(null);
-        setMessages([]);
-        setRoomTypingAgents([]);
+        resetConversationState();
       }
     };
 
@@ -369,22 +441,17 @@ export default function ChatPage() {
       socket.off('room:typing_end', onRoomTypingEnd);
       socket.off('agent:status_changed', onStatusChanged);
     };
-  }, [socket, selectedAgent?.id, selectedRoom?.id, selectedChat, clearUnread]);
+  }, [socket, selectedAgent?.id, selectedRoom?.id, selectedChat, clearUnread, resetConversationState, setSelectedChat]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages, isTyping, roomTypingAgents]);
 
   const selectAgent = async (agent) => {
+    loadedChatKeyRef.current = `agent:${agent.id}`;
     setSidebarMode('agents');
     setSelectedChat({ kind: 'agent', id: agent.id });
-    setMessages([]);
-    setInput('');
-    setSearchResults(null);
-    setSearchQuery('');
-    setRoomTypingAgents([]);
-    setIsTyping(false);
-    setMentionState(null);
+    resetConversationState();
     clearUnread(agent.id);
     try {
       const loaded = await api.getMessages(agent.id);
@@ -395,15 +462,10 @@ export default function ChatPage() {
   };
 
   const selectRoom = async (room) => {
+    loadedChatKeyRef.current = `room:${room.id}`;
     setSidebarMode('rooms');
     setSelectedChat({ kind: 'room', id: room.id });
-    setMessages([]);
-    setInput('');
-    setSearchResults(null);
-    setSearchQuery('');
-    setRoomTypingAgents([]);
-    setIsTyping(false);
-    setMentionState(null);
+    resetConversationState();
     try {
       const loaded = await api.getRoomMessages(room.id);
       setMessages(loaded);
@@ -460,10 +522,9 @@ export default function ChatPage() {
     if (!window.confirm(`Delete "${selectedRoom.name}"?`)) return;
     try {
       await api.deleteRoom(selectedRoom.id);
+      loadedChatKeyRef.current = null;
       setSelectedChat(null);
-      setMessages([]);
-      setRoomTypingAgents([]);
-      setMentionState(null);
+      resetConversationState();
     } catch (err) {
       toast.error(err.message || 'Failed to delete room');
     }
